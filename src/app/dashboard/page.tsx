@@ -90,7 +90,7 @@ export default function Dashboard() {
         targetCampaignId = newCampId;
       }
 
-      // 2. Criar a ficha de teste seguindo o SRD
+      // 2. Criar a ficha de teste seguindo o SRD com mana e condições
       const charId = doc(collection(db, 'campaigns', targetCampaignId, 'characters')).id;
       const testChar = {
         id: charId,
@@ -103,8 +103,11 @@ export default function Dashboard() {
         xp: 1250,
         hp: 22,
         maxHp: 22,
+        mana: 15,
+        maxMana: 20,
         ac: 13,
         initiative: 2,
+        conditions: ["Bêbado", "Encantado"],
         stats: {
           str: 8,
           dex: 14,
@@ -121,7 +124,7 @@ export default function Dashboard() {
       
       toast({ 
         title: "Herói Evocado", 
-        description: "Valerius, o Tiefling Mago, foi registrado nos anais." 
+        description: "Valerius, o Tiefling Mago, foi registrado nos anais com mana e status ativos." 
       });
       
       // Força recarregamento para ver a ficha

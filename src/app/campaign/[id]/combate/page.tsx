@@ -5,15 +5,15 @@ import * as React from "react"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Shield, Sword, Heart, Zap, Sparkles, ChevronRight, Dices, Ghost, Maximize2 } from "lucide-react"
+import { Shield, Sword, Heart, Zap, Sparkles, ChevronRight, Dices, Ghost, Maximize2, Skull, Wine, Droplets } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 
 const MOCK_PARTICIPANTS = [
-  { id: '1', name: 'Gob', hp: 22, maxHp: 30, ac: 16, zone: 'Meio', type: 'player', color: 'primary', photoURL: 'https://picsum.photos/seed/goblin/400/300' },
-  { id: '2', name: 'Mira', hp: 45, maxHp: 45, ac: 18, zone: 'Frente', type: 'player', color: 'primary', photoURL: 'https://picsum.photos/seed/warrior/400/300' },
-  { id: '3', name: 'Cultista A', hp: 12, maxHp: 25, ac: 14, zone: 'Próximo', type: 'enemy', color: 'destructive', photoURL: 'https://picsum.photos/seed/cultist/400/300' },
-  { id: '4', name: 'Líder do Culto', hp: 80, maxHp: 100, ac: 17, zone: 'Distante', type: 'enemy', color: 'destructive', photoURL: 'https://picsum.photos/seed/leader/400/300' },
+  { id: '1', name: 'Gob', hp: 22, maxHp: 30, mana: 5, maxMana: 10, ac: 16, zone: 'Meio', type: 'player', color: 'primary', photoURL: 'https://picsum.photos/seed/goblin/400/300', conditions: ['Bêbado'] },
+  { id: '2', name: 'Mira', hp: 45, maxHp: 45, mana: 0, maxMana: 0, ac: 18, zone: 'Frente', type: 'player', color: 'primary', photoURL: 'https://picsum.photos/seed/warrior/400/300', conditions: [] },
+  { id: '3', name: 'Cultista A', hp: 12, maxHp: 25, ac: 14, zone: 'Próximo', type: 'enemy', color: 'destructive', photoURL: 'https://picsum.photos/seed/cultist/400/300', conditions: ['Envenenado'] },
+  { id: '4', name: 'Líder do Culto', hp: 80, maxHp: 100, mana: 25, maxMana: 40, ac: 17, zone: 'Distante', type: 'enemy', color: 'destructive', photoURL: 'https://picsum.photos/seed/leader/400/300', conditions: [] },
 ];
 
 export default function Combate() {
@@ -91,7 +91,7 @@ export default function Combate() {
               <Sparkles className="h-5 w-5 text-accent animate-glow" />
             </div>
             <p className="text-lg italic font-heading text-foreground/90 leading-relaxed max-w-5xl">
-              "Gob salta por cima de uma cadeira caída com um riso agudo. A adaga curva encontra uma brecha na lateral do cultista, que cambaleia para trás, ferido, mas ainda de pé."
+              "Gob tenta um ataque, mas sua visão está turva pelo hidromel. O golpe passa longe, enquanto Mira se prepara para a investida final."
             </p>
           </div>
 
@@ -125,6 +125,7 @@ export default function Combate() {
 function CombatantCard({ participant }: { participant: any }) {
   const isEnemy = participant.type === 'enemy';
   const healthPercent = (participant.hp / participant.maxHp) * 100;
+  const manaPercent = participant.maxMana > 0 ? (participant.mana / participant.maxMana) * 100 : 0;
   const portrait = participant.photoURL || `https://picsum.photos/seed/${participant.id}/400/300`;
 
   return (
@@ -144,6 +145,12 @@ function CombatantCard({ participant }: { participant: any }) {
                 {participant.zone}
               </Badge>
             </div>
+            {/* Conditions Badges overlay */}
+            <div className="absolute top-4 left-4 flex flex-col gap-1">
+               {participant.conditions?.map((c: string, idx: number) => (
+                 <ConditionMiniBadge key={idx} condition={c} />
+               ))}
+            </div>
             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                <Maximize2 className="h-4 w-4 text-white/50" />
             </div>
@@ -154,15 +161,26 @@ function CombatantCard({ participant }: { participant: any }) {
         </DialogContent>
       </Dialog>
       
-      <div className="p-6 space-y-6">
-        <div className="space-y-2">
-          <div className="flex justify-between text-[11px] uppercase font-bold tracking-[0.2em] text-muted-foreground">
-            <span className="flex items-center gap-2"><Heart className="h-4 w-4 text-destructive" /> Vitalidade</span>
+      <div className="p-6 space-y-4">
+        <div className="space-y-1">
+          <div className="flex justify-between text-[9px] uppercase font-bold tracking-[0.2em] text-muted-foreground">
+            <span className="flex items-center gap-2"><Heart className="h-3 w-3 text-destructive" /> PV</span>
             <span className="font-code">{participant.hp}/{participant.maxHp}</span>
           </div>
-          <Progress value={healthPercent} className={`h-2 ${isEnemy ? 'bg-destructive/10' : 'bg-primary/10'}`} />
+          <Progress value={healthPercent} className={`h-1 ${isEnemy ? 'bg-destructive/10' : 'bg-primary/10'}`} />
         </div>
-        <div className="flex justify-between items-center">
+
+        {participant.maxMana > 0 && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-[9px] uppercase font-bold tracking-[0.2em] text-muted-foreground">
+              <span className="flex items-center gap-2"><Sparkles className="h-3 w-3 text-accent" /> Mana</span>
+              <span className="font-code">{participant.mana}/{participant.maxMana}</span>
+            </div>
+            <Progress value={manaPercent} className="h-1 bg-accent/10" />
+          </div>
+        )}
+
+        <div className="flex justify-between items-center pt-2">
           <div className="flex flex-col">
             <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Defesa</span>
             <div className="flex items-center gap-2 font-display font-bold text-lg">
@@ -175,6 +193,17 @@ function CombatantCard({ participant }: { participant: any }) {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ConditionMiniBadge({ condition }: { condition: string }) {
+  const isBad = ['envenenado', 'caído', 'atordoado', 'bêbado'].includes(condition.toLowerCase());
+  return (
+    <div className={`p-1 rounded bg-black/60 border ${isBad ? 'border-destructive text-destructive' : 'border-primary text-primary'} flex items-center justify-center`} title={condition}>
+       {condition.toLowerCase().includes('envenenado') ? <Skull className="h-3 w-3" /> : 
+        condition.toLowerCase().includes('bêbado') ? <Wine className="h-3 w-3" /> :
+        <Ghost className="h-3 w-3" />}
     </div>
   );
 }

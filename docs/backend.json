@@ -100,9 +100,12 @@
         "xp": { "type": "number" },
         "hp": { "type": "number" },
         "maxHp": { "type": "number" },
+        "mana": { "type": "number", "description": "Current mana or spell energy." },
+        "maxMana": { "type": "number", "description": "Maximum mana or spell energy." },
         "ac": { "type": "number" },
         "initiative": { "type": "number" },
         "photoURL": { "type": "string" },
+        "conditions": { "type": "array", "items": { "type": "string" }, "description": "Active status effects like Poisoned, Blinded, etc." },
         "stats": {
           "type": "object",
           "properties": {

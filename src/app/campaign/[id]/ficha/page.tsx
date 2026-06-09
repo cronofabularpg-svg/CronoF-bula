@@ -21,7 +21,11 @@ import {
   Info,
   Camera,
   Search,
-  Maximize2
+  Maximize2,
+  Skull,
+  Ghost,
+  Droplets,
+  Wine
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
@@ -73,7 +77,7 @@ export default function FichaPersonagem() {
   }
 
   return (
-    <div className="p-10 max-w-5xl mx-auto space-y-12 animate-in fade-in duration-700">
+    <div className="p-10 max-w-5xl mx-auto space-y-12 animate-in fade-in duration-700 pb-32">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-10 border-white/5 gap-6">
         <div className="flex items-center gap-8">
           <div className="relative group">
@@ -191,28 +195,62 @@ export default function FichaPersonagem() {
           </div>
         </div>
 
-        {/* Vitalidade e Combate */}
+        {/* Vitalidade, Mana e Combate */}
         <div className="md:col-span-2 space-y-10">
-          <Card className="bg-[#2B1218]/20 border-destructive/20 literary-shadow overflow-hidden">
-            <div className="h-1 bg-destructive/30" />
-            <CardContent className="p-8 space-y-6">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-destructive/20 text-destructive shadow-arcane">
-                    <Heart className="h-6 w-6" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="bg-[#2B1218]/20 border-destructive/20 literary-shadow overflow-hidden">
+              <div className="h-1 bg-destructive/30" />
+              <CardContent className="p-8 space-y-6">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-destructive/20 text-destructive shadow-arcane">
+                      <Heart className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold uppercase tracking-widest text-destructive">Vitalidade</h4>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-sm font-bold uppercase tracking-widest text-destructive">Vitalidade (PV)</h4>
-                    <p className="text-xs text-muted-foreground font-heading italic">Sua força vital no tecido da crônica.</p>
+                  <div className="text-right">
+                    <span className="text-3xl font-display font-bold text-destructive">{character.hp || 10} / {character.maxHp || 10}</span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-4xl font-display font-bold text-destructive">{character.hp || 10} / {character.maxHp || 10}</span>
+                <Progress value={((character.hp || 0) / (character.maxHp || 1)) * 100} className="h-2 bg-destructive/10" />
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#12182B]/20 border-accent/20 literary-shadow overflow-hidden">
+              <div className="h-1 bg-accent/30" />
+              <CardContent className="p-8 space-y-6">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-accent/20 text-accent shadow-arcane">
+                      <Sparkles className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold uppercase tracking-widest text-accent">Mana / Slots</h4>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-3xl font-display font-bold text-accent">{character.mana ?? 0} / {character.maxMana ?? 0}</span>
+                  </div>
                 </div>
-              </div>
-              <Progress value={((character.hp || 0) / (character.maxHp || 1)) * 100} className="h-3 bg-destructive/10" />
-            </CardContent>
-          </Card>
+                <Progress value={((character.mana || 0) / (character.maxMana || 1)) * 100} className="h-2 bg-accent/10" />
+              </CardContent>
+            </Card>
+          </div>
+
+          <section className="space-y-6">
+            <h3 className="text-[11px] uppercase font-bold tracking-[0.2em] text-muted-foreground opacity-50 flex items-center font-display">
+              <Ghost className="mr-2 h-4 w-4 text-primary" /> Condições de Status (D&D)
+            </h3>
+            <div className="flex flex-wrap gap-3">
+              {character.conditions?.length > 0 ? character.conditions.map((cond: string, i: number) => (
+                <ConditionBadge key={i} condition={cond} />
+              )) : (
+                <p className="text-sm text-muted-foreground font-heading italic opacity-40">O herói não sofre de enfermidades no momento.</p>
+              )}
+            </div>
+          </section>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <section className="space-y-4">
@@ -262,5 +300,21 @@ function ActionCard({ name, detail }: { name: string, detail: string }) {
         Rolar 1d20
       </Badge>
     </div>
+  )
+}
+
+function ConditionBadge({ condition }: { condition: string }) {
+  const getIcon = () => {
+    const c = condition.toLowerCase();
+    if (c.includes('envenenado')) return <Skull className="h-3 w-3" />;
+    if (c.includes('bêbado') || c.includes('bebado')) return <Wine className="h-3 w-3" />;
+    if (c.includes('sangramento')) return <Droplets className="h-3 w-3" />;
+    return <Ghost className="h-3 w-3" />;
+  }
+
+  return (
+    <Badge variant="outline" className="border-destructive/30 text-destructive bg-destructive/5 flex gap-2 py-2 px-4 rounded-full font-display text-[10px] uppercase tracking-widest">
+      {getIcon()} {condition}
+    </Badge>
   )
 }
