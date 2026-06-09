@@ -1,3 +1,28 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "campaign-cover",
+      "description": "A dark mystical forest with purple glowing embers",
+      "imageUrl": "https://picsum.photos/seed/cronofabula1/1200/600",
+      "imageHint": "mystical forest"
+    },
+    {
+      "id": "character-gob",
+      "description": "A clever looking goblin rogue with tattered clothes",
+      "imageUrl": "https://picsum.photos/seed/goblin/400/400",
+      "imageHint": "goblin rogue"
+    },
+    {
+      "id": "npc-halvek",
+      "description": "A nervous looking human merchant in a dark alley",
+      "imageUrl": "https://picsum.photos/seed/merchant/400/400",
+      "imageHint": "merchant man"
+    },
+    {
+      "id": "item-dagger",
+      "description": "A curved, soot-stained dagger with arcane runes",
+      "imageUrl": "https://picsum.photos/seed/dagger/300/300",
+      "imageHint": "ancient dagger"
+    }
+  ]
 }
