@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -24,9 +25,10 @@ import {
   Lock,
   Infinity,
   Hourglass,
-  Quote
+  Quote,
+  Maximize2
 } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { 
   Tooltip, 
   TooltipContent, 
@@ -80,17 +82,6 @@ export default function MesaViva() {
   const { data: activeSessions, loading: loadingSession } = useCollection(activeSessionQuery)
   const session = activeSessions?.[0]
 
-  React.useEffect(() => {
-    if (isDiceDialogOpen) {
-      if (session?.diceMode === 'virtual') setActiveDiceTab('virtual')
-      else if (session?.diceMode === 'physical') setActiveDiceTab('physical')
-      else {
-        if (profile?.dicePreference && profile.dicePreference !== 'ask') setActiveDiceTab(profile.dicePreference)
-        else setActiveDiceTab('virtual')
-      }
-    }
-  }, [isDiceDialogOpen, session, profile])
-
   const npcsQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
     return query(collection(db, "campaigns", campaignId, "npcs"), where("status", "==", "alive"))
@@ -102,7 +93,7 @@ export default function MesaViva() {
     return query(collection(db, "campaigns", campaignId, "characters"), where("status", "==", "active"))
   }, [db, campaignId])
   const { data: characters } = useCollection(charactersQuery)
-  const myCharacter = characters?.find(c => c.ownerId === user?.uid)
+  const myCharacter = characters?.find(c => c.ownerId === user?.uid) as any;
 
   const messagesQuery = React.useMemo(() => {
     if (!db || !campaignId || !session) return null
@@ -129,7 +120,8 @@ export default function MesaViva() {
     const messageData = {
       sessionId: session.id,
       senderId: user.uid,
-      senderName: user.displayName || "Aventureiro",
+      senderName: isMaster ? "Mestre Arcano" : (myCharacter?.name || user.displayName || "Aventureiro"),
+      senderPhotoURL: isMaster ? "" : (myCharacter?.photoURL || ""),
       text: finalContent,
       type: finalType,
       rollData: rollData || null,
@@ -204,8 +196,7 @@ export default function MesaViva() {
       }
     }
     const rollMsg = `Rolou ${formula}${rollReason ? ` para ${rollReason}` : ''}: **${result}**`
-    handleSend(rollMsg, 'dice', { formula, result, isPhysical, reason: rollReason })
-    setIsDiceDialogOpen(false); setRollReason(''); setPhysicalResult('')
+    handleRollDice(isPhysical); // Actually handles the send inside logic
   }
 
   if (loadingSession) return <div className="h-screen flex items-center justify-center font-heading italic text-3xl opacity-40">Sincronizando com o Arcano...</div>
@@ -237,10 +228,10 @@ export default function MesaViva() {
 
         <section className="space-y-6">
           <div className="space-y-6">
-             <ParticipantItem name={user?.displayName || "Você"} role={isMaster ? "Mestre Arcano" : (myCharacter?.class || "Aventureiro")} status="Ativo" />
+             <ParticipantItem name={user?.displayName || "Você"} photo={myCharacter?.photoURL} role={isMaster ? "Mestre Arcano" : (myCharacter?.class || "Aventureiro")} status="Ativo" />
              {isSoloMode && <ParticipantItem name="O Oráculo" role="Narrador IA" status={isAiThinking ? "Tecendo Destino..." : "Observando"} isAI />}
              {npcs?.map(npc => (
-               <ParticipantItem key={npc.id} name={npc.name} role={npc.role} status="Presente" isNPC />
+               <ParticipantItem key={npc.id} name={npc.name} photo={npc.imageURL} role={npc.role} status="Presente" isNPC />
              ))}
           </div>
         </section>
@@ -451,12 +442,22 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
     )
   }
 
+  const senderPhoto = msg.senderPhotoURL || `https://picsum.photos/seed/${msg.senderId}/200/200`;
+
   return (
     <div className={`flex gap-8 animate-in duration-500 ${isMine ? 'justify-end slide-in-from-right-8' : 'slide-in-from-left-8'}`}>
       {!isMine && (
-        <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-white/5 bg-black/40 shadow-lg">
-          <AvatarFallback className="text-xl font-display font-bold">{msg.senderName[0]}</AvatarFallback>
-        </Avatar>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-white/5 bg-black/40 shadow-lg cursor-zoom-in hover:scale-105 transition-transform">
+              <AvatarImage src={senderPhoto} className="object-cover" />
+              <AvatarFallback className="text-xl font-display font-bold">{msg.senderName[0]}</AvatarFallback>
+            </Avatar>
+          </DialogTrigger>
+          <DialogContent className="bg-black/90 border-primary/20 p-0 overflow-hidden">
+             <img src={senderPhoto} alt={msg.senderName} className="w-full h-full object-contain" />
+          </DialogContent>
+        </Dialog>
       )}
       <div className={`space-y-4 ${isMine ? 'text-right' : 'text-left'}`}>
         <p className={`text-[10px] font-display uppercase font-bold tracking-[0.3em] ${isMine ? 'text-primary' : 'text-muted-foreground opacity-60'}`}>
@@ -476,24 +477,42 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
         </div>
       </div>
       {isMine && (
-        <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-primary/40 bg-primary/10 shadow-gold">
-          <AvatarFallback className="text-primary font-display font-black text-xl">{msg.senderName[0]}</AvatarFallback>
-        </Avatar>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-primary/40 bg-primary/10 shadow-gold cursor-zoom-in hover:scale-105 transition-transform">
+              <AvatarImage src={senderPhoto} className="object-cover" />
+              <AvatarFallback className="text-primary font-display font-black text-xl">{msg.senderName[0]}</AvatarFallback>
+            </Avatar>
+          </DialogTrigger>
+          <DialogContent className="bg-black/90 border-primary/20 p-0 overflow-hidden">
+             <img src={senderPhoto} alt={msg.senderName} className="w-full h-full object-contain" />
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
 }
 
-function ParticipantItem({ name, role, status, isAI = false, isNPC = false }: { name: string, role: string, status: string, isAI?: boolean, isNPC?: boolean }) {
+function ParticipantItem({ name, photo, role, status, isAI = false, isNPC = false }: { name: string, photo?: string, role: string, status: string, isAI?: boolean, isNPC?: boolean }) {
+  const displayPhoto = photo || `https://picsum.photos/seed/${name}/100/100`;
+  
   return (
     <div className="flex items-center gap-5 group cursor-default p-3 rounded-2xl hover:bg-white/5 transition-all">
-      <div className={`h-14 w-14 rounded-2xl flex items-center justify-center font-display font-bold text-lg transition-all group-hover:scale-110 border-2 ${
-        isAI ? 'bg-secondary/20 text-secondary border-secondary/40 shadow-arcane' : 
-        isNPC ? 'bg-accent/20 text-accent border-accent/40 shadow-gold' :
-        'bg-primary/20 text-primary border-primary/40 shadow-arcane'
-      }`}>
-        {isAI ? <Sparkles className="h-6 w-6" /> : name[0]}
-      </div>
+      <Dialog>
+        <DialogTrigger asChild>
+          <div className={`h-14 w-14 rounded-2xl flex items-center justify-center font-display font-bold text-lg transition-all group-hover:scale-110 border-2 overflow-hidden cursor-zoom-in ${
+            isAI ? 'bg-secondary/20 text-secondary border-secondary/40 shadow-arcane' : 
+            isNPC ? 'bg-accent/20 text-accent border-accent/40 shadow-gold' :
+            'bg-primary/20 text-primary border-primary/40 shadow-arcane'
+          }`}>
+            {isAI ? <Sparkles className="h-6 w-6" /> : <img src={displayPhoto} className="w-full h-full object-cover" />}
+          </div>
+        </DialogTrigger>
+        <DialogContent className="bg-black/90 border-primary/20 p-0 overflow-hidden">
+           <img src={isAI ? '/ai-orb.png' : displayPhoto} alt={name} className="w-full h-full object-contain" />
+        </DialogContent>
+      </Dialog>
+      
       <div className="flex flex-col">
         <span className={`text-lg font-display font-bold group-hover:text-primary transition-colors ${isAI ? 'text-secondary' : isNPC ? 'text-accent' : 'text-primary'}`}>{name}</span>
         <div className="flex items-center gap-3">

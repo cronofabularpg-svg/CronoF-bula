@@ -4,10 +4,13 @@
 import * as React from "react"
 import { useParams } from "next/navigation"
 import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where } from "firebase/firestore"
+import { collection, query, where, doc, updateDoc } from "firebase/firestore"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { 
   Shield, 
   Sword, 
@@ -15,13 +18,22 @@ import {
   Zap, 
   Star, 
   Sparkles,
-  Info
+  Info,
+  Camera,
+  Search,
+  Maximize2
 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { useToast } from "@/hooks/use-toast"
 
 export default function FichaPersonagem() {
   const { id: campaignId } = useParams() as { id: string }
   const { user } = useUser()
   const db = useFirestore()
+  const { toast } = useToast()
+
+  const [isEditingPhoto, setIsEditingPhoto] = React.useState(false)
+  const [photoUrlInput, setPhotoUrlUrlInput] = React.useState("")
 
   const charactersQuery = React.useMemo(() => {
     if (!db || !user || !campaignId) return null
@@ -42,21 +54,80 @@ export default function FichaPersonagem() {
     return mod >= 0 ? `+${mod}` : mod.toString();
   };
 
-  const stats = character.stats || { str: 10, dex: 10, i: 10, int: 10, wis: 10, cha: 10 };
+  const stats = character.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
   const proficiency = Math.floor((character.level - 1) / 4) + 2;
+
+  const charPhoto = character.photoURL || `https://picsum.photos/seed/${character.id}/500/500`;
+
+  async function handleUpdatePhoto() {
+    if (!db || !campaignId || !character) return
+    try {
+      await updateDoc(doc(db, "campaigns", campaignId, "characters", character.id), {
+        photoURL: photoUrlInput
+      })
+      toast({ title: "Retrato Atualizado", description: "Sua nova aparência foi gravada nos anais." })
+      setIsEditingPhoto(false)
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro na Invocação", description: e.message })
+    }
+  }
 
   return (
     <div className="p-10 max-w-5xl mx-auto space-y-12 animate-in fade-in duration-700">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-10 border-white/5 gap-6">
         <div className="flex items-center gap-8">
-          <div className="relative h-32 w-32 rounded-2xl overflow-hidden border-2 border-primary/30 shadow-arcane">
-            <img 
-              src={`https://picsum.photos/seed/${character.id}/300/300`} 
-              alt={character.name} 
-              className="object-cover w-full h-full"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+          <div className="relative group">
+            <Dialog>
+              <DialogTrigger asChild>
+                <div className="relative h-40 w-40 rounded-2xl overflow-hidden border-2 border-primary/30 shadow-arcane cursor-zoom-in group">
+                  <img 
+                    src={charPhoto} 
+                    alt={character.name} 
+                    className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Maximize2 className="h-8 w-8 text-white animate-pulse" />
+                  </div>
+                </div>
+              </DialogTrigger>
+              <DialogContent className="bg-black/90 border-primary/20 max-w-4xl p-0 overflow-hidden">
+                <img src={charPhoto} alt={character.name} className="w-full h-full object-contain max-h-[85vh]" />
+                <div className="p-6 bg-gradient-to-t from-black to-transparent absolute bottom-0 w-full">
+                  <h2 className="text-3xl font-display font-black text-primary">{character.name}</h2>
+                  <p className="text-muted-foreground font-heading italic">{character.race} {character.class}</p>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isEditingPhoto} onOpenChange={setIsEditingPhoto}>
+              <DialogTrigger asChild>
+                <Button size="icon" variant="ghost" className="absolute -bottom-2 -right-2 bg-background border border-primary/30 rounded-full h-10 w-10 shadow-arcane">
+                  <Camera className="h-4 w-4 text-primary" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-card border-accent/30">
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-display">Consagrar Novo Retrato</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-bold tracking-widest">Link da Imagem</Label>
+                    <Input 
+                      placeholder="https://..." 
+                      value={photoUrlInput} 
+                      onChange={e => setPhotoUrlUrlInput(e.target.value)} 
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground italic">Use um link público de imagem (Unsplash, Pinterest, etc).</p>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <Button variant="ghost" onClick={() => setIsEditingPhoto(false)}>Cancelar</Button>
+                  <Button onClick={handleUpdatePhoto} className="bg-primary px-8">Manifestar</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
+          
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-5xl font-display font-black tracking-tighter text-primary">{character.name}</h1>

@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -10,7 +11,8 @@ import {
   ChevronRight,
   ChevronLeft,
   PlusCircle,
-  Hash
+  Hash,
+  Camera
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -72,7 +74,8 @@ export default function OnboardingPage() {
     name: "",
     race: "human",
     class: "fighter",
-    level: 1
+    level: 1,
+    photoURL: ""
   })
 
   const nextStep = () => setStep(s => s + 1);
@@ -118,8 +121,15 @@ export default function OnboardingPage() {
         race: characterData.race,
         class: characterData.class,
         level: characterData.level,
+        photoURL: characterData.photoURL,
         status: role === 'master' ? 'active' : 'pending',
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        xp: 0,
+        hp: 10,
+        maxHp: 10,
+        ac: 10,
+        initiative: 0,
+        stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
       })
 
       toast({ title: "Personagem Criado!", description: `${characterData.name} está pronto para a aventura.` })
@@ -244,7 +254,7 @@ export default function OnboardingPage() {
             <div className="text-center space-y-4">
               <div className="inline-flex items-center rounded-full border border-primary/30 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Passo 3 de 4</div>
               <h1 className="text-4xl font-display font-black tracking-tighter">Sua Identidade</h1>
-              <p className="text-xl font-heading italic text-muted-foreground">Escolha sua raça e classe oficial do manual.</p>
+              <p className="text-xl font-heading italic text-muted-foreground">Escolha sua raça, classe e imagem oficial.</p>
             </div>
             
             <Card className="bg-card/30 border-white/5 backdrop-blur-md">
@@ -287,6 +297,23 @@ export default function OnboardingPage() {
                         </Select>
                       </div>
                     </div>
+                    <div className="space-y-2">
+                      <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">URL do Retrato</Label>
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder="Link da imagem..." 
+                          value={characterData.photoURL}
+                          onChange={e => setCharacterData({...characterData, photoURL: e.target.value})}
+                        />
+                        <div className="h-10 w-10 shrink-0 bg-primary/20 border border-primary/30 rounded-md flex items-center justify-center overflow-hidden">
+                          {characterData.photoURL ? (
+                            <img src={characterData.photoURL} className="w-full h-full object-cover" />
+                          ) : (
+                            <Camera className="h-4 w-4 text-primary" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-4">
                     <div className="p-6 rounded-2xl bg-primary/5 border border-primary/20 space-y-3">
@@ -295,9 +322,10 @@ export default function OnboardingPage() {
                          Como um(a) {DND_RACES.find(r => r.id === characterData.race)?.name} {DND_CLASSES.find(c => c.id === characterData.class)?.name}, você começa no Nível 1 com as habilidades básicas do SRD. O Oráculo guiará suas rolagens de atributos em breve.
                        </p>
                     </div>
-                    <Button variant="outline" className="w-full h-14 border-dashed border-primary/30 text-primary">
-                      <PlusCircle className="mr-2 h-5 w-5" /> Adicionar Retrato Oficial
-                    </Button>
+                    <div className="p-6 border-2 border-dashed border-primary/20 rounded-2xl text-center">
+                       <p className="text-[10px] uppercase font-bold text-muted-foreground opacity-50">Dica Arcana</p>
+                       <p className="text-xs italic text-muted-foreground">"Um herói sem rosto é uma lenda esquecida. Adicione uma imagem para ser reconhecido na Mesa Viva."</p>
+                    </div>
                   </div>
                 </div>
               </CardContent>

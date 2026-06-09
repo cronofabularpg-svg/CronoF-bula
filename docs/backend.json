@@ -102,6 +102,7 @@
         "maxHp": { "type": "number" },
         "ac": { "type": "number" },
         "initiative": { "type": "number" },
+        "photoURL": { "type": "string" },
         "stats": {
           "type": "object",
           "properties": {

@@ -5,14 +5,15 @@ import * as React from "react"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Shield, Sword, Heart, Zap, Sparkles, ChevronRight, Dices, Ghost } from "lucide-react"
+import { Shield, Sword, Heart, Zap, Sparkles, ChevronRight, Dices, Ghost, Maximize2 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 
 const MOCK_PARTICIPANTS = [
-  { id: '1', name: 'Gob', hp: 22, maxHp: 30, ac: 16, zone: 'Meio', type: 'player', color: 'primary' },
-  { id: '2', name: 'Mira', hp: 45, maxHp: 45, ac: 18, zone: 'Frente', type: 'player', color: 'primary' },
-  { id: '3', name: 'Cultista A', hp: 12, maxHp: 25, ac: 14, zone: 'Próximo', type: 'enemy', color: 'destructive' },
-  { id: '4', name: 'Líder do Culto', hp: 80, maxHp: 100, ac: 17, zone: 'Distante', type: 'enemy', color: 'destructive' },
+  { id: '1', name: 'Gob', hp: 22, maxHp: 30, ac: 16, zone: 'Meio', type: 'player', color: 'primary', photoURL: 'https://picsum.photos/seed/goblin/400/300' },
+  { id: '2', name: 'Mira', hp: 45, maxHp: 45, ac: 18, zone: 'Frente', type: 'player', color: 'primary', photoURL: 'https://picsum.photos/seed/warrior/400/300' },
+  { id: '3', name: 'Cultista A', hp: 12, maxHp: 25, ac: 14, zone: 'Próximo', type: 'enemy', color: 'destructive', photoURL: 'https://picsum.photos/seed/cultist/400/300' },
+  { id: '4', name: 'Líder do Culto', hp: 80, maxHp: 100, ac: 17, zone: 'Distante', type: 'enemy', color: 'destructive', photoURL: 'https://picsum.photos/seed/leader/400/300' },
 ];
 
 export default function Combate() {
@@ -124,23 +125,35 @@ export default function Combate() {
 function CombatantCard({ participant }: { participant: any }) {
   const isEnemy = participant.type === 'enemy';
   const healthPercent = (participant.hp / participant.maxHp) * 100;
+  const portrait = participant.photoURL || `https://picsum.photos/seed/${participant.id}/400/300`;
 
   return (
     <div className={`w-72 rounded-2xl bg-card border-2 ${isEnemy ? 'border-destructive/30' : 'border-accent/30'} literary-shadow overflow-hidden flex flex-col group transition-all duration-500 hover:-translate-y-3`}>
-      <div className="relative h-48 bg-muted">
-        <img 
-          src={`https://picsum.photos/seed/${participant.id}/400/300`} 
-          alt={participant.name} 
-          className={`object-cover w-full h-full transition-all duration-700 ${healthPercent < 30 ? 'grayscale sepia brightness-50' : healthPercent < 60 ? 'grayscale brightness-75' : ''}`}
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent" />
-        <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center">
-          <span className="text-xl font-display font-bold text-white tracking-tight">{participant.name}</span>
-          <Badge className={`font-ui text-[9px] uppercase tracking-widest ${isEnemy ? 'bg-destructive/20 text-destructive border-destructive/30' : 'bg-primary/20 text-primary border-primary/30'}`}>
-            {participant.zone}
-          </Badge>
-        </div>
-      </div>
+      <Dialog>
+        <DialogTrigger asChild>
+          <div className="relative h-48 bg-muted cursor-zoom-in overflow-hidden">
+            <img 
+              src={portrait} 
+              alt={participant.name} 
+              className={`object-cover w-full h-full transition-all duration-700 group-hover:scale-110 ${healthPercent < 30 ? 'grayscale sepia brightness-50' : healthPercent < 60 ? 'grayscale brightness-75' : ''}`}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent" />
+            <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center">
+              <span className="text-xl font-display font-bold text-white tracking-tight">{participant.name}</span>
+              <Badge className={`font-ui text-[9px] uppercase tracking-widest ${isEnemy ? 'bg-destructive/20 text-destructive border-destructive/30' : 'bg-primary/20 text-primary border-primary/30'}`}>
+                {participant.zone}
+              </Badge>
+            </div>
+            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+               <Maximize2 className="h-4 w-4 text-white/50" />
+            </div>
+          </div>
+        </DialogTrigger>
+        <DialogContent className="bg-black/90 border-primary/20 p-0 overflow-hidden">
+           <img src={portrait} alt={participant.name} className="w-full h-full object-contain" />
+        </DialogContent>
+      </Dialog>
+      
       <div className="p-6 space-y-6">
         <div className="space-y-2">
           <div className="flex justify-between text-[11px] uppercase font-bold tracking-[0.2em] text-muted-foreground">

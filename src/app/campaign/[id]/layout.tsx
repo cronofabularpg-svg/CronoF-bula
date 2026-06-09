@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -28,13 +29,16 @@ import {
   Sparkles,
   Database,
   MapPin,
-  ChevronRight
+  ChevronRight,
+  Maximize2
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useParams } from "next/navigation"
 import { useUser, useFirestore, useCollection } from "@/firebase"
 import { collection, query, where } from "firebase/firestore"
 import { getCharacterTheme } from "@/lib/themes"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 
 export default function CampaignLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -52,12 +56,14 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
   }, [db, user, campaignId]);
 
   const { data: chars } = useCollection(charactersQuery);
-  const activeChar = chars?.[0];
+  const activeChar = chars?.[0] as any;
 
   const theme = React.useMemo(() => {
     if (!activeChar) return 'institutional';
     return getCharacterTheme(activeChar.class, activeChar.race);
   }, [activeChar]);
+
+  const charPhoto = activeChar?.photoURL || `https://picsum.photos/seed/${activeChar?.id || 'default'}/300/300`;
 
   const playerItems = [
     { icon: MessageSquare, label: "Mesa Viva", href: `/campaign/${campaignId}/mesa-viva` },
@@ -148,9 +154,20 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
           </SidebarContent>
           <SidebarFooter className="p-8 border-t border-primary/10 bg-black/40">
             <div className="flex items-center gap-5 group cursor-default">
-              <div className="h-12 w-12 rounded-2xl bg-primary/20 flex items-center justify-center font-display font-black text-lg text-primary border-2 border-primary/30 group-hover:scale-110 transition-transform shadow-arcane overflow-hidden">
-                {activeChar?.name?.[0] || 'G'}
-              </div>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Avatar className="h-12 w-12 rounded-2xl border-2 border-primary/30 group-hover:scale-110 transition-transform shadow-arcane cursor-zoom-in overflow-hidden">
+                    <AvatarImage src={charPhoto} className="object-cover" />
+                    <AvatarFallback className="bg-primary/20 text-primary font-display font-black text-lg">
+                      {activeChar?.name?.[0] || 'G'}
+                    </AvatarFallback>
+                  </Avatar>
+                </DialogTrigger>
+                <DialogContent className="bg-black/90 border-primary/20 p-0 overflow-hidden">
+                  <img src={charPhoto} alt={activeChar?.name} className="w-full h-full object-contain" />
+                </DialogContent>
+              </Dialog>
+              
               <div className="flex flex-col">
                 <span className="text-lg font-display font-bold tracking-tight text-primary truncate max-w-[120px]">
                   {activeChar?.name || 'Aventureiro'}
