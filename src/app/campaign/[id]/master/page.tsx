@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { 
   Check, 
   X, 
@@ -22,7 +23,10 @@ import {
   Settings,
   Database,
   User as UserIcon,
-  Play
+  Play,
+  Dices,
+  Hash,
+  Infinity
 } from "lucide-react"
 import { useFirestore, useCollection, useUser } from "@/firebase"
 import { collection, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy } from "firebase/firestore"
@@ -35,6 +39,7 @@ export default function MasterPanel() {
   const { toast } = useToast()
 
   const [newSessionTitle, setNewSessionTitle] = React.useState("")
+  const [diceMode, setDiceMode] = React.useState("flexible")
   const [isStartingSession, setIsStartingSession] = React.useState(false)
 
   // Busca personagens pendentes na campanha
@@ -81,11 +86,12 @@ export default function MasterPanel() {
       campaignId,
       title: newSessionTitle,
       status: "active",
+      diceMode: diceMode,
       createdAt: serverTimestamp()
     }).then(() => {
       setNewSessionTitle("")
       setIsStartingSession(false)
-      toast({ title: "Sessão Iniciada!", description: `"${newSessionTitle}" já está no ar na Mesa Viva.` })
+      toast({ title: "Sessão Iniciada!", description: `"${newSessionTitle}" já está no ar com política de dados: ${diceMode}.` })
     })
   }
 
@@ -153,16 +159,17 @@ export default function MasterPanel() {
         </TabsContent>
 
         <TabsContent value="sessions" className="space-y-8">
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <Card className="bg-primary/5 border-primary/20 border-dashed col-span-1 p-8 space-y-6">
+           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            <Card className="bg-primary/5 border-primary/20 border-dashed col-span-1 p-8 space-y-8">
               <div className="p-4 rounded-full bg-primary/20 text-primary w-fit mx-auto mb-2">
-                <Database className="h-8 w-8" />
+                <Play className="h-8 w-8" />
               </div>
               <div className="text-center">
                 <h4 className="font-display font-bold text-xl">Nova Sessão</h4>
-                <p className="text-sm text-muted-foreground font-heading italic">Inicie um novo capítulo da sua crônica.</p>
+                <p className="text-sm text-muted-foreground font-heading italic">Defina as leis da realidade para este capítulo.</p>
               </div>
-              <div className="space-y-4">
+              
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="session-title" className="text-[10px] uppercase font-bold tracking-widest">Título da Sessão</Label>
                   <Input 
@@ -170,15 +177,37 @@ export default function MasterPanel() {
                     placeholder="Ex: O Encontro nas Docas" 
                     value={newSessionTitle}
                     onChange={(e) => setNewSessionTitle(e.target.value)}
-                    className="bg-background/50"
+                    className="bg-background/50 h-12"
                   />
                 </div>
+
+                <div className="space-y-3">
+                   <Label className="text-[10px] uppercase font-bold tracking-widest block mb-2 text-accent">Política de Dados</Label>
+                   <RadioGroup value={diceMode} onValueChange={setDiceMode} className="grid grid-cols-1 gap-2">
+                      <Label htmlFor="mode-flexible" className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${diceMode === 'flexible' ? 'border-primary bg-primary/10' : 'border-white/5 opacity-50'}`}>
+                        <RadioGroupItem value="flexible" id="mode-flexible" className="sr-only" />
+                        <Infinity className="h-4 w-4" />
+                        <span className="text-[10px] uppercase font-bold">Livre (Escolha do Jogador)</span>
+                      </Label>
+                      <Label htmlFor="mode-virtual" className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${diceMode === 'virtual' ? 'border-primary bg-primary/10' : 'border-white/5 opacity-50'}`}>
+                        <RadioGroupItem value="virtual" id="mode-virtual" className="sr-only" />
+                        <Dices className="h-4 w-4" />
+                        <span className="text-[10px] uppercase font-bold">Apenas Virtuais</span>
+                      </Label>
+                      <Label htmlFor="mode-physical" className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${diceMode === 'physical' ? 'border-primary bg-primary/10' : 'border-white/5 opacity-50'}`}>
+                        <RadioGroupItem value="physical" id="mode-physical" className="sr-only" />
+                        <Hash className="h-4 w-4" />
+                        <span className="text-[10px] uppercase font-bold">Apenas Físicos</span>
+                      </Label>
+                   </RadioGroup>
+                </div>
+
                 <Button 
                   onClick={handleStartSession} 
                   disabled={isStartingSession || !newSessionTitle.trim()} 
-                  className="w-full rounded-full bg-primary hover:bg-primary/90 font-ui text-[11px] font-bold uppercase tracking-widest"
+                  className="w-full rounded-full bg-primary hover:bg-primary/90 font-ui text-[11px] font-bold uppercase tracking-widest h-14"
                 >
-                  <Play className="mr-2 h-4 w-4" /> Iniciar Sessão
+                  <Play className="mr-2 h-4 w-4" /> Iniciar Sessão Oficial
                 </Button>
               </div>
             </Card>
@@ -194,9 +223,16 @@ export default function MasterPanel() {
                 ) : sessions && sessions.length > 0 ? (
                   sessions.map((session: any) => (
                     <div key={session.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center hover:bg-white/10 transition-all">
-                      <div>
-                        <h5 className="font-bold">{session.title}</h5>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Status: {session.status}</p>
+                      <div className="flex gap-4 items-center">
+                        <div className="p-2 rounded-lg bg-black/20 text-accent">
+                           {session.diceMode === 'virtual' ? <Dices className="h-4 w-4" /> : session.diceMode === 'physical' ? <Hash className="h-4 w-4" /> : <Infinity className="h-4 w-4" />}
+                        </div>
+                        <div>
+                          <h5 className="font-bold">{session.title}</h5>
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
+                            Status: {session.status} • Política: {session.diceMode || 'flexible'}
+                          </p>
+                        </div>
                       </div>
                       <Badge className={session.status === 'active' ? 'bg-primary' : 'bg-muted'}>
                         {session.status === 'active' ? 'Ativa' : 'Encerrada'}

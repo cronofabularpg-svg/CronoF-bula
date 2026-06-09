@@ -37,6 +37,20 @@
       },
       "required": ["id", "name", "masterId", "status"]
     },
+    "Session": {
+      "title": "Session",
+      "description": "A specific game session within a campaign.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed"] },
+        "diceMode": { "type": "string", "enum": ["virtual", "physical", "flexible"], "default": "flexible" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campaignId", "title", "status"]
+    },
     "ApprovalRequest": {
       "title": "Approval Request",
       "description": "A pending request for the GM to approve or reject.",
@@ -158,6 +172,10 @@
     "/campaigns/{campaignId}": {
       "schema": "Campaign",
       "description": "Campaign data."
+    },
+    "/campaigns/{campaignId}/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Sessions for a campaign."
     },
     "/campaigns/{campaignId}/approval_requests/{requestId}": {
       "schema": "ApprovalRequest",

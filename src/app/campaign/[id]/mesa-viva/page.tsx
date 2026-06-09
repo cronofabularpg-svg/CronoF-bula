@@ -21,7 +21,9 @@ import {
   Zap,
   Shield,
   Eye,
-  MessageSquare
+  MessageSquare,
+  Lock,
+  Infinity
 } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { 
@@ -66,14 +68,6 @@ export default function MesaViva() {
   const userRef = React.useMemo(() => user ? doc(db, "users", user.uid) : null, [db, user])
   const { data: profile } = useDoc<any>(userRef)
 
-  React.useEffect(() => {
-    if (isDiceDialogOpen && profile?.dicePreference) {
-      if (profile.dicePreference !== 'ask') {
-        setActiveDiceTab(profile.dicePreference)
-      }
-    }
-  }, [isDiceDialogOpen, profile])
-
   // Busca a última sessão ativa
   const activeSessionQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
@@ -87,6 +81,24 @@ export default function MesaViva() {
 
   const { data: activeSessions, loading: loadingSession } = useCollection(activeSessionQuery)
   const session = activeSessions?.[0]
+
+  // Lógica de Determinação de Aba de Dados
+  React.useEffect(() => {
+    if (isDiceDialogOpen) {
+      if (session?.diceMode === 'virtual') {
+        setActiveDiceTab('virtual')
+      } else if (session?.diceMode === 'physical') {
+        setActiveDiceTab('physical')
+      } else {
+        // Modo flexível: segue a preferência do usuário
+        if (profile?.dicePreference && profile.dicePreference !== 'ask') {
+          setActiveDiceTab(profile.dicePreference)
+        } else {
+          setActiveDiceTab('virtual') // default para ask
+        }
+      }
+    }
+  }, [isDiceDialogOpen, session, profile])
 
   // Busca NPCs da campanha
   const npcsQuery = React.useMemo(() => {
@@ -145,7 +157,6 @@ export default function MesaViva() {
       await addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), messageData)
       if (!text) setInputValue('')
       
-      // Lógica de IA Mestre Avançada
       if (isSoloMode && !isMaster && (finalType === 'action' || finalType === 'speech')) {
         handleAiMasterResponse(finalContent, finalType)
       }
@@ -156,9 +167,7 @@ export default function MesaViva() {
 
   const handleAiMasterResponse = async (playerInput: string, type: 'action' | 'speech') => {
     if (!session || !campaign || !myCharacter) return
-    
     setIsAiThinking(true)
-    
     try {
       const input = {
         mode: 'narrator' as const,
@@ -190,9 +199,7 @@ export default function MesaViva() {
         visible_objects: ["Uma névoa persistente"],
         present_npcs: npcs?.map(n => ({ name: n.name })) || []
       }
-
       const aiResponse = await aiNarratorAndNpcDialogue(input as any)
-
       await addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), {
         sessionId: session.id,
         senderId: 'ai-narrator',
@@ -203,7 +210,7 @@ export default function MesaViva() {
       })
     } catch (e) {
       console.error("Erro na IA:", e)
-      toast({ variant: "destructive", title: "Erro do Oráculo", description: "A IA encontrou uma bruma mental. Tente novamente." })
+      toast({ variant: "destructive", title: "Erro do Oráculo", description: "A IA encontrou uma bruma mental." })
     } finally {
       setIsAiThinking(false)
     }
@@ -211,7 +218,6 @@ export default function MesaViva() {
 
   const handleRollDice = (isPhysical: boolean = false) => {
     if (!session || !user) return
-
     let result = 0
     let formula = diceFormula
 
@@ -226,10 +232,8 @@ export default function MesaViva() {
         const parts = formula.toLowerCase().split('d')
         const numDice = parseInt(parts[0]) || 1
         const remaining = parts[1]
-        
         let dieSize = 20
         let modifier = 0
-
         if (remaining.includes('+')) {
           const subParts = remaining.split('+')
           dieSize = parseInt(subParts[0])
@@ -241,13 +245,12 @@ export default function MesaViva() {
         } else {
           dieSize = parseInt(remaining)
         }
-
         for (let i = 0; i < numDice; i++) {
           result += Math.floor(Math.random() * dieSize) + 1
         }
         result += modifier
       } catch (e) {
-        toast({ variant: "destructive", title: "Fórmula Inválida", description: "Use o formato XdY+Z (ex: 1d20+5)" })
+        toast({ variant: "destructive", title: "Fórmula Inválida", description: "Use XdY+Z" })
         return
       }
     }
@@ -259,14 +262,12 @@ export default function MesaViva() {
       isPhysical,
       reason: rollReason
     })
-
     setIsDiceDialogOpen(false)
     setRollReason('')
     setPhysicalResult('')
   }
 
   if (loadingSession) return <div className="h-screen flex items-center justify-center italic">Sincronizando com o Arcano...</div>
-  
   if (!session) return (
     <div className="h-screen flex flex-col items-center justify-center space-y-6 text-center p-10">
       <div className="p-6 rounded-full bg-muted/20 text-muted-foreground"><MessageSquareDashed className="h-16 w-16" /></div>
@@ -301,12 +302,18 @@ export default function MesaViva() {
 
         <section className="space-y-4">
           <h3 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 flex items-center font-ui">
-            <MapPin className="mr-2 h-3 w-3" /> Localização
+            <Lock className="mr-2 h-3 w-3" /> Leis da Sessão
           </h3>
           <div className="p-5 rounded-2xl bg-card/50 border border-white/5 space-y-3">
-             <p className="text-sm font-bold text-accent">Desconhecida</p>
-             <p className="text-[11px] text-muted-foreground leading-relaxed">As brumas do tempo escondem os detalhes deste local.</p>
-             <Button variant="outline" size="sm" className="w-full text-[9px] uppercase font-bold tracking-widest h-8">Investigar</Button>
+             <div className="flex items-center gap-2">
+                <Dices className="h-4 w-4 text-accent" />
+                <p className="text-xs font-bold uppercase tracking-widest text-accent">Política de Dados</p>
+             </div>
+             <p className="text-[11px] text-muted-foreground leading-relaxed">
+               {session.diceMode === 'virtual' ? "Apenas dados virtuais permitidos nesta sessão." : 
+                session.diceMode === 'physical' ? "Apenas resultados físicos permitidos nesta sessão." : 
+                "Política flexível: rolagens físicas ou virtuais permitidas."}
+             </p>
           </div>
         </section>
 
@@ -336,7 +343,7 @@ export default function MesaViva() {
                 {session.title}
               </h2>
               <span className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
-                {isMaster ? "Você está no comando da narrativa" : "Sua lenda está sendo escrita"}
+                Sessão com política {session.diceMode || 'flexible'}
               </span>
             </div>
           </div>
@@ -363,10 +370,10 @@ export default function MesaViva() {
                 
                 <Tabs value={activeDiceTab} onValueChange={setActiveDiceTab} className="w-full mt-4">
                   <TabsList className="grid w-full grid-cols-2 bg-black/20">
-                    <TabsTrigger value="virtual" className="text-[10px] uppercase font-bold tracking-widest flex gap-2">
+                    <TabsTrigger value="virtual" disabled={session.diceMode === 'physical'} className="text-[10px] uppercase font-bold tracking-widest flex gap-2">
                       <Dices className="h-3 w-3" /> Virtual
                     </TabsTrigger>
-                    <TabsTrigger value="physical" className="text-[10px] uppercase font-bold tracking-widest flex gap-2">
+                    <TabsTrigger value="physical" disabled={session.diceMode === 'virtual'} className="text-[10px] uppercase font-bold tracking-widest flex gap-2">
                       <Hash className="h-3 w-3" /> Físico
                     </TabsTrigger>
                   </TabsList>

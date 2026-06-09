@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useToast } from "@/hooks/use-toast"
-import { Dices, Hash, Settings as SettingsIcon, Save } from "lucide-react"
+import { Dices, Hash, Settings as SettingsIcon, Save, Info } from "lucide-react"
 
 export default function GlobalSettings() {
   const { user } = useUser()
@@ -60,6 +60,13 @@ export default function GlobalSettings() {
             <CardDescription className="font-heading italic">Como você deseja realizar suas rolagens na Mesa Viva?</CardDescription>
           </CardHeader>
           <CardContent className="space-y-8">
+            <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 flex items-start gap-3">
+              <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <span className="font-bold text-foreground">Nota Arcana:</span> O Mestre da campanha pode impor uma política de dados específica (ex: apenas virtuais) para toda a sessão. Sua preferência será aplicada apenas se o Mestre permitir política flexível.
+              </p>
+            </div>
+
             <RadioGroup value={dicePref} onValueChange={setDicePref} className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Label
                 htmlFor="pref-virtual"
