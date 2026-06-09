@@ -52,6 +52,34 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "campaignId", "ownerId", "name", "status"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "A game session within a campaign.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campaignId", "title", "status"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message sent in the live table chat.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "type": { "type": "string", "enum": ["speech", "action", "narration", "dice", "off"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "sessionId", "senderId", "text", "type"]
     }
   },
   "auth": {
@@ -69,6 +97,14 @@
     "/campaigns/{campaignId}/characters/{characterId}": {
       "schema": "Character",
       "description": "Characters in a campaign."
+    },
+    "/campaigns/{campaignId}/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Sessions in a campaign."
+    },
+    "/campaigns/{campaignId}/sessions/{sessionId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages in a session."
     }
   }
 }

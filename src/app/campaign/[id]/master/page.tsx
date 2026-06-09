@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { 
   Check, 
   X, 
@@ -19,18 +21,23 @@ import {
   History,
   Settings,
   Database,
-  User as UserIcon
+  User as UserIcon,
+  Play
 } from "lucide-react"
-import { useFirestore, useCollection } from "@/firebase"
-import { collection, query, where, doc, updateDoc } from "firebase/firestore"
+import { useFirestore, useCollection, useUser } from "@/firebase"
+import { collection, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 
 export default function MasterPanel() {
   const { id: campaignId } = useParams() as { id: string }
+  const { user } = useUser()
   const db = useFirestore()
   const { toast } = useToast()
 
-  // Busca personagens pendentes na campanha real
+  const [newSessionTitle, setNewSessionTitle] = React.useState("")
+  const [isStartingSession, setIsStartingSession] = React.useState(false)
+
+  // Busca personagens pendentes na campanha
   const pendingCharsQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
     return query(
@@ -41,28 +48,45 @@ export default function MasterPanel() {
 
   const { data: pendingCharacters, loading: loadingChars } = useCollection(pendingCharsQuery)
 
+  // Busca sessões da campanha
+  const sessionsQuery = React.useMemo(() => {
+    if (!db || !campaignId) return null
+    return query(
+      collection(db, "campaigns", campaignId, "sessions"),
+      orderBy("createdAt", "desc")
+    )
+  }, [db, campaignId])
+
+  const { data: sessions, loading: loadingSessions } = useCollection(sessionsQuery)
+
   async function handleApproveCharacter(charId: string) {
     if (!db || !campaignId) return
-    try {
-      await updateDoc(doc(db, "campaigns", campaignId, "characters", charId), {
-        status: "active"
-      })
-      toast({ title: "Aprovado!", description: "O personagem agora faz parte da crônica." })
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Erro ao aprovar", description: e.message })
-    }
+    const charRef = doc(db, "campaigns", campaignId, "characters", charId)
+    updateDoc(charRef, { status: "active" })
+      .then(() => toast({ title: "Aprovado!", description: "O personagem agora faz parte da crônica." }))
   }
 
   async function handleRejectCharacter(charId: string) {
     if (!db || !campaignId) return
-    try {
-      await updateDoc(doc(db, "campaigns", campaignId, "characters", charId), {
-        status: "rejected"
-      })
-      toast({ title: "Rejeitado", description: "O herói foi arquivado." })
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Erro ao rejeitar", description: e.message })
-    }
+    const charRef = doc(db, "campaigns", campaignId, "characters", charId)
+    updateDoc(charRef, { status: "rejected" })
+      .then(() => toast({ title: "Rejeitado", description: "O herói foi arquivado." }))
+  }
+
+  async function handleStartSession() {
+    if (!db || !campaignId || !newSessionTitle.trim()) return
+    setIsStartingSession(true)
+    
+    addDoc(collection(db, "campaigns", campaignId, "sessions"), {
+      campaignId,
+      title: newSessionTitle,
+      status: "active",
+      createdAt: serverTimestamp()
+    }).then(() => {
+      setNewSessionTitle("")
+      setIsStartingSession(false)
+      toast({ title: "Sessão Iniciada!", description: `"${newSessionTitle}" já está no ar na Mesa Viva.` })
+    })
   }
 
   return (
@@ -77,11 +101,6 @@ export default function MasterPanel() {
             <p className="text-muted-foreground mt-2 font-heading text-lg italic">Validação canônica, gestão de sessões e oráculo arcano.</p>
           </div>
         </div>
-        <div className="flex gap-4">
-          <Button variant="outline" className="rounded-full px-6">
-            <Settings className="mr-2 h-4 w-4" /> Configurar Campanha
-          </Button>
-        </div>
       </header>
 
       <Tabs defaultValue="approvals" className="space-y-10">
@@ -89,7 +108,6 @@ export default function MasterPanel() {
           <TabsTrigger value="approvals" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Pendências</TabsTrigger>
           <TabsTrigger value="sessions" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Sessões</TabsTrigger>
           <TabsTrigger value="ai-config" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Memória da IA</TabsTrigger>
-          <TabsTrigger value="history" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Logs</TabsTrigger>
         </TabsList>
 
         <TabsContent value="approvals" className="space-y-10">
@@ -108,28 +126,18 @@ export default function MasterPanel() {
                       icon={<UserIcon className="h-4 w-4" />}
                       type="Personagem"
                       title={char.name}
-                      desc={`Um(a) ${char.race} ${char.class} nível ${char.level} aguarda sua bênção para entrar na cena.`}
+                      desc={`Um(a) ${char.race} ${char.class} nível ${char.level} aguarda sua bênção.`}
                       character={char.ownerId.substring(0, 6)}
-                      time="Recém-criado"
+                      time="Pendente"
                       onApprove={() => handleApproveCharacter(char.id)}
                       onReject={() => handleRejectCharacter(char.id)}
                     />
                   ))
                 ) : (
                   <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
-                    Nenhum personagem pendente.
+                    Nenhum herói aguardando no portão.
                   </div>
                 )}
-                
-                {/* Mock para outros tipos de aprovações (Fase Futura) */}
-                <ApprovalCard 
-                  icon={<Package className="h-4 w-4" />}
-                  type="Item"
-                  title="Adaga de Prata (Mock)"
-                  desc="Exemplo de solicitação de item encontrado em jornada solo."
-                  character="Demo"
-                  time="Há 1 hora"
-                />
               </div>
             </section>
 
@@ -137,15 +145,8 @@ export default function MasterPanel() {
               <h3 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-50 font-ui flex items-center">
                 <Sparkles className="mr-2 h-4 w-4" /> Sugestões da IA
               </h3>
-              <div className="space-y-4">
-                <ApprovalCard 
-                  icon={<MapPin className="h-4 w-4" />}
-                  type="Local"
-                  title="Novo Ponto: Covil do Culto"
-                  desc="A IA sugere criar este ponto no mapa após o interrogatório bem-sucedido de Halvek."
-                  isAI
-                  time="Há 10 min"
-                />
+              <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
+                A IA Mestre ainda está observando a narrativa.
               </div>
             </section>
           </div>
@@ -153,30 +154,61 @@ export default function MasterPanel() {
 
         <TabsContent value="sessions" className="space-y-8">
            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <Card className="bg-primary/5 border-primary/20 border-dashed col-span-1 flex flex-col items-center justify-center p-12 text-center group cursor-pointer hover:bg-primary/10 transition-all">
-              <div className="p-4 rounded-full bg-primary/20 text-primary mb-6 group-hover:scale-125 transition-transform">
+            <Card className="bg-primary/5 border-primary/20 border-dashed col-span-1 p-8 space-y-6">
+              <div className="p-4 rounded-full bg-primary/20 text-primary w-fit mx-auto mb-2">
                 <Database className="h-8 w-8" />
               </div>
-              <h4 className="font-display font-bold text-xl mb-2">Nova Sessão</h4>
-              <p className="text-sm text-muted-foreground font-heading italic">Defina ganchos, cenas e NPCs para o próximo encontro.</p>
-              <Button className="mt-8 rounded-full bg-primary hover:bg-primary/90 font-ui text-[11px] font-bold uppercase tracking-widest">Iniciar Planejamento</Button>
+              <div className="text-center">
+                <h4 className="font-display font-bold text-xl">Nova Sessão</h4>
+                <p className="text-sm text-muted-foreground font-heading italic">Inicie um novo capítulo da sua crônica.</p>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="session-title" className="text-[10px] uppercase font-bold tracking-widest">Título da Sessão</Label>
+                  <Input 
+                    id="session-title" 
+                    placeholder="Ex: O Encontro nas Docas" 
+                    value={newSessionTitle}
+                    onChange={(e) => setNewSessionTitle(e.target.value)}
+                    className="bg-background/50"
+                  />
+                </div>
+                <Button 
+                  onClick={handleStartSession} 
+                  disabled={isStartingSession || !newSessionTitle.trim()} 
+                  className="w-full rounded-full bg-primary hover:bg-primary/90 font-ui text-[11px] font-bold uppercase tracking-widest"
+                >
+                  <Play className="mr-2 h-4 w-4" /> Iniciar Sessão
+                </Button>
+              </div>
             </Card>
 
-            <Card className="col-span-1 xl:col-span-2 bg-card/30 border-white/5">
-              <CardHeader>
-                <CardTitle className="font-display">Próxima Recapitulação</CardTitle>
-                <CardDescription className="font-heading italic">Estado atual do mundo antes da próxima reunião.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-5 rounded-xl bg-white/5 border border-white/5 font-heading text-lg leading-relaxed text-foreground/80">
-                  "O grupo está pronto. O destino ainda é incerto, mas as peças estão no tabuleiro."
-                </div>
-                <div className="flex gap-4">
-                  <Button size="sm" variant="outline" className="rounded-full font-ui text-[10px] font-bold uppercase tracking-tighter">
-                    <History className="mr-2 h-4 w-4" /> Ver Histórico
-                  </Button>
-                </div>
-              </CardContent>
+            <Card className="col-span-1 xl:col-span-2 bg-card/30 border-white/5 p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="font-display font-bold text-2xl">Histórico de Sessões</h3>
+                <Badge variant="outline">{sessions?.length || 0} Registradas</Badge>
+              </div>
+              <div className="space-y-4">
+                {loadingSessions ? (
+                  <div className="p-8 text-center italic opacity-50">Abrindo os anais...</div>
+                ) : sessions && sessions.length > 0 ? (
+                  sessions.map((session: any) => (
+                    <div key={session.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center hover:bg-white/10 transition-all">
+                      <div>
+                        <h5 className="font-bold">{session.title}</h5>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Status: {session.status}</p>
+                      </div>
+                      <Badge className={session.status === 'active' ? 'bg-primary' : 'bg-muted'}>
+                        {session.status === 'active' ? 'Ativa' : 'Encerrada'}
+                      </Badge>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
+                    Nenhuma sessão realizada nesta campanha.
+                  </div>
+                )}
+              </div>
             </Card>
           </div>
         </TabsContent>
@@ -225,12 +257,6 @@ function ApprovalCard({
       </CardHeader>
       <CardContent className="p-6 pt-2">
         <p className="text-sm text-muted-foreground leading-relaxed font-ui">{desc}</p>
-        {character && (
-          <div className="flex items-center gap-2 mt-4">
-            <div className="h-5 w-5 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent">{character[0]}</div>
-            <p className="text-[10px] text-accent font-bold uppercase tracking-widest font-ui">ID Requerente: {character}</p>
-          </div>
-        )}
       </CardContent>
       <div className="p-6 pt-0 grid grid-cols-2 gap-4">
         <Button size="sm" variant="outline" onClick={onReject} className="border-destructive/20 text-destructive hover:bg-destructive/10 rounded-xl h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
