@@ -1,20 +1,22 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { useAuth } from '../provider';
 
-// Usuário fictício para testes
-const MOCK_USER = {
-  uid: 'demo-user-id-123',
+// Usuários fictícios para testes
+const MOCK_MASTER = {
+  uid: 'demo-master-id',
   displayName: 'Mestre Arcano (Teste)',
   email: 'mestre@cronofabula.com',
   photoURL: 'https://picsum.photos/seed/mestre/100/100',
-  emailVerified: true,
-  isAnonymous: false,
-  metadata: {},
-  providerData: [],
+} as unknown as User;
+
+const MOCK_PLAYER = {
+  uid: 'demo-player-id',
+  displayName: 'Aventureiro Gob (Teste)',
+  email: 'gob@cronofabula.com',
+  photoURL: 'https://picsum.photos/seed/goblin/100/100',
 } as unknown as User;
 
 export function useUser() {
@@ -23,11 +25,13 @@ export function useUser() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Verifica se o modo demo está ativo no localStorage
     const checkDemoMode = () => {
-      const isDemo = typeof window !== 'undefined' && localStorage.getItem('cronofabula_demo_mode') === 'true';
-      if (isDemo) {
-        setUser(MOCK_USER);
+      if (typeof window === 'undefined') return false;
+      const demoMode = localStorage.getItem('cronofabula_demo_mode');
+      const demoRole = localStorage.getItem('cronofabula_demo_role');
+
+      if (demoMode === 'true') {
+        setUser(demoRole === 'player' ? MOCK_PLAYER : MOCK_MASTER);
         setLoading(false);
         return true;
       }
@@ -37,7 +41,6 @@ export function useUser() {
     if (checkDemoMode()) return;
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      // Se não houver usuário real, tenta o modo demo novamente (caso tenha sido ativado recentemente)
       if (!user) {
         if (checkDemoMode()) return;
       }

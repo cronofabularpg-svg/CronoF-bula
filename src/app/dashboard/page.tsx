@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -11,10 +10,11 @@ import {
   ShieldCheck, 
   Compass, 
   Users, 
-  BookOpen,
+  Sparkles,
   History,
-  Clock,
-  Sparkles
+  Ghost,
+  User as UserIcon,
+  Crown
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -22,15 +22,15 @@ import { Badge } from '@/components/ui/badge';
 import { useUser, useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 
-// Campanhas fictícias para o modo demo
 const MOCK_CAMPAIGNS = [
   {
     id: 'demo-1',
     name: 'Sombras de Arvand',
     system: 'D&D 5e',
     status: 'active',
-    masterId: 'demo-user-id-123',
-    bannerImage: 'https://picsum.photos/seed/demo1/800/400',
+    masterId: 'demo-master-id',
+    bannerImage: 'https://picsum.photos/seed/cronofabula1/800/400',
+    masterName: 'Mestre Arcano',
     createdAt: new Date().toISOString()
   },
   {
@@ -38,8 +38,9 @@ const MOCK_CAMPAIGNS = [
     name: 'O Despertar do Vazio',
     system: 'Custom',
     status: 'active',
-    masterId: 'demo-user-id-123',
-    bannerImage: 'https://picsum.photos/seed/demo2/800/400',
+    masterId: 'another-master-id',
+    bannerImage: 'https://picsum.photos/seed/cronofabula2/800/400',
+    masterName: 'Dungeon Lord',
     createdAt: new Date().toISOString()
   }
 ];
@@ -48,9 +49,11 @@ export default function Dashboard() {
   const { user } = useUser();
   const db = useFirestore();
   const [isDemo, setIsDemo] = React.useState(false);
+  const [demoRole, setDemoRole] = React.useState<'master' | 'player' | null>(null);
 
   React.useEffect(() => {
     setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true');
+    setDemoRole(localStorage.getItem('cronofabula_demo_role') as any);
   }, []);
 
   const campaignsQuery = React.useMemo(() => {
@@ -64,24 +67,33 @@ export default function Dashboard() {
 
   const { data: firebaseCampaigns, loading: campaignsLoading } = useCollection(campaignsQuery);
   
-  // Combina campanhas reais e fictícias se estiver no modo demo
-  const displayCampaigns = isDemo ? MOCK_CAMPAIGNS : (firebaseCampaigns || []);
+  const displayCampaigns = isDemo 
+    ? (demoRole === 'master' ? MOCK_CAMPAIGNS : [MOCK_CAMPAIGNS[0]]) 
+    : (firebaseCampaigns || []);
+
+  const isMasterView = isDemo ? demoRole === 'master' : true;
 
   return (
     <div className="p-10 max-w-7xl mx-auto space-y-16">
       <header className="flex justify-between items-end border-b pb-10 border-white/5">
-        <div>
-          <h1 className="text-5xl font-display font-black tracking-tighter text-accent">Minhas Crônicas</h1>
-          <p className="text-muted-foreground mt-3 font-heading text-xl italic">
-            Bem-vindo de volta, {user?.displayName || 'aventureiro'}. {isDemo && "(Modo de Teste)"}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-5xl font-display font-black tracking-tighter text-accent">Minhas Crônicas</h1>
+            {isDemo && (
+              <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30 animate-pulse uppercase tracking-[0.2em] text-[10px]">
+                Modo {demoRole === 'master' ? 'Mestre' : 'Jogador'}
+              </Badge>
+            )}
+          </div>
+          <p className="text-muted-foreground font-heading text-xl italic">
+            Bem-vindo, {user?.displayName}. A mesa aguarda sua vontade.
           </p>
         </div>
         <div className="flex gap-4">
           <Button variant="outline" className="rounded-full px-8 border-white/10 hover:bg-white/5" onClick={() => {
-            if (isDemo) {
-              localStorage.removeItem('cronofabula_demo_mode');
-              window.location.href = '/login';
-            }
+            localStorage.removeItem('cronofabula_demo_mode');
+            localStorage.removeItem('cronofabula_demo_role');
+            window.location.href = '/login';
           }}>
             {isDemo ? "Sair do Teste" : <><History className="mr-2 h-4 w-4" /> Ver Histórico</>}
           </Button>
@@ -93,19 +105,10 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {isDemo && (
-        <div className="p-4 rounded-xl bg-accent/10 border border-accent/20 flex items-center gap-3 animate-pulse">
-          <Sparkles className="h-5 w-5 text-accent" />
-          <p className="text-sm font-ui text-accent-foreground font-bold uppercase tracking-widest">
-            Você está explorando o Cronofábula com dados fictícios.
-          </p>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
         <div className="xl:col-span-2 space-y-8">
           <h2 className="text-2xl font-display font-bold flex items-center">
-            <Compass className="mr-3 h-6 w-6 text-primary" /> Campanhas Ativas
+            <Compass className="mr-3 h-6 w-6 text-primary" /> {isMasterView ? 'Campanhas que Eu Mestro' : 'Minhas Jornadas'}
           </h2>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -122,15 +125,22 @@ export default function Dashboard() {
                       className="object-cover opacity-60 group-hover:opacity-80 transition-opacity"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
-                    <div className="absolute top-4 left-4">
-                      <Badge className="bg-primary text-primary-foreground font-ui uppercase tracking-widest text-[9px] px-2 py-1">
+                    <div className="absolute top-4 left-4 flex gap-2">
+                      <Badge className="bg-primary text-primary-foreground font-ui uppercase tracking-widest text-[9px]">
                         {campaign.status}
                       </Badge>
+                      {campaign.masterId === user?.uid && (
+                        <Badge className="bg-accent/20 text-accent border-accent/30 font-ui uppercase tracking-widest text-[9px]">
+                          <Crown className="mr-1 h-3 w-3" /> Mestre
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <CardHeader className="pb-4">
                     <CardTitle className="text-2xl font-display">{campaign.name}</CardTitle>
-                    <CardDescription className="font-heading italic">Mestre: Você</CardDescription>
+                    <CardDescription className="font-heading italic">
+                      Mestre: {campaign.masterId === user?.uid ? 'Você' : campaign.masterName || 'Outro Arcano'}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 pb-8">
                     <div className="flex justify-between text-sm font-ui border-b border-white/5 pb-2">
@@ -144,19 +154,27 @@ export default function Dashboard() {
                         <Play className="mr-2 h-4 w-4" /> Jogar
                       </Link>
                     </Button>
-                    <Button asChild variant="ghost" className="w-full hover:bg-white/5">
-                      <Link href={`/campaign/${campaign.id}/master`}>
-                        <ShieldCheck className="mr-2 h-4 w-4" /> Gestão
-                      </Link>
-                    </Button>
+                    {campaign.masterId === user?.uid ? (
+                      <Button asChild variant="ghost" className="w-full hover:bg-white/5">
+                        <Link href={`/campaign/${campaign.id}/master`}>
+                          <ShieldCheck className="mr-2 h-4 w-4" /> Gestão
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button asChild variant="ghost" className="w-full hover:bg-white/5">
+                        <Link href={`/campaign/${campaign.id}/ficha`}>
+                          <UserIcon className="mr-2 h-4 w-4" /> Ficha
+                        </Link>
+                      </Button>
+                    )}
                   </CardFooter>
                 </Card>
               ))
             ) : (
               <div className="col-span-2 p-20 border-2 border-dashed border-white/5 rounded-3xl text-center space-y-6">
-                <p className="text-muted-foreground font-heading italic text-lg">Nenhuma campanha encontrada. Toda lenda começa com um nome.</p>
-                <Button asChild className="rounded-full bg-primary">
-                  <Link href="/onboarding">Criar Minha Primeira Lenda</Link>
+                <p className="text-muted-foreground font-heading italic text-lg">O silêncio ecoa. Nenhuma crônica foi iniciada.</p>
+                <Button asChild className="rounded-full bg-primary px-10">
+                  <Link href="/onboarding">Fundar Minha Primeira Lenda</Link>
                 </Button>
               </div>
             )}
@@ -166,23 +184,28 @@ export default function Dashboard() {
         <div className="space-y-12">
           <section className="space-y-6">
             <h2 className="text-2xl font-display font-bold flex items-center">
-              <ScrollText className="mr-3 h-6 w-6 text-primary" /> Atividades Recentes
+              <Sparkles className="mr-3 h-6 w-6 text-primary" /> Sugestões da IA
             </h2>
-            <div className="space-y-4">
-              <p className="text-xs text-muted-foreground italic p-4 text-center">Nenhuma atividade recente registrada nos anais.</p>
+            <div className="p-6 rounded-2xl bg-primary/5 border border-primary/20 space-y-4 relative overflow-hidden">
+               <p className="text-sm font-heading italic leading-relaxed text-muted-foreground">
+                 "Um sussurro na névoa de Arvand sugere que novos aventureiros buscam sua orientação, Mestre."
+               </p>
+               <Button variant="ghost" className="text-xs uppercase font-bold tracking-widest p-0 h-auto hover:bg-transparent text-primary">
+                 Explorar Destino
+               </Button>
             </div>
           </section>
 
-          <section className="p-8 rounded-2xl bg-primary/10 border border-primary/20 space-y-6 relative overflow-hidden group">
-            <Sparkles className="absolute -top-4 -right-4 h-24 w-24 text-primary opacity-5 group-hover:scale-125 transition-transform" />
+          <section className="p-8 rounded-2xl bg-secondary/10 border border-secondary/20 space-y-6 relative overflow-hidden group">
+            <Ghost className="absolute -top-4 -right-4 h-24 w-24 text-secondary opacity-5 group-hover:scale-125 transition-transform" />
             <div className="space-y-2">
-              <h3 className="text-xl font-display font-bold">Inicie sua Própria Lenda</h3>
+              <h3 className="text-xl font-display font-bold">Jornada Solo</h3>
               <p className="text-sm text-muted-foreground font-heading italic leading-relaxed">
-                Crie um mundo persistente, convide seus jogadores e deixe a IA Mestre ajudar na narração.
+                Quer testar sua ficha ou explorar o mundo sozinho? A IA assumirá o papel de Mestre para você.
               </p>
             </div>
-            <Button asChild className="w-full bg-primary hover:bg-primary/90 literary-shadow rounded-xl">
-              <Link href="/onboarding">Criar Nova Campanha</Link>
+            <Button variant="outline" className="w-full border-secondary/30 text-secondary hover:bg-secondary/10 literary-shadow rounded-xl">
+              Iniciar Aventura Individual
             </Button>
           </section>
         </div>

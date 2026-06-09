@@ -1,10 +1,9 @@
-
 "use client"
 
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Hourglass, FlaskConical } from "lucide-react"
+import { Hourglass, ShieldCheck, User as UserIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -43,38 +42,12 @@ export default function LoginPage() {
     }
   }
 
-  async function handleGoogleSignIn() {
-    if (!auth || !db) return
-    const provider = new GoogleAuthProvider()
-    try {
-      const result = await signInWithPopup(auth, provider)
-      const user = result.user
-
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        createdAt: serverTimestamp()
-      }, { merge: true })
-
-      localStorage.removeItem("cronofabula_demo_mode")
-      router.push("/dashboard")
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Erro no Google",
-        description: error.message
-      })
-    }
-  }
-
-  // Função para login fictício de teste
-  function handleDemoLogin() {
+  function handleDemoLogin(role: 'master' | 'player') {
     localStorage.setItem("cronofabula_demo_mode", "true")
+    localStorage.setItem("cronofabula_demo_role", role)
     toast({
-      title: "Modo de Teste Ativado",
-      description: "Entrando como Mestre Arcano (Fictício)."
+      title: `Modo de Teste: ${role === 'master' ? 'Mestre' : 'Jogador'}`,
+      description: `Entrando no portal como ${role === 'master' ? 'autoridade da mesa' : 'herói da jornada'}.`
     })
     router.push("/dashboard")
   }
@@ -89,7 +62,7 @@ export default function LoginPage() {
             <Hourglass className="h-8 w-8 text-white" />
           </div>
           <h1 className="text-4xl font-display font-black tracking-tighter text-accent">Cronofábula</h1>
-          <p className="text-xl font-heading italic text-muted-foreground">Volte para a sua mesa. A crônica continua de onde parou.</p>
+          <p className="text-xl font-heading italic text-muted-foreground">O tempo é sua maior ferramenta.</p>
         </div>
 
         <Card className="bg-card/80 border-white/10 backdrop-blur-xl literary-shadow">
@@ -104,7 +77,6 @@ export default function LoginPage() {
                 <Input 
                   id="email" 
                   type="email" 
-                  required
                   placeholder="aventureiro@cronofabula.com" 
                   className="bg-background/50 border-white/10" 
                   value={email}
@@ -112,39 +84,32 @@ export default function LoginPage() {
                 />
               </div>
               <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <Label htmlFor="password" className="font-ui uppercase text-[10px] tracking-widest font-bold">Senha</Label>
-                  <Link href="#" className="text-[10px] uppercase font-bold text-accent hover:underline">Esqueci a senha</Link>
-                </div>
+                <Label htmlFor="password" title="Qualquer senha funciona no modo demo" className="font-ui uppercase text-[10px] tracking-widest font-bold">Senha</Label>
                 <Input 
                   id="password" 
                   type="password" 
-                  required
                   className="bg-background/50 border-white/10" 
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                 />
               </div>
-              <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 h-12 text-lg font-display tracking-tight mt-6">
-                {loading ? "Abrindo Portais..." : "Entrar na Jornada"}
+              <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary/90 h-12 text-lg font-display tracking-tight mt-4">
+                Entrar na Jornada
               </Button>
               
-              <div className="relative my-8">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-white/10" />
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
-                  <span className="bg-card px-3">Ou use um atalho</span>
-                </div>
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/10" /></div>
+                <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-muted-foreground"><span className="bg-card px-3">Ou Teste Agora</span></div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
-                <Button type="button" onClick={handleGoogleSignIn} variant="outline" className="border-white/10 hover:bg-white/5 h-12">
-                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" alt="Google" className="mr-2 h-4 w-4" />
-                  Google
+                <Button type="button" onClick={() => handleDemoLogin('master')} variant="outline" className="border-accent/30 text-accent hover:bg-accent/10 h-14 flex flex-col gap-1">
+                  <ShieldCheck className="h-4 w-4" />
+                  <span className="text-[9px] uppercase font-bold tracking-tighter">Sou Mestre</span>
                 </Button>
-                <Button type="button" onClick={handleDemoLogin} variant="outline" className="border-accent/30 text-accent hover:bg-accent/10 h-12 font-bold uppercase tracking-tighter text-[10px]">
-                  <FlaskConical className="mr-2 h-4 w-4" /> Acesso de Teste
+                <Button type="button" onClick={() => handleDemoLogin('player')} variant="outline" className="border-primary/30 text-primary hover:bg-primary/10 h-14 flex flex-col gap-1">
+                  <UserIcon className="h-4 w-4" />
+                  <span className="text-[9px] uppercase font-bold tracking-tighter">Sou Jogador</span>
                 </Button>
               </div>
             </CardContent>

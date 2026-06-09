@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -16,7 +15,11 @@ import {
   MessageSquareDashed, 
   Volume2, 
   Ghost,
-  Hash
+  Hash,
+  Crown,
+  Zap,
+  Shield,
+  Eye
 } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { 
@@ -45,6 +48,7 @@ export default function MesaViva() {
 
   const [inputValue, setInputValue] = React.useState('')
   const [messageType, setMessageType] = React.useState<'speech' | 'action' | 'narration'>('speech')
+  const [isSoloMode, setIsSoloMode] = React.useState(false)
   
   // Estados para o Rolador de Dados
   const [diceFormula, setDiceFormula] = React.useState('1d20')
@@ -84,7 +88,7 @@ export default function MesaViva() {
   }, [db, campaignId])
   
   const { data: campaignData } = useCollection(campaignQuery)
-  const isMaster = campaignData?.[0]?.masterId === user?.uid
+  const isMaster = campaignData?.[0]?.masterId === user?.uid || localStorage.getItem('cronofabula_demo_role') === 'master';
 
   const handleSend = (text?: string, type?: string, rollData?: any) => {
     const finalContent = text || inputValue
@@ -102,7 +106,25 @@ export default function MesaViva() {
       createdAt: serverTimestamp()
     }).then(() => {
       if (!text) setInputValue('')
+      
+      // Lógica de Jornada Solo: Se o jogador estiver sozinho e enviar uma ação, a IA responde como mestre
+      if (isSoloMode && !isMaster && (finalType === 'action' || finalType === 'speech')) {
+        simulateAiMasterResponse(finalContent)
+      }
     })
+  }
+
+  const simulateAiMasterResponse = (playerInput: string) => {
+    setTimeout(() => {
+      addDoc(collection(db, "campaigns", campaignId, "sessions", session!.id, "messages"), {
+        sessionId: session!.id,
+        senderId: 'ai-narrator',
+        senderName: 'IA Mestre',
+        text: `O destino se molda à sua vontade. Após você "${playerInput}", o ambiente reage com um presságio. Role um dado para descobrir a consequência.`,
+        type: 'narration',
+        createdAt: serverTimestamp()
+      })
+    }, 1500)
   }
 
   const handleRollDice = (isPhysical: boolean = false) => {
@@ -118,7 +140,6 @@ export default function MesaViva() {
         return
       }
     } else {
-      // Motor de busca de dados simples (ex: 1d20+5)
       try {
         const parts = formula.toLowerCase().split('d')
         const numDice = parseInt(parts[0]) || 1
@@ -162,32 +183,35 @@ export default function MesaViva() {
     setPhysicalResult('')
   }
 
-  if (loadingSession) return <div className="h-screen flex items-center justify-center italic">Localizando a mesa...</div>
+  if (loadingSession) return <div className="h-screen flex items-center justify-center italic">Sincronizando com o Arcano...</div>
+  
   if (!session) return (
     <div className="h-screen flex flex-col items-center justify-center space-y-6 text-center p-10">
-      <div className="p-6 rounded-full bg-muted/20 text-muted-foreground">
-        <MessageSquareDashed className="h-16 w-16" />
-      </div>
-      <h2 className="text-2xl font-display font-bold">Nenhuma Sessão Ativa</h2>
-      <p className="text-muted-foreground font-heading italic max-w-md">O mestre ainda não abriu os portais da Mesa Viva para este capítulo da crônica.</p>
+      <div className="p-6 rounded-full bg-muted/20 text-muted-foreground"><MessageSquareDashed className="h-16 w-16" /></div>
+      <h2 className="text-2xl font-display font-bold">Portal Fechado</h2>
+      <p className="text-muted-foreground font-heading italic max-w-md">Não há uma sessão ativa para esta crônica.</p>
       {isMaster && (
         <Button asChild className="rounded-full bg-primary px-8">
-          <a href={`/campaign/${campaignId}/master`}>Iniciar Nova Sessão</a>
+          <a href={`/campaign/${campaignId}/master`}>Iniciar Sessão Oficial</a>
         </Button>
       )}
     </div>
   )
 
   return (
-    <div className="flex h-screen mesa-viva-bg bg-fixed">
-      {/* Left Context: Participants */}
-      <div className="w-72 border-r border-white/5 bg-background/60 backdrop-blur-xl hidden lg:flex flex-col p-6 space-y-10">
+    <div className="flex h-screen mesa-viva-bg bg-fixed overflow-hidden">
+      {/* Sidebar: Contexto */}
+      <div className="w-80 border-r border-white/5 bg-background/60 backdrop-blur-xl hidden xl:flex flex-col p-6 space-y-10">
         <section className="space-y-4">
-          <h3 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 flex items-center font-ui">
-            <Users className="mr-2 h-3 w-3" /> Na Cena Atual
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 flex items-center font-ui">
+              <Users className="mr-2 h-3 w-3" /> Na Cena
+            </h3>
+            {isSoloMode && <Badge className="bg-secondary/20 text-secondary border-secondary/30 text-[8px] uppercase tracking-tighter">Solo Ativo</Badge>}
+          </div>
           <div className="space-y-4">
-             <ParticipantItem name={user?.displayName || "Você"} role="Jogador" status="Ativo" />
+             <ParticipantItem name={user?.displayName || "Você"} role={isMaster ? "Mestre" : "Jogador"} status="Ativo" />
+             {isSoloMode && <ParticipantItem name="IA Mestre" role="Narrador" status="Pensando..." isAI />}
           </div>
         </section>
 
@@ -195,81 +219,79 @@ export default function MesaViva() {
           <h3 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 flex items-center font-ui">
             <MapPin className="mr-2 h-3 w-3" /> Localização
           </h3>
-          <div className="p-4 rounded-xl bg-card/50 border border-white/5 space-y-3">
-            <div>
-              <p className="text-sm font-bold text-accent">Desconhecida</p>
-              <p className="text-[10px] text-muted-foreground leading-relaxed mt-1">
-                A neblina oculta os detalhes. O Mapa Vivo ainda está em branco.
-              </p>
-            </div>
+          <div className="p-5 rounded-2xl bg-card/50 border border-white/5 space-y-3">
+             <p className="text-sm font-bold text-accent">Desconhecida</p>
+             <p className="text-[11px] text-muted-foreground leading-relaxed">As brumas do tempo escondem os detalhes deste local.</p>
+             <Button variant="outline" size="sm" className="w-full text-[9px] uppercase font-bold tracking-widest h-8">Investigar</Button>
           </div>
         </section>
+
+        {!isMaster && (
+          <section className="mt-auto pt-6 border-t border-white/5">
+            <div className="p-4 rounded-2xl bg-secondary/10 border border-secondary/20 space-y-4">
+              <p className="text-[10px] uppercase font-bold text-secondary tracking-widest text-center">Jornada Solo</p>
+              <p className="text-[11px] text-muted-foreground italic text-center">Transforme esta sessão em uma aventura individual controlada pela IA.</p>
+              <Button 
+                onClick={() => setIsSoloMode(!isSoloMode)} 
+                variant={isSoloMode ? "default" : "outline"} 
+                className={`w-full rounded-xl transition-all ${isSoloMode ? 'bg-secondary' : 'border-secondary text-secondary hover:bg-secondary/10'}`}
+              >
+                {isSoloMode ? "Encerrar Solo" : "Ativar IA Mestre"}
+              </Button>
+            </div>
+          </section>
+        )}
       </div>
 
-      {/* Main Chat Area */}
+      {/* Área Principal: Chat */}
       <div className="flex-1 flex flex-col relative">
-        <header className="p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex justify-between items-center px-12">
+        <header className="p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex justify-between items-center px-10 shrink-0">
           <div className="flex items-center gap-6">
-            <Badge variant="outline" className="border-primary text-primary bg-primary/10 px-3 py-1 font-ui uppercase tracking-widest text-[10px]">Sessão: {session.title}</Badge>
             <div className="flex flex-col">
-              <h2 className="text-lg font-display font-bold text-accent leading-none">Mesa Viva Ativa</h2>
-              <span className="text-[10px] text-muted-foreground uppercase tracking-tighter mt-1">
-                {isMaster ? "Você é o Mestre" : "Participando como Aventureiro"}
+              <h2 className="text-xl font-display font-black text-accent flex items-center gap-2">
+                {isMaster && <Crown className="h-4 w-4 text-primary" />}
+                {session.title}
+              </h2>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
+                {isMaster ? "Você está no comando da narrativa" : "Sua lenda está sendo escrita"}
               </span>
             </div>
           </div>
           <div className="flex items-center gap-3">
+             <TooltipProvider>
+               <Tooltip>
+                 <TooltipTrigger asChild>
+                   <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary transition-colors">
+                     <Users className="h-5 w-5" />
+                   </Button>
+                 </TooltipTrigger>
+                 <TooltipContent>Membros da Campanha</TooltipContent>
+               </Tooltip>
+             </TooltipProvider>
+
              <Dialog open={isDiceDialogOpen} onOpenChange={setIsDiceDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-accent transition-colors">
                   <Dices className="h-5 w-5" />
                 </Button>
               </DialogTrigger>
               <DialogContent className="bg-card border-accent/30 literary-shadow max-w-sm">
-                <DialogHeader>
-                  <DialogTitle className="font-display text-2xl text-accent">Lançar Dados</DialogTitle>
-                </DialogHeader>
+                <DialogHeader><DialogTitle className="font-display text-2xl text-accent">Lançar Dados</DialogTitle></DialogHeader>
                 <div className="space-y-6 pt-4">
                   <div className="space-y-2">
                     <Label className="text-[10px] uppercase font-bold tracking-widest">Fórmula do Dado</Label>
                     <div className="flex gap-2">
-                      <Input 
-                        value={diceFormula} 
-                        onChange={e => setDiceFormula(e.target.value)} 
-                        placeholder="Ex: 1d20+5"
-                        className="font-code text-lg"
-                      />
+                      <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="Ex: 1d20+5" className="font-code text-lg" />
                       <Button onClick={() => handleRollDice(false)} className="bg-primary hover:bg-primary/90">Rolar</Button>
                     </div>
                   </div>
-
-                  <div className="relative py-2">
-                    <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/10" /></div>
-                    <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-muted-foreground"><span className="bg-card px-2">Ou Dado Físico</span></div>
-                  </div>
-
+                  <div className="relative py-2"><div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/10" /></div><div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-muted-foreground"><span className="bg-card px-2">Ou Dado Físico</span></div></div>
                   <div className="space-y-2">
                     <Label className="text-[10px] uppercase font-bold tracking-widest">Resultado Real</Label>
                     <div className="flex gap-2">
-                      <Input 
-                        value={physicalResult} 
-                        onChange={e => setPhysicalResult(e.target.value)} 
-                        placeholder="Total obtido"
-                        type="number"
-                        className="font-code text-lg"
-                      />
+                      <Input value={physicalResult} onChange={e => setPhysicalResult(e.target.value)} placeholder="Total" type="number" className="font-code text-lg" />
                       <Button variant="outline" onClick={() => handleRollDice(true)} className="border-accent/30 text-accent">Registrar</Button>
                     </div>
-                  </div>
-
-                  <div className="space-y-2 pt-2">
-                    <Label className="text-[10px] uppercase font-bold tracking-widest">Motivo (Opcional)</Label>
-                    <Input 
-                      value={rollReason} 
-                      onChange={e => setRollReason(e.target.value)} 
-                      placeholder="Ex: Ataque Furtivo"
-                      className="italic font-heading"
-                    />
                   </div>
                 </div>
               </DialogContent>
@@ -277,59 +299,49 @@ export default function MesaViva() {
           </div>
         </header>
 
-        <ScrollArea className="flex-1 p-8 px-12">
+        <ScrollArea className="flex-1 p-8 px-12 bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, #7B42BC 1px, transparent 1px)', backgroundSize: '100px 100px', opacity: 1 }}>
           <div className="max-w-4xl mx-auto space-y-10 pb-20">
             {loadingMessages ? (
-              <div className="text-center italic opacity-50">Lendo os pergaminhos...</div>
+              <div className="text-center italic opacity-50 animate-pulse">Consultando os anais...</div>
             ) : messages && messages.length > 0 ? (
               messages.map((msg: any) => (
                 <ChatMessage key={msg.id} msg={msg} currentUserId={user?.uid} />
               ))
             ) : (
-              <div className="text-center italic text-muted-foreground p-10 bg-white/5 rounded-2xl border border-dashed border-white/10">
-                O silêncio impera na cena. O que vocês fazem?
+              <div className="text-center italic text-muted-foreground p-12 bg-white/5 rounded-3xl border border-dashed border-white/10 flex flex-col items-center gap-4">
+                <Sparkles className="h-10 w-10 text-primary/30" />
+                <p className="max-w-xs leading-relaxed">O tempo parou. Não há nada registrado nesta cena. O que vocês fazem?</p>
               </div>
             )}
           </div>
         </ScrollArea>
 
         {/* Action Bar */}
-        <div className="p-6 px-12 border-t border-white/5 bg-background/95 backdrop-blur-md">
-          <div className="max-w-4xl mx-auto space-y-4">
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
-              <ActionShortcut 
-                icon={<Volume2 />} 
-                label="Falar" 
-                active={messageType === 'speech'} 
-                onClick={() => setMessageType('speech')} 
-              />
-              <ActionShortcut 
-                icon={<Ghost />} 
-                label="Agir" 
-                active={messageType === 'action'} 
-                onClick={() => setMessageType('action')} 
-              />
+        <div className="p-8 px-12 border-t border-white/5 bg-background/95 backdrop-blur-md shrink-0">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
+              <ActionShortcut icon={<Volume2 />} label="Falar" active={messageType === 'speech'} onClick={() => setMessageType('speech')} />
+              <ActionShortcut icon={<Ghost />} label="Agir" active={messageType === 'action'} onClick={() => setMessageType('action')} />
               {isMaster && (
-                <ActionShortcut 
-                  icon={<Sparkles />} 
-                  label="Narrar" 
-                  active={messageType === 'narration'} 
-                  onClick={() => setMessageType('narration')} 
-                />
+                <ActionShortcut icon={<Sparkles />} label="Narrar" active={messageType === 'narration'} onClick={() => setMessageType('narration')} />
               )}
+              <div className="ml-auto flex gap-2">
+                 <Button variant="ghost" size="sm" className="h-8 text-[9px] uppercase font-bold tracking-widest text-muted-foreground hover:text-primary"><Zap className="mr-1.5 h-3.5 w-3.5" /> Magia</Button>
+                 <Button variant="ghost" size="sm" className="h-8 text-[9px] uppercase font-bold tracking-widest text-muted-foreground hover:text-accent"><Shield className="mr-1.5 h-3.5 w-3.5" /> Defesa</Button>
+              </div>
             </div>
             
             <div className="relative">
               <Input 
-                placeholder={messageType === 'narration' ? "Narre a cena..." : `O que ${user?.displayName || "você"} faz?`}
-                className="pr-32 py-8 rounded-2xl bg-muted/50 border-white/10 font-ui focus:ring-primary text-lg"
+                placeholder={messageType === 'narration' ? "Narre o desenrolar do destino..." : `O que ${user?.displayName?.split(' ')[0]} faz?`}
+                className="pr-32 py-10 rounded-2xl bg-muted/30 border-white/10 font-ui focus:ring-primary text-xl literary-shadow"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-3">
-                <Button size="icon" className="h-12 w-12 rounded-xl bg-primary hover:bg-primary/90 literary-shadow" onClick={() => handleSend()}>
-                  <Send className="h-5 w-5" />
+              <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                <Button size="icon" className="h-14 w-14 rounded-xl bg-primary hover:bg-primary/90 shadow-arcane transition-all hover:scale-105" onClick={() => handleSend()}>
+                  <Send className="h-6 w-6" />
                 </Button>
               </div>
             </div>
@@ -341,20 +353,23 @@ export default function MesaViva() {
 }
 
 function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string }) {
-  const isNarrator = msg.type === 'narration';
+  const isNarrator = msg.type === 'narration' || msg.senderId === 'ai-narrator';
   const isMine = msg.senderId === currentUserId;
   const isAction = msg.type === 'action';
   const isDice = msg.type === 'dice';
 
   if (isNarrator) {
     return (
-      <div className="flex gap-6 animate-in fade-in slide-in-from-left-2 duration-700">
-        <Avatar className="h-10 w-10 rounded-xl bg-primary/20 p-2 shrink-0 border border-primary/30">
+      <div className="flex gap-8 animate-in fade-in slide-in-from-left-4 duration-700 max-w-5xl">
+        <Avatar className="h-12 w-12 rounded-2xl bg-primary/20 p-2.5 shrink-0 border border-primary/30 shadow-arcane">
           <Sparkles className="h-full w-full text-primary" />
         </Avatar>
-        <div className="space-y-2">
-          <p className="text-[10px] uppercase font-bold text-primary tracking-[0.2em] font-ui">Narrador • {msg.senderName}</p>
-          <div className="text-xl leading-relaxed text-foreground/90 font-heading italic">
+        <div className="space-y-3">
+          <p className="text-[10px] uppercase font-bold text-primary tracking-[0.3em] font-ui flex items-center gap-2">
+            Narrador Arcano • {msg.senderName}
+            {msg.senderId === 'ai-narrator' && <Badge className="h-4 bg-primary/10 text-[8px] border-primary/20">IA</Badge>}
+          </p>
+          <div className="text-2xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-5xl first-letter:font-display first-letter:mr-1 first-letter:float-left first-letter:text-accent">
             {msg.text}
           </div>
         </div>
@@ -365,63 +380,64 @@ function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string 
   if (isDice) {
     return (
       <div className={`flex gap-6 animate-in duration-500 ${isMine ? 'justify-end' : ''}`}>
-        <div className={`p-4 rounded-2xl border-2 flex items-center gap-4 literary-shadow ${
-          msg.rollData?.isPhysical ? 'bg-accent/5 border-accent/20' : 'bg-secondary/5 border-secondary/20'
+        <div className={`p-6 rounded-3xl border-2 flex items-center gap-6 literary-shadow transition-all hover:scale-105 ${
+          msg.rollData?.isPhysical ? 'bg-accent/5 border-accent/30 shadow-gold' : 'bg-secondary/5 border-secondary/30 shadow-arcane'
         }`}>
-          <div className={`p-2 rounded-lg ${msg.rollData?.isPhysical ? 'bg-accent/20 text-accent' : 'bg-secondary/20 text-secondary'}`}>
-            {msg.rollData?.isPhysical ? <Hash className="h-5 w-5" /> : <Dices className="h-5 w-5" />}
+          <div className={`p-3 rounded-xl ${msg.rollData?.isPhysical ? 'bg-accent/20 text-accent' : 'bg-secondary/20 text-secondary'}`}>
+            {msg.rollData?.isPhysical ? <Hash className="h-6 w-6" /> : <Dices className="h-6 w-6" />}
           </div>
           <div>
-            <p className="text-[9px] uppercase font-bold tracking-widest opacity-50">{msg.senderName} role {msg.rollData?.formula}</p>
-            <p className="text-2xl font-display font-black tracking-tight">{msg.rollData?.result}</p>
-            {msg.rollData?.reason && <p className="text-[10px] italic text-muted-foreground mt-1">para {msg.rollData?.reason}</p>}
+            <p className="text-[10px] uppercase font-bold tracking-widest opacity-40 mb-1">{msg.senderName} conjura {msg.rollData?.formula}</p>
+            <p className="text-4xl font-display font-black tracking-tight text-foreground">{msg.rollData?.result}</p>
+            {msg.rollData?.reason && <p className="text-[11px] italic text-muted-foreground mt-2 border-l border-white/10 pl-2">para {msg.rollData?.reason}</p>}
           </div>
-          {msg.rollData?.isPhysical && <Badge variant="outline" className="text-[8px] border-accent/30 text-accent uppercase">Físico</Badge>}
         </div>
       </div>
     )
   }
 
   return (
-    <div className={`flex gap-6 animate-in duration-500 ${isMine ? 'justify-end slide-in-from-right-4' : 'slide-in-from-left-4'}`}>
+    <div className={`flex gap-6 animate-in duration-500 ${isMine ? 'justify-end slide-in-from-right-8' : 'slide-in-from-left-8'}`}>
       {!isMine && (
-        <Avatar className="h-10 w-10 rounded-xl shrink-0 border border-white/10 bg-muted/20">
-          <AvatarFallback className="text-[10px] font-bold">{msg.senderName[0]}</AvatarFallback>
+        <Avatar className="h-12 w-12 rounded-2xl shrink-0 border border-white/10 bg-muted/20">
+          <AvatarFallback className="text-sm font-black">{msg.senderName[0]}</AvatarFallback>
         </Avatar>
       )}
-      <div className={`space-y-2 ${isMine ? 'text-right' : 'text-left'}`}>
+      <div className={`space-y-3 ${isMine ? 'text-right' : 'text-left'}`}>
         <p className={`text-[10px] uppercase font-bold tracking-[0.2em] font-ui ${isMine ? 'text-accent' : 'text-muted-foreground'}`}>
-          {msg.senderName} {isAction && "• Ação"}
+          {msg.senderName} {isAction && <span className="opacity-50 ml-2">• Ação</span>}
         </p>
-        <div className={`p-5 rounded-2xl border text-lg inline-block max-w-xl literary-shadow transition-all ${
+        <div className={`p-6 rounded-3xl border text-xl inline-block max-w-xl literary-shadow transition-all ${
           isMine 
-            ? 'bg-accent/10 border-accent/20 text-foreground' 
-            : 'bg-card/40 border-white/5 text-foreground'
-        } ${isAction ? 'italic font-heading' : 'font-ui'}`}>
+            ? 'bg-accent/10 border-accent/30 text-foreground' 
+            : 'bg-card/40 border-white/10 text-foreground'
+        } ${isAction ? 'italic font-heading bg-primary/5' : 'font-ui'}`}>
           {isAction ? `*${msg.text}*` : `"${msg.text}"`}
         </div>
       </div>
       {isMine && (
-        <Avatar className="h-10 w-10 rounded-xl shrink-0 border border-accent/30 bg-accent/20">
-          <AvatarFallback className="text-accent font-bold text-sm">{msg.senderName[0]}</AvatarFallback>
+        <Avatar className="h-12 w-12 rounded-2xl shrink-0 border border-accent/40 bg-accent/20 shadow-gold">
+          <AvatarFallback className="text-accent font-black text-sm">{msg.senderName[0]}</AvatarFallback>
         </Avatar>
       )}
     </div>
   );
 }
 
-function ParticipantItem({ name, role, status }: { name: string, role: string, status: string }) {
+function ParticipantItem({ name, role, status, isAI = false }: { name: string, role: string, status: string, isAI?: boolean }) {
   return (
-    <div className="flex items-center gap-4 group">
-      <div className="h-12 w-12 rounded-xl flex items-center justify-center font-bold text-sm transition-all group-hover:scale-110 bg-primary/20 text-primary border border-primary/30">
-        {name[0]}
+    <div className="flex items-center gap-4 group cursor-default">
+      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center font-bold text-sm transition-all group-hover:scale-110 border ${
+        isAI ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-primary/20 text-primary border-primary/30'
+      }`}>
+        {isAI ? <Sparkles className="h-5 w-5" /> : name[0]}
       </div>
       <div className="flex flex-col">
-        <span className="text-sm font-bold group-hover:text-primary transition-colors">{name}</span>
-        <div className="flex items-center gap-1.5">
+        <span className={`text-sm font-bold group-hover:text-primary transition-colors ${isAI ? 'text-secondary' : ''}`}>{name}</span>
+        <div className="flex items-center gap-2">
           <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-ui">{role}</span>
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-          <span className="text-[9px] text-accent font-medium italic font-heading">{status}</span>
+          <span className="text-[9px] text-accent font-medium italic font-heading animate-pulse">{status}</span>
         </div>
       </div>
     </div>
@@ -432,13 +448,13 @@ function ActionShortcut({ icon, label, active, onClick }: { icon: React.ReactNod
   return (
     <button 
       onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all whitespace-nowrap ${
+      className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border transition-all whitespace-nowrap group ${
         active 
-          ? 'bg-accent/20 border-accent text-accent' 
-          : 'bg-white/5 border-white/5 text-muted-foreground hover:bg-white/10 hover:border-white/20'
+          ? 'bg-primary text-white border-primary shadow-arcane' 
+          : 'bg-white/5 border-white/5 text-muted-foreground hover:bg-white/10 hover:border-white/20 hover:text-foreground'
       }`}
     >
-      <span className="[&_svg]:h-3.5 [&_svg]:w-3.5">{icon}</span>
+      <span className={`transition-transform group-hover:scale-110 [&_svg]:h-4 [&_svg]:w-4`}>{icon}</span>
       <span className="text-[10px] uppercase font-bold tracking-widest font-ui">{label}</span>
     </button>
   );
