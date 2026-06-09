@@ -17,7 +17,8 @@ import {
   User as UserIcon,
   Crown,
   BookOpen,
-  Hourglass
+  Hourglass,
+  ChevronRight
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
