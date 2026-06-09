@@ -23,7 +23,9 @@ import {
   Eye,
   MessageSquare,
   Lock,
-  Infinity
+  Infinity,
+  Hourglass,
+  Quote
 } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { 
@@ -57,18 +59,15 @@ export default function MesaViva() {
   const [isSoloMode, setIsSoloMode] = React.useState(false)
   const [isAiThinking, setIsAiThinking] = React.useState(false)
   
-  // Estados para o Rolador de Dados
   const [diceFormula, setDiceFormula] = React.useState('1d20')
   const [rollReason, setRollReason] = React.useState('')
   const [physicalResult, setPhysicalResult] = React.useState('')
   const [isDiceDialogOpen, setIsDiceDialogOpen] = React.useState(false)
   const [activeDiceTab, setActiveDiceTab] = React.useState<string>("virtual")
 
-  // Busca perfil do usuário para saber preferência de dados
   const userRef = React.useMemo(() => user ? doc(db, "users", user.uid) : null, [db, user])
   const { data: profile } = useDoc<any>(userRef)
 
-  // Busca a última sessão ativa
   const activeSessionQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
     return query(
@@ -82,33 +81,23 @@ export default function MesaViva() {
   const { data: activeSessions, loading: loadingSession } = useCollection(activeSessionQuery)
   const session = activeSessions?.[0]
 
-  // Lógica de Determinação de Aba de Dados
   React.useEffect(() => {
     if (isDiceDialogOpen) {
-      if (session?.diceMode === 'virtual') {
-        setActiveDiceTab('virtual')
-      } else if (session?.diceMode === 'physical') {
-        setActiveDiceTab('physical')
-      } else {
-        // Modo flexível: segue a preferência do usuário
-        if (profile?.dicePreference && profile.dicePreference !== 'ask') {
-          setActiveDiceTab(profile.dicePreference)
-        } else {
-          setActiveDiceTab('virtual') // default para ask
-        }
+      if (session?.diceMode === 'virtual') setActiveDiceTab('virtual')
+      else if (session?.diceMode === 'physical') setActiveDiceTab('physical')
+      else {
+        if (profile?.dicePreference && profile.dicePreference !== 'ask') setActiveDiceTab(profile.dicePreference)
+        else setActiveDiceTab('virtual')
       }
     }
   }, [isDiceDialogOpen, session, profile])
 
-  // Busca NPCs da campanha
   const npcsQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
     return query(collection(db, "campaigns", campaignId, "npcs"), where("status", "==", "alive"))
   }, [db, campaignId])
-
   const { data: npcs } = useCollection(npcsQuery)
 
-  // Busca personagens ativos
   const charactersQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
     return query(collection(db, "campaigns", campaignId, "characters"), where("status", "==", "active"))
@@ -116,7 +105,6 @@ export default function MesaViva() {
   const { data: characters } = useCollection(charactersQuery)
   const myCharacter = characters?.find(c => c.ownerId === user?.uid)
 
-  // Busca mensagens da sessão ativa
   const messagesQuery = React.useMemo(() => {
     if (!db || !campaignId || !session) return null
     return query(
@@ -124,15 +112,12 @@ export default function MesaViva() {
       orderBy("createdAt", "asc")
     )
   }, [db, campaignId, session])
-
   const { data: messages, loading: loadingMessages } = useCollection(messagesQuery)
 
-  // Busca dados da campanha para saber quem é o mestre
   const campaignQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
     return query(collection(db, "campaigns"), where("id", "==", campaignId))
   }, [db, campaignId])
-  
   const { data: campaignData } = useCollection(campaignQuery)
   const campaign = campaignData?.[0]
   const isMaster = campaign?.masterId === user?.uid || localStorage.getItem('cronofabula_demo_role') === 'master';
@@ -140,7 +125,6 @@ export default function MesaViva() {
   const handleSend = async (text?: string, type?: string, rollData?: any) => {
     const finalContent = text || inputValue
     const finalType = type || (isMaster && messageType === 'narration' ? 'narration' : messageType)
-
     if (!finalContent.trim() || !session || !user) return
 
     const messageData = {
@@ -156,13 +140,10 @@ export default function MesaViva() {
     try {
       await addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), messageData)
       if (!text) setInputValue('')
-      
       if (isSoloMode && !isMaster && (finalType === 'action' || finalType === 'speech')) {
         handleAiMasterResponse(finalContent, finalType)
       }
-    } catch (e) {
-      console.error(e)
-    }
+    } catch (e) { console.error(e) }
   }
 
   const handleAiMasterResponse = async (playerInput: string, type: 'action' | 'speech') => {
@@ -171,30 +152,10 @@ export default function MesaViva() {
     try {
       const input = {
         mode: 'narrator' as const,
-        campaign: {
-          id: campaign.id,
-          name: campaign.name,
-          tone: campaign.tone || "fantasia sombria",
-          rule_system: campaign.system || "dnd_srd"
-        },
-        session: {
-          id: session.id,
-          title: session.title,
-          status: "active"
-        },
-        scene: {
-          id: "current-scene",
-          title: "Cena em Andamento",
-          visibility: "public",
-          location: "Desconhecida"
-        },
-        active_character: {
-          id: myCharacter.id,
-          name: myCharacter.name,
-          race: myCharacter.race,
-          class: myCharacter.class,
-          known_information: ["Está explorando uma área nova."]
-        },
+        campaign: { id: campaign.id, name: campaign.name, tone: campaign.tone || "fantasia sombria", rule_system: campaign.system || "dnd_srd" },
+        session: { id: session.id, title: session.title, status: "active" },
+        scene: { id: "current-scene", title: "Cena em Andamento", visibility: "public", location: "Desconhecida" },
+        active_character: { id: myCharacter.id, name: myCharacter.name, race: myCharacter.race, class: myCharacter.class, known_information: ["Está explorando uma área nova."] },
         player_action: playerInput,
         visible_objects: ["Uma névoa persistente"],
         present_npcs: npcs?.map(n => ({ name: n.name })) || []
@@ -203,28 +164,24 @@ export default function MesaViva() {
       await addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), {
         sessionId: session.id,
         senderId: 'ai-narrator',
-        senderName: 'IA Mestre',
+        senderName: 'Oráculo Arcano',
         text: aiResponse,
         type: 'narration',
         createdAt: serverTimestamp()
       })
     } catch (e) {
-      console.error("Erro na IA:", e)
       toast({ variant: "destructive", title: "Erro do Oráculo", description: "A IA encontrou uma bruma mental." })
-    } finally {
-      setIsAiThinking(false)
-    }
+    } finally { setIsAiThinking(false) }
   }
 
   const handleRollDice = (isPhysical: boolean = false) => {
     if (!session || !user) return
     let result = 0
     let formula = diceFormula
-
     if (isPhysical) {
       result = parseInt(physicalResult)
       if (isNaN(result)) {
-        toast({ variant: "destructive", title: "Resultado Inválido", description: "Informe um número para o dado físico." })
+        toast({ variant: "destructive", title: "Resultado Inválido", description: "Informe um número." })
         return
       }
     } else {
@@ -236,45 +193,32 @@ export default function MesaViva() {
         let modifier = 0
         if (remaining.includes('+')) {
           const subParts = remaining.split('+')
-          dieSize = parseInt(subParts[0])
-          modifier = parseInt(subParts[1])
+          dieSize = parseInt(subParts[0]); modifier = parseInt(subParts[1])
         } else if (remaining.includes('-')) {
-          const subParts = remaining.split('-')
-          dieSize = parseInt(subParts[0])
-          modifier = -parseInt(subParts[1])
-        } else {
-          dieSize = parseInt(remaining)
-        }
-        for (let i = 0; i < numDice; i++) {
-          result += Math.floor(Math.random() * dieSize) + 1
-        }
+          const subParts = remaining.split('-'); dieSize = parseInt(subParts[0]); modifier = -parseInt(subParts[1])
+        } else dieSize = parseInt(remaining)
+        for (let i = 0; i < numDice; i++) result += Math.floor(Math.random() * dieSize) + 1
         result += modifier
       } catch (e) {
         toast({ variant: "destructive", title: "Fórmula Inválida", description: "Use XdY+Z" })
         return
       }
     }
-
     const rollMsg = `Rolou ${formula}${rollReason ? ` para ${rollReason}` : ''}: **${result}**`
-    handleSend(rollMsg, 'dice', {
-      formula,
-      result,
-      isPhysical,
-      reason: rollReason
-    })
-    setIsDiceDialogOpen(false)
-    setRollReason('')
-    setPhysicalResult('')
+    handleSend(rollMsg, 'dice', { formula, result, isPhysical, reason: rollReason })
+    setIsDiceDialogOpen(false); setRollReason(''); setPhysicalResult('')
   }
 
-  if (loadingSession) return <div className="h-screen flex items-center justify-center italic">Sincronizando com o Arcano...</div>
+  if (loadingSession) return <div className="h-screen flex items-center justify-center font-heading italic text-3xl opacity-40">Sincronizando com o Arcano...</div>
   if (!session) return (
-    <div className="h-screen flex flex-col items-center justify-center space-y-6 text-center p-10">
-      <div className="p-6 rounded-full bg-muted/20 text-muted-foreground"><MessageSquareDashed className="h-16 w-16" /></div>
-      <h2 className="text-2xl font-display font-bold">Portal Fechado</h2>
-      <p className="text-muted-foreground font-heading italic max-w-md">Não há uma sessão ativa para esta crônica.</p>
+    <div className="h-screen flex flex-col items-center justify-center space-y-10 text-center p-10 bg-[#050711]">
+      <div className="p-8 rounded-full bg-primary/5 border border-primary/10 text-primary opacity-30"><MessageSquareDashed className="h-24 w-24" /></div>
+      <div className="space-y-4">
+        <h2 className="text-5xl font-display font-black text-primary">Portal Fechado</h2>
+        <p className="text-2xl font-heading italic text-muted-foreground max-w-md">"O tempo parou nesta crônica. Nenhuma sessão está em curso."</p>
+      </div>
       {isMaster && (
-        <Button asChild className="rounded-full bg-primary px-8">
+        <Button asChild className="btn-ritual rounded-full px-12 h-16 text-xl shadow-arcane">
           <a href={`/campaign/${campaignId}/master`}>Iniciar Sessão Oficial</a>
         </Button>
       )}
@@ -283,33 +227,35 @@ export default function MesaViva() {
 
   return (
     <div className="flex h-screen mesa-viva-bg bg-fixed overflow-hidden">
-      <div className="w-80 border-r border-white/5 bg-background/60 backdrop-blur-xl hidden xl:flex flex-col p-6 space-y-10">
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 flex items-center font-ui">
-              <Users className="mr-2 h-3 w-3" /> Na Cena
+      {/* Sidebar de Presença - Estilo Encadernação */}
+      <div className="w-85 border-r border-primary/20 bg-[#03040A]/80 backdrop-blur-3xl hidden xl:flex flex-col p-8 space-y-12">
+        <div className="flex flex-col gap-2">
+            <h3 className="text-[10px] font-display uppercase tracking-[0.3em] text-primary opacity-60 flex items-center">
+              <Users className="mr-3 h-4 w-4" /> Em Torno da Mesa
             </h3>
-            {isSoloMode && <Badge className="bg-secondary/20 text-secondary border-secondary/30 text-[8px] uppercase tracking-tighter">Solo Ativo</Badge>}
-          </div>
-          <div className="space-y-4">
-             <ParticipantItem name={user?.displayName || "Você"} role={isMaster ? "Mestre" : (myCharacter?.class || "Aventureiro")} status="Ativo" />
-             {isSoloMode && <ParticipantItem name="IA Mestre" role="Narrador" status={isAiThinking ? "Pensando..." : "Observando"} isAI />}
+            <div className="h-px w-full bg-gradient-to-r from-primary/30 to-transparent" />
+        </div>
+
+        <section className="space-y-6">
+          <div className="space-y-6">
+             <ParticipantItem name={user?.displayName || "Você"} role={isMaster ? "Mestre Arcano" : (myCharacter?.class || "Aventureiro")} status="Ativo" />
+             {isSoloMode && <ParticipantItem name="O Oráculo" role="Narrador IA" status={isAiThinking ? "Tecendo Destino..." : "Observando"} isAI />}
              {npcs?.map(npc => (
                <ParticipantItem key={npc.id} name={npc.name} role={npc.role} status="Presente" isNPC />
              ))}
           </div>
         </section>
 
-        <section className="space-y-4">
-          <h3 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 flex items-center font-ui">
-            <Lock className="mr-2 h-3 w-3" /> Leis da Sessão
+        <section className="space-y-6 pt-10 border-t border-white/5">
+          <h3 className="text-[10px] font-display uppercase tracking-[0.3em] text-primary opacity-60 flex items-center">
+            <Lock className="mr-3 h-4 w-4" /> Leis da Sessão
           </h3>
-          <div className="p-5 rounded-2xl bg-card/50 border border-white/5 space-y-3">
-             <div className="flex items-center gap-2">
-                <Dices className="h-4 w-4 text-accent" />
-                <p className="text-xs font-bold uppercase tracking-widest text-accent">Política de Dados</p>
+          <div className="p-6 rounded-3xl bg-primary/5 border border-primary/20 space-y-4 oracle-glow">
+             <div className="flex items-center gap-3">
+                <Dices className="h-5 w-5 text-primary" />
+                <p className="text-xs font-display font-bold uppercase tracking-widest text-primary">Política de Dados</p>
              </div>
-             <p className="text-[11px] text-muted-foreground leading-relaxed">
+             <p className="text-[11px] font-heading italic text-muted-foreground leading-relaxed opacity-70">
                {session.diceMode === 'virtual' ? "Apenas dados virtuais permitidos nesta sessão." : 
                 session.diceMode === 'physical' ? "Apenas resultados físicos permitidos nesta sessão." : 
                 "Política flexível: rolagens físicas ou virtuais permitidas."}
@@ -318,94 +264,86 @@ export default function MesaViva() {
         </section>
 
         {!isMaster && (
-          <section className="mt-auto pt-6 border-t border-white/5">
-            <div className="p-4 rounded-2xl bg-secondary/10 border border-secondary/20 space-y-4">
-              <p className="text-[10px] uppercase font-bold text-secondary tracking-widest text-center">Jornada Solo</p>
-              <p className="text-[11px] text-muted-foreground italic text-center">A IA assumirá a narração e os NPCs para você.</p>
+          <section className="mt-auto pt-10 border-t border-white/5">
+            <div className="p-6 rounded-3xl bg-secondary/10 border border-secondary/20 space-y-5">
+              <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.2em] text-center">Jornada Solo</p>
+              <p className="text-[11px] text-muted-foreground italic text-center font-heading">"O Oráculo narrará as consequências de seus atos."</p>
               <Button 
                 onClick={() => setIsSoloMode(!isSoloMode)} 
-                variant={isSoloMode ? "default" : "outline"} 
-                className={`w-full rounded-xl transition-all ${isSoloMode ? 'bg-secondary' : 'border-secondary text-secondary hover:bg-secondary/10'}`}
+                className={`w-full rounded-2xl h-12 transition-all font-display text-[10px] tracking-widest ${isSoloMode ? 'btn-arcane' : 'border-secondary text-secondary hover:bg-secondary/10 border-2'}`}
               >
-                {isSoloMode ? "Encerrar Solo" : "Ativar IA Mestre"}
+                {isSoloMode ? "Dissipar Oráculo" : "Invocar Oráculo"}
               </Button>
             </div>
           </section>
         )}
       </div>
 
+      {/* Área Principal de Jogo */}
       <div className="flex-1 flex flex-col relative">
-        <header className="p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex justify-between items-center px-10 shrink-0">
+        <header className="p-8 border-b border-primary/10 bg-background/60 backdrop-blur-xl flex justify-between items-center px-12 shrink-0 z-10">
           <div className="flex items-center gap-6">
             <div className="flex flex-col">
-              <h2 className="text-xl font-display font-black text-accent flex items-center gap-2">
-                {isMaster && <Crown className="h-4 w-4 text-primary" />}
+              <h2 className="text-3xl font-display font-black text-primary flex items-center gap-3 tracking-tighter">
+                {isMaster && <ShieldCheck className="h-6 w-6 text-primary" />}
                 {session.title}
               </h2>
-              <span className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
-                Sessão com política {session.diceMode || 'flexible'}
-              </span>
+              <div className="flex items-center gap-4 mt-2">
+                 <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] font-display tracking-widest px-3 py-0.5">Sessão Ativa</Badge>
+                 <span className="text-[9px] text-muted-foreground font-display uppercase tracking-[0.2em] opacity-40">Local: Desconhecido</span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-             <TooltipProvider>
-               <Tooltip>
-                 <TooltipTrigger asChild>
-                   <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary transition-colors">
-                     <Users className="h-5 w-5" />
-                   </Button>
-                 </TooltipTrigger>
-                 <TooltipContent>Membros da Campanha</TooltipContent>
-               </Tooltip>
-             </TooltipProvider>
-
+          <div className="flex items-center gap-5">
              <Dialog open={isDiceDialogOpen} onOpenChange={setIsDiceDialogOpen}>
               <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-accent transition-colors">
-                  <Dices className="h-5 w-5" />
+                <Button className="btn-ritual rounded-2xl h-14 w-14 literary-shadow group">
+                  <Dices className="h-7 w-7 group-hover:rotate-45 transition-transform duration-500" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="bg-card border-accent/30 literary-shadow max-w-sm">
-                <DialogHeader><DialogTitle className="font-display text-2xl text-accent">Lançar Dados</DialogTitle></DialogHeader>
+              <DialogContent className="bg-card border-primary/30 literary-shadow max-w-md p-10 rounded-[2rem]">
+                <DialogHeader>
+                  <DialogTitle className="font-display text-3xl text-primary text-center">Lançar Sorte</DialogTitle>
+                </DialogHeader>
                 
-                <Tabs value={activeDiceTab} onValueChange={setActiveDiceTab} className="w-full mt-4">
-                  <TabsList className="grid w-full grid-cols-2 bg-black/20">
-                    <TabsTrigger value="virtual" disabled={session.diceMode === 'physical'} className="text-[10px] uppercase font-bold tracking-widest flex gap-2">
-                      <Dices className="h-3 w-3" /> Virtual
+                <Tabs value={activeDiceTab} onValueChange={setActiveDiceTab} className="w-full mt-8">
+                  <TabsList className="grid w-full grid-cols-2 bg-black/40 h-14 p-1.5 rounded-2xl">
+                    <TabsTrigger value="virtual" disabled={session.diceMode === 'physical'} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-black rounded-xl h-full transition-all">
+                      <Zap className="h-4 w-4" /> Virtual
                     </TabsTrigger>
-                    <TabsTrigger value="physical" disabled={session.diceMode === 'virtual'} className="text-[10px] uppercase font-bold tracking-widest flex gap-2">
-                      <Hash className="h-3 w-3" /> Físico
+                    <TabsTrigger value="physical" disabled={session.diceMode === 'virtual'} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-black rounded-xl h-full transition-all">
+                      <Hash className="h-4 w-4" /> Físico
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="virtual" className="space-y-6 pt-4 animate-in slide-in-from-left-4 duration-300">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-[10px] uppercase font-bold tracking-widest">Fórmula do Dado</Label>
-                        <div className="flex gap-2">
-                          <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="Ex: 1d20+5" className="font-code text-lg" />
-                          <Button onClick={() => handleRollDice(false)} className="bg-primary hover:bg-primary/90 px-6">Rolar</Button>
+                  <TabsContent value="virtual" className="space-y-8 pt-8 animate-in slide-in-from-left-4 duration-300">
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Fórmula Arcana</Label>
+                        <div className="flex gap-3">
+                          <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="Ex: 1d20+5" className="font-code text-2xl h-16 bg-black/20 border-primary/20 text-center" />
+                          <Button onClick={() => handleRollDice(false)} className="btn-ritual h-16 px-10">Rolar</Button>
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-[10px] uppercase font-bold tracking-widest">Motivo (Opcional)</Label>
-                        <Input value={rollReason} onChange={e => setRollReason(e.target.value)} placeholder="Ex: Atacar o Orc" className="bg-background/50" />
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Motivação (Opcional)</Label>
+                        <Input value={rollReason} onChange={e => setRollReason(e.target.value)} placeholder="Ex: Investigar o Portal" className="bg-black/20 border-white/5 h-12 italic font-heading" />
                       </div>
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="physical" className="space-y-6 pt-4 animate-in slide-in-from-right-4 duration-300">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-[10px] uppercase font-bold tracking-widest">Resultado Real</Label>
-                        <div className="flex gap-2">
-                          <Input value={physicalResult} onChange={e => setPhysicalResult(e.target.value)} placeholder="Total" type="number" className="font-code text-lg" />
-                          <Button variant="outline" onClick={() => handleRollDice(true)} className="border-accent/30 text-accent px-6">Registrar</Button>
+                  <TabsContent value="physical" className="space-y-8 pt-8 animate-in slide-in-from-right-4 duration-300">
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Resultado Real</Label>
+                        <div className="flex gap-3">
+                          <Input value={physicalResult} onChange={e => setPhysicalResult(e.target.value)} placeholder="Total" type="number" className="font-code text-3xl h-16 bg-black/20 border-primary/20 text-center" />
+                          <Button onClick={() => handleRollDice(true)} className="btn-ritual h-16 px-10">Registrar</Button>
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-[10px] uppercase font-bold tracking-widest">Motivo (Opcional)</Label>
-                        <Input value={rollReason} onChange={e => setRollReason(e.target.value)} placeholder="Ex: Teste de Percepção" className="bg-background/50" />
+                      <div className="space-y-3">
+                        <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Motivação (Opcional)</Label>
+                        <Input value={rollReason} onChange={e => setRollReason(e.target.value)} placeholder="Ex: Golpe de Espada" className="bg-black/20 border-white/5 h-12 italic font-heading" />
                       </div>
                     </div>
                   </TabsContent>
@@ -415,59 +353,68 @@ export default function MesaViva() {
           </div>
         </header>
 
-        <ScrollArea className="flex-1 p-8 px-12 bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, #7B42BC 1px, transparent 1px)', backgroundSize: '100px 100px', opacity: 1 }}>
-          <div className="max-w-4xl mx-auto space-y-10 pb-20">
+        {/* Linha do Tempo da Crônica */}
+        <ScrollArea className="flex-1 p-10 px-16 bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, rgba(123, 66, 188, 0.05) 1px, transparent 1px)', backgroundSize: '80px 80px' }}>
+          <div className="max-w-5xl mx-auto space-y-16 pb-32">
             {loadingMessages ? (
-              <div className="text-center italic opacity-50 animate-pulse">Consultando os anais...</div>
+              <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30 animate-pulse">
+                 <Hourglass className="h-12 w-12 text-primary animate-spin-slow" />
+                 <p className="font-heading italic text-2xl tracking-widest">Lendo os anais do tempo...</p>
+              </div>
             ) : messages && messages.length > 0 ? (
               messages.map((msg: any) => (
-                <ChatMessage key={msg.id} msg={msg} currentUserId={user?.uid} />
+                <OracleMessage key={msg.id} msg={msg} currentUserId={user?.uid} />
               ))
             ) : (
-              <div className="text-center italic text-muted-foreground p-12 bg-white/5 rounded-3xl border border-dashed border-white/10 flex flex-col items-center gap-4">
-                <Sparkles className="h-10 w-10 text-primary/30" />
-                <p className="max-w-xs leading-relaxed">O tempo parou. Não há nada registrado nesta cena. O que vocês fazem?</p>
+              <div className="text-center py-40 space-y-8 opacity-40">
+                <Sparkles className="h-16 w-16 text-primary/50 mx-auto" />
+                <p className="text-3xl font-heading italic max-w-md mx-auto leading-relaxed">"O tempo parou. As páginas da crônica estão em branco. O que vocês fazem?"</p>
               </div>
             )}
             {isAiThinking && (
-              <div className="flex gap-8 animate-pulse">
-                <div className="h-12 w-12 rounded-2xl bg-secondary/20 border border-secondary/30 flex items-center justify-center">
-                  <Sparkles className="h-5 w-5 text-secondary animate-spin-slow" />
+              <div className="flex gap-10 animate-pulse max-w-4xl">
+                <div className="h-16 w-16 rounded-[1.5rem] bg-secondary/10 border border-secondary/30 flex items-center justify-center oracle-glow">
+                  <Sparkles className="h-7 w-7 text-secondary animate-spin-slow" />
                 </div>
-                <div className="space-y-3">
-                  <p className="text-[10px] uppercase font-bold text-secondary tracking-widest">IA Mestre está tecendo o destino...</p>
-                  <div className="h-4 w-64 bg-secondary/10 rounded-full" />
+                <div className="space-y-4 py-2">
+                  <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.3em]">O Oráculo está tecendo o destino...</p>
+                  <div className="h-5 w-[30rem] bg-secondary/10 rounded-full" />
                 </div>
               </div>
             )}
           </div>
         </ScrollArea>
 
-        <div className="p-8 px-12 border-t border-white/5 bg-background/95 backdrop-blur-md shrink-0">
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">
-              <ActionShortcut icon={<Volume2 />} label="Falar" active={messageType === 'speech'} onClick={() => setMessageType('speech')} />
-              <ActionShortcut icon={<Ghost />} label="Agir" active={messageType === 'action'} onClick={() => setMessageType('action')} />
+        {/* Rodapé de Ação - A Mesa de Comando */}
+        <div className="p-10 px-16 border-t border-primary/10 bg-background/95 backdrop-blur-2xl shrink-0">
+          <div className="max-w-5xl mx-auto space-y-8">
+            <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-hide">
+              <RitualShortcut icon={<Volume2 />} label="Falar" active={messageType === 'speech'} onClick={() => setMessageType('speech')} />
+              <RitualShortcut icon={<Ghost />} label="Agir" active={messageType === 'action'} onClick={() => setMessageType('action')} />
               {isMaster && (
-                <ActionShortcut icon={<Sparkles />} label="Narrar" active={messageType === 'narration'} onClick={() => setMessageType('narration')} />
+                <RitualShortcut icon={<Sparkles />} label="Narrar" active={messageType === 'narration'} onClick={() => setMessageType('narration')} />
               )}
-              <div className="ml-auto flex gap-2">
-                 <Button variant="ghost" size="sm" className="h-8 text-[9px] uppercase font-bold tracking-widest text-muted-foreground hover:text-primary"><Zap className="mr-1.5 h-3.5 w-3.5" /> Magia</Button>
-                 <Button variant="ghost" size="sm" className="h-8 text-[9px] uppercase font-bold tracking-widest text-muted-foreground hover:text-accent"><Shield className="mr-1.5 h-3.5 w-3.5" /> Defesa</Button>
+              <div className="ml-auto flex gap-4">
+                 <Button variant="ghost" size="sm" className="h-10 text-[9px] font-display uppercase tracking-widest text-muted-foreground hover:text-primary transition-all">
+                   <Zap className="mr-2 h-4 w-4" /> Magia
+                 </Button>
+                 <Button variant="ghost" size="sm" className="h-10 text-[9px] font-display uppercase tracking-widest text-muted-foreground hover:text-accent transition-all">
+                   <Shield className="mr-2 h-4 w-4" /> Defesa
+                 </Button>
               </div>
             </div>
             
             <div className="relative">
               <Input 
-                placeholder={messageType === 'narration' ? "Narre o desenrolar do destino..." : `O que ${user?.displayName?.split(' ')[0]} faz?`}
-                className="pr-32 py-10 rounded-2xl bg-muted/30 border-white/10 font-ui focus:ring-primary text-xl literary-shadow"
+                placeholder={messageType === 'narration' ? "Narre o desenrolar do destino..." : `O que ${user?.displayName?.split(' ')[0]} faz nesta cena?`}
+                className="pr-36 py-14 rounded-[2rem] bg-black/40 border-primary/20 font-heading italic focus:ring-primary text-2xl literary-shadow placeholder:text-muted-foreground/30 px-10"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               />
-              <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                <Button size="icon" className="h-14 w-14 rounded-xl bg-primary hover:bg-primary/90 shadow-arcane transition-all hover:scale-105" onClick={() => handleSend()}>
-                  <Send className="h-6 w-6" />
+              <div className="absolute right-6 top-1/2 -translate-y-1/2">
+                <Button onClick={() => handleSend()} className="h-20 w-20 rounded-[1.5rem] btn-ritual shadow-arcane hover:scale-110 active:scale-95 transition-all">
+                  <Send className="h-8 w-8" />
                 </Button>
               </div>
             </div>
@@ -478,7 +425,7 @@ export default function MesaViva() {
   );
 }
 
-function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string }) {
+function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: string }) {
   const isNarrator = msg.type === 'narration' || msg.senderId === 'ai-narrator';
   const isMine = msg.senderId === currentUserId;
   const isAction = msg.type === 'action';
@@ -486,16 +433,17 @@ function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string 
 
   if (isNarrator) {
     return (
-      <div className="flex gap-8 animate-in fade-in slide-in-from-left-4 duration-700 max-w-5xl">
-        <Avatar className="h-12 w-12 rounded-2xl bg-primary/20 p-2.5 shrink-0 border border-primary/30 shadow-arcane">
-          <Sparkles className="h-full w-full text-primary" />
-        </Avatar>
-        <div className="space-y-3">
-          <p className="text-[10px] uppercase font-bold text-primary tracking-[0.3em] font-ui flex items-center gap-2">
-            Narrador Arcano • {msg.senderName}
-            {msg.senderId === 'ai-narrator' && <Badge className="h-4 bg-primary/10 text-[8px] border-primary/20">IA</Badge>}
+      <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-1000 max-w-6xl">
+        <div className="h-16 w-16 rounded-[1.5rem] bg-[#3A1F5D]/20 p-4 shrink-0 border border-[#7B4FB3]/40 shadow-arcane flex items-center justify-center group relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent animate-pulse" />
+          <Sparkles className="h-full w-full text-primary relative z-10" />
+        </div>
+        <div className="space-y-4 pt-1">
+          <p className="text-[10px] font-display uppercase font-bold text-primary tracking-[0.4em] flex items-center gap-3">
+            O Oráculo Arcano • {msg.senderName}
+            <Badge className="bg-primary/10 text-primary border border-primary/30 text-[8px] px-2 h-4 uppercase font-black">Cânone</Badge>
           </p>
-          <div className="text-2xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-5xl first-letter:font-display first-letter:mr-1 first-letter:float-left first-letter:text-accent">
+          <div className="text-3xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-6xl first-letter:font-display first-letter:mr-3 first-letter:float-left first-letter:text-[#F0D484] first-letter:drop-shadow-[0_0_15px_rgba(240,212,132,0.3)]">
             {msg.text}
           </div>
         </div>
@@ -505,17 +453,17 @@ function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string 
 
   if (isDice) {
     return (
-      <div className={`flex gap-6 animate-in duration-500 ${isMine ? 'justify-end' : ''}`}>
-        <div className={`p-6 rounded-3xl border-2 flex items-center gap-6 literary-shadow transition-all hover:scale-105 ${
-          msg.rollData?.isPhysical ? 'bg-accent/5 border-accent/30 shadow-gold' : 'bg-secondary/5 border-secondary/30 shadow-arcane'
+      <div className={`flex gap-8 animate-in duration-700 zoom-in-95 ${isMine ? 'justify-end' : ''}`}>
+        <div className={`p-8 rounded-[2.5rem] border-2 flex items-center gap-10 literary-shadow transition-all hover:scale-105 ${
+          msg.rollData?.isPhysical ? 'bg-[#C8A24A]/5 border-[#C8A24A]/40 shadow-gold' : 'bg-secondary/5 border-secondary/40 shadow-arcane'
         }`}>
-          <div className={`p-3 rounded-xl ${msg.rollData?.isPhysical ? 'bg-accent/20 text-accent' : 'bg-secondary/20 text-secondary'}`}>
-            {msg.rollData?.isPhysical ? <Hash className="h-6 w-6" /> : <Dices className="h-6 w-6" />}
+          <div className={`p-5 rounded-[1.5rem] ${msg.rollData?.isPhysical ? 'bg-[#C8A24A]/20 text-[#E3C878]' : 'bg-secondary/20 text-secondary'}`}>
+            {msg.rollData?.isPhysical ? <Hash className="h-10 w-10" /> : <Dices className="h-10 w-10" />}
           </div>
           <div>
-            <p className="text-[10px] uppercase font-bold tracking-widest opacity-40 mb-1">{msg.senderName} conjura {msg.rollData?.formula}</p>
-            <p className="text-4xl font-display font-black tracking-tight text-foreground">{msg.rollData?.result}</p>
-            {msg.rollData?.reason && <p className="text-[11px] italic text-muted-foreground mt-2 border-l border-white/10 pl-2">para {msg.rollData?.reason}</p>}
+            <p className="text-[10px] font-display uppercase font-bold tracking-[0.2em] opacity-40 mb-2">{msg.senderName} conjurou {msg.rollData?.formula}</p>
+            <p className="text-6xl font-display font-black tracking-tighter text-foreground drop-shadow-2xl">{msg.rollData?.result}</p>
+            {msg.rollData?.reason && <p className="text-sm font-heading italic text-muted-foreground mt-3 border-l-2 border-primary/20 pl-4">"Para {msg.rollData?.reason}"</p>}
           </div>
         </div>
       </div>
@@ -523,27 +471,32 @@ function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string 
   }
 
   return (
-    <div className={`flex gap-6 animate-in duration-500 ${isMine ? 'justify-end slide-in-from-right-8' : 'slide-in-from-left-8'}`}>
+    <div className={`flex gap-8 animate-in duration-500 ${isMine ? 'justify-end slide-in-from-right-8' : 'slide-in-from-left-8'}`}>
       {!isMine && (
-        <Avatar className="h-12 w-12 rounded-2xl shrink-0 border border-white/10 bg-muted/20">
-          <AvatarFallback className="text-sm font-black">{msg.senderName[0]}</AvatarFallback>
+        <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-white/5 bg-black/40 shadow-lg">
+          <AvatarFallback className="text-xl font-display font-bold bg-gradient-to-br from-white/10 to-white/5">{msg.senderName[0]}</AvatarFallback>
         </Avatar>
       )}
-      <div className={`space-y-3 ${isMine ? 'text-right' : 'text-left'}`}>
-        <p className={`text-[10px] uppercase font-bold tracking-[0.2em] font-ui ${isMine ? 'text-accent' : 'text-muted-foreground'}`}>
-          {msg.senderName} {isAction && <span className="opacity-50 ml-2">• Ação</span>}
+      <div className={`space-y-4 ${isMine ? 'text-right' : 'text-left'}`}>
+        <p className={`text-[10px] font-display uppercase font-bold tracking-[0.3em] ${isMine ? 'text-primary' : 'text-muted-foreground opacity-60'}`}>
+          {msg.senderName} {isAction && <span className="text-secondary ml-3 opacity-100">• Ação</span>}
         </p>
-        <div className={`p-6 rounded-3xl border text-xl inline-block max-w-xl literary-shadow transition-all ${
+        <div className={`p-8 rounded-[2rem] border-2 text-2xl inline-block max-w-2xl literary-shadow transition-all relative overflow-hidden ${
           isMine 
-            ? 'bg-accent/10 border-accent/30 text-foreground' 
-            : 'bg-card/40 border-white/10 text-foreground'
-        } ${isAction ? 'italic font-heading bg-primary/5' : 'font-ui'}`}>
-          {isAction ? `*${msg.text}*` : `"${msg.text}"`}
+            ? 'bg-primary/5 border-primary/30 text-foreground' 
+            : 'bg-black/40 border-white/5 text-foreground'
+        } ${isAction ? 'font-heading italic bg-secondary/5 border-secondary/20' : 'font-body font-light leading-relaxed'}`}>
+          {isAction ? <span className="flex items-center gap-3"><Zap className="h-5 w-5 text-secondary opacity-50 shrink-0" /> *{msg.text}*</span> : (
+            <span className="flex items-start gap-4">
+               {!isAction && <Quote className="h-5 w-5 text-primary/30 rotate-180 shrink-0 mt-1" />}
+               <span>"{msg.text}"</span>
+            </span>
+          )}
         </div>
       </div>
       {isMine && (
-        <Avatar className="h-12 w-12 rounded-2xl shrink-0 border border-accent/40 bg-accent/20 shadow-gold">
-          <AvatarFallback className="text-accent font-black text-sm">{msg.senderName[0]}</AvatarFallback>
+        <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-primary/40 bg-primary/10 shadow-gold">
+          <AvatarFallback className="text-primary font-display font-black text-xl">{msg.senderName[0]}</AvatarFallback>
         </Avatar>
       )}
     </div>
@@ -552,38 +505,38 @@ function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string 
 
 function ParticipantItem({ name, role, status, isAI = false, isNPC = false }: { name: string, role: string, status: string, isAI?: boolean, isNPC?: boolean }) {
   return (
-    <div className="flex items-center gap-4 group cursor-default">
-      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center font-bold text-sm transition-all group-hover:scale-110 border ${
-        isAI ? 'bg-secondary/20 text-secondary border-secondary/30' : 
-        isNPC ? 'bg-accent/20 text-accent border-accent/30' :
-        'bg-primary/20 text-primary border-primary/30'
+    <div className="flex items-center gap-5 group cursor-default p-3 rounded-2xl hover:bg-white/5 transition-all">
+      <div className={`h-14 w-14 rounded-2xl flex items-center justify-center font-display font-bold text-lg transition-all group-hover:scale-110 border-2 ${
+        isAI ? 'bg-secondary/20 text-secondary border-secondary/40 shadow-arcane' : 
+        isNPC ? 'bg-accent/20 text-accent border-accent/40 shadow-gold' :
+        'bg-primary/20 text-primary border-primary/40 shadow-arcane'
       }`}>
-        {isAI ? <Sparkles className="h-5 w-5" /> : name[0]}
+        {isAI ? <Sparkles className="h-6 w-6" /> : name[0]}
       </div>
       <div className="flex flex-col">
-        <span className={`text-sm font-bold group-hover:text-primary transition-colors ${isAI ? 'text-secondary' : isNPC ? 'text-accent' : ''}`}>{name}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-ui">{role}</span>
-          <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-          <span className={`text-[9px] font-medium italic font-heading ${status === 'Pensando...' ? 'animate-pulse text-accent' : 'text-muted-foreground'}`}>{status}</span>
+        <span className={`text-lg font-display font-bold group-hover:text-primary transition-colors ${isAI ? 'text-secondary' : isNPC ? 'text-accent' : 'text-primary'}`}>{name}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-display font-bold opacity-40">{role}</span>
+          <span className="h-1 w-1 rounded-full bg-primary/30" />
+          <span className={`text-[10px] font-heading italic font-bold ${status.includes('...') ? 'animate-pulse text-secondary' : 'text-muted-foreground opacity-30'}`}>{status}</span>
         </div>
       </div>
     </div>
   );
 }
 
-function ActionShortcut({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) {
+function RitualShortcut({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) {
   return (
     <button 
       onClick={onClick}
-      className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border transition-all whitespace-nowrap group ${
+      className={`flex items-center gap-3 px-6 py-3 rounded-2xl border-2 transition-all whitespace-nowrap group h-12 ${
         active 
-          ? 'bg-primary text-white border-primary shadow-arcane' 
-          : 'bg-white/5 border-white/5 text-muted-foreground hover:bg-white/10 hover:border-white/20 hover:text-foreground'
+          ? 'btn-ritual' 
+          : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5 hover:border-primary/30 hover:text-foreground'
       }`}
     >
-      <span className={`transition-transform group-hover:scale-110 [&_svg]:h-4 [&_svg]:w-4`}>{icon}</span>
-      <span className="text-[10px] uppercase font-bold tracking-widest font-ui">{label}</span>
+      <span className={`transition-transform group-hover:scale-125 duration-500 [&_svg]:h-4 [&_svg]:w-4`}>{icon}</span>
+      <span className="text-[10px] font-display uppercase font-black tracking-[0.2em]">{label}</span>
     </button>
   );
 }

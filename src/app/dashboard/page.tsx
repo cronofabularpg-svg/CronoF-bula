@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -14,36 +15,15 @@ import {
   History,
   Ghost,
   User as UserIcon,
-  Crown
+  Crown,
+  BookOpen,
+  Hourglass
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { useUser, useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
-
-const MOCK_CAMPAIGNS = [
-  {
-    id: 'demo-1',
-    name: 'Sombras de Arvand',
-    system: 'D&D 5e',
-    status: 'active',
-    masterId: 'demo-master-id',
-    bannerImage: 'https://picsum.photos/seed/cronofabula1/800/400',
-    masterName: 'Mestre Arcano',
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 'demo-2',
-    name: 'O Despertar do Vazio',
-    system: 'Custom',
-    status: 'active',
-    masterId: 'another-master-id',
-    bannerImage: 'https://picsum.photos/seed/cronofabula2/800/400',
-    masterName: 'Dungeon Lord',
-    createdAt: new Date().toISOString()
-  }
-];
 
 export default function Dashboard() {
   const { user } = useUser();
@@ -67,6 +47,19 @@ export default function Dashboard() {
 
   const { data: firebaseCampaigns, loading: campaignsLoading } = useCollection(campaignsQuery);
   
+  const MOCK_CAMPAIGNS = [
+    {
+      id: 'demo-1',
+      name: 'Sombras de Arvand',
+      system: 'D&D 5e',
+      status: 'active',
+      masterId: 'demo-master-id',
+      bannerImage: 'https://picsum.photos/seed/cronofabula1/800/400',
+      masterName: 'Mestre Arcano',
+      createdAt: new Date().toISOString()
+    }
+  ];
+
   const displayCampaigns = isDemo 
     ? (demoRole === 'master' ? MOCK_CAMPAIGNS : [MOCK_CAMPAIGNS[0]]) 
     : (firebaseCampaigns || []);
@@ -74,94 +67,94 @@ export default function Dashboard() {
   const isMasterView = isDemo ? demoRole === 'master' : true;
 
   return (
-    <div className="p-10 max-w-7xl mx-auto space-y-16">
-      <header className="flex justify-between items-end border-b pb-10 border-white/5">
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <h1 className="text-5xl font-display font-black tracking-tighter text-accent">Minhas Crônicas</h1>
+    <div className="p-12 max-w-7xl mx-auto space-y-20 animate-in fade-in duration-700">
+      <header className="flex justify-between items-end border-b border-primary/20 pb-12">
+        <div className="space-y-6">
+          <div className="flex items-center gap-4">
+            <h1 className="text-6xl font-display font-black tracking-tighter text-primary">Minhas Crônicas</h1>
             {isDemo && (
-              <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30 animate-pulse uppercase tracking-[0.2em] text-[10px]">
-                Modo {demoRole === 'master' ? 'Mestre' : 'Jogador'}
+              <Badge className="canon-seal animate-pulse">
+                Portal de Teste: {demoRole === 'master' ? 'Mestre' : 'Jogador'}
               </Badge>
             )}
           </div>
-          <p className="text-muted-foreground font-heading text-xl italic">
-            Bem-vindo, {user?.displayName}. A mesa aguarda sua vontade.
+          <p className="text-2xl font-heading italic text-muted-foreground max-w-xl">
+            "Bem-vindo, {user?.displayName}. Os anais do tempo aguardam seu comando."
           </p>
         </div>
-        <div className="flex gap-4">
-          <Button variant="outline" className="rounded-full px-8 border-white/10 hover:bg-white/5" onClick={() => {
+        <div className="flex gap-6">
+          <Button variant="outline" className="rounded-full px-8 border-primary/20 hover:bg-primary/5 text-xs font-display tracking-widest" onClick={() => {
             localStorage.removeItem('cronofabula_demo_mode');
             localStorage.removeItem('cronofabula_demo_role');
             window.location.href = '/login';
           }}>
-            {isDemo ? "Sair do Teste" : <><History className="mr-2 h-4 w-4" /> Ver Histórico</>}
+            {isDemo ? "Sair do Portal" : <><History className="mr-2 h-4 w-4" /> Ver Passado</>}
           </Button>
-          <Button asChild className="rounded-full px-8 bg-primary hover:bg-primary/90 literary-shadow">
+          <Button asChild className="btn-ritual rounded-full px-10 h-14 literary-shadow">
             <Link href="/onboarding">
-              <PlusCircle className="mr-2 h-4 w-4" /> Nova Campanha
+              <PlusCircle className="mr-2 h-5 w-5" /> Nova Crônica
             </Link>
           </Button>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
-        <div className="xl:col-span-2 space-y-8">
-          <h2 className="text-2xl font-display font-bold flex items-center">
-            <Compass className="mr-3 h-6 w-6 text-primary" /> {isMasterView ? 'Campanhas que Eu Mestro' : 'Minhas Jornadas'}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
+        <div className="xl:col-span-2 space-y-10">
+          <h2 className="text-3xl font-display font-bold flex items-center gap-4 text-primary">
+            <BookOpen className="h-8 w-8" /> {isMasterView ? 'Grimórios que Eu Mestro' : 'Minhas Jornadas'}
           </h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
             {campaignsLoading && !isDemo ? (
-              <div className="col-span-2 p-12 text-center text-muted-foreground italic">Consultando pergaminhos...</div>
+              <div className="col-span-2 p-20 text-center text-muted-foreground italic font-heading text-2xl opacity-40">Consultando pergaminhos...</div>
             ) : displayCampaigns.length > 0 ? (
               displayCampaigns.map((campaign: any) => (
-                <Card key={campaign.id} className="overflow-hidden bg-card/30 border-white/5 hover:border-accent/30 transition-all group literary-shadow">
-                  <div className="relative h-56 w-full bg-muted">
+                <Card key={campaign.id} className="grimoire-card group">
+                  <div className="relative h-64 w-full bg-muted overflow-hidden">
                     <Image 
                       src={campaign.bannerImage || `https://picsum.photos/seed/${campaign.id}/800/400`} 
                       alt={campaign.name} 
                       fill 
-                      className="object-cover opacity-60 group-hover:opacity-80 transition-opacity"
+                      className="object-cover opacity-40 group-hover:opacity-70 group-hover:scale-110 transition-all duration-1000"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
-                    <div className="absolute top-4 left-4 flex gap-2">
-                      <Badge className="bg-primary text-primary-foreground font-ui uppercase tracking-widest text-[9px]">
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#050711] via-transparent to-transparent" />
+                    <div className="absolute top-6 left-6 flex gap-3">
+                      <Badge className="bg-primary text-black font-display text-[9px] px-3 py-1 uppercase tracking-widest shadow-lg">
                         {campaign.status}
                       </Badge>
                       {campaign.masterId === user?.uid && (
-                        <Badge className="bg-accent/20 text-accent border-accent/30 font-ui uppercase tracking-widest text-[9px]">
-                          <Crown className="mr-1 h-3 w-3" /> Mestre
+                        <Badge className="bg-[#3A1F5D] text-primary border border-primary/30 font-display text-[9px] px-3 py-1 uppercase tracking-widest shadow-lg">
+                          <Crown className="mr-1.5 h-3 w-3" /> Mestre
                         </Badge>
                       )}
                     </div>
                   </div>
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-2xl font-display">{campaign.name}</CardTitle>
-                    <CardDescription className="font-heading italic">
+                  <CardHeader className="p-8 pb-4">
+                    <CardTitle className="text-4xl font-display tracking-tight group-hover:text-primary transition-colors">{campaign.name}</CardTitle>
+                    <CardDescription className="font-heading italic text-xl mt-2 opacity-60">
                       Mestre: {campaign.masterId === user?.uid ? 'Você' : campaign.masterName || 'Outro Arcano'}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4 pb-8">
-                    <div className="flex justify-between text-sm font-ui border-b border-white/5 pb-2">
-                      <span className="text-muted-foreground">Sistema:</span>
-                      <span className="font-bold">{campaign.system}</span>
+                  <CardContent className="px-8 pb-10 space-y-6">
+                    <div className="flex justify-between items-center text-sm font-display uppercase tracking-widest border-b border-white/5 pb-3">
+                      <span className="text-muted-foreground opacity-40">Sistema Arcano</span>
+                      <span className="text-primary font-bold">{campaign.system}</span>
                     </div>
                   </CardContent>
-                  <CardFooter className="grid grid-cols-2 gap-4 border-t border-white/5 pt-6 p-6">
-                    <Button asChild className="w-full bg-primary hover:bg-primary/90" variant="default">
+                  <CardFooter className="grid grid-cols-2 gap-6 p-8 pt-0">
+                    <Button asChild className="btn-ritual w-full h-14" variant="default">
                       <Link href={`/campaign/${campaign.id}/mesa-viva`}>
-                        <Play className="mr-2 h-4 w-4" /> Jogar
+                        <Play className="mr-2 h-4 w-4" /> Entrar
                       </Link>
                     </Button>
                     {campaign.masterId === user?.uid ? (
-                      <Button asChild variant="ghost" className="w-full hover:bg-white/5">
+                      <Button asChild variant="ghost" className="w-full h-14 border border-white/5 hover:bg-primary/5 text-xs font-display tracking-widest">
                         <Link href={`/campaign/${campaign.id}/master`}>
                           <ShieldCheck className="mr-2 h-4 w-4" /> Gestão
                         </Link>
                       </Button>
                     ) : (
-                      <Button asChild variant="ghost" className="w-full hover:bg-white/5">
+                      <Button asChild variant="ghost" className="w-full h-14 border border-white/5 hover:bg-primary/5 text-xs font-display tracking-widest">
                         <Link href={`/campaign/${campaign.id}/ficha`}>
                           <UserIcon className="mr-2 h-4 w-4" /> Ficha
                         </Link>
@@ -171,9 +164,15 @@ export default function Dashboard() {
                 </Card>
               ))
             ) : (
-              <div className="col-span-2 p-20 border-2 border-dashed border-white/5 rounded-3xl text-center space-y-6">
-                <p className="text-muted-foreground font-heading italic text-lg">O silêncio ecoa. Nenhuma crônica foi iniciada.</p>
-                <Button asChild className="rounded-full bg-primary px-10">
+              <div className="col-span-2 p-32 border-2 border-dashed border-primary/20 rounded-[2rem] text-center space-y-10 bg-primary/5">
+                <div className="p-8 rounded-full bg-primary/10 w-fit mx-auto">
+                   <Hourglass className="h-16 w-16 text-primary opacity-30" />
+                </div>
+                <div className="space-y-4">
+                  <p className="text-muted-foreground font-heading italic text-3xl">O silêncio ecoa nestas páginas. Nenhuma crônica foi iniciada.</p>
+                  <p className="text-lg text-muted-foreground/60 font-body">Todo herói precisa de um mestre. Toda lenda precisa de um começo.</p>
+                </div>
+                <Button asChild className="btn-ritual rounded-full px-16 h-16 text-xl literary-shadow">
                   <Link href="/onboarding">Fundar Minha Primeira Lenda</Link>
                 </Button>
               </div>
@@ -181,30 +180,32 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="space-y-12">
-          <section className="space-y-6">
-            <h2 className="text-2xl font-display font-bold flex items-center">
-              <Sparkles className="mr-3 h-6 w-6 text-primary" /> Sugestões da IA
+        {/* Barra Lateral Arcana */}
+        <div className="space-y-16">
+          <section className="space-y-8">
+            <h2 className="text-2xl font-display font-bold flex items-center gap-3 text-primary">
+              <Sparkles className="h-6 w-6" /> Oráculo
             </h2>
-            <div className="p-6 rounded-2xl bg-primary/5 border border-primary/20 space-y-4 relative overflow-hidden">
-               <p className="text-sm font-heading italic leading-relaxed text-muted-foreground">
-                 "Um sussurro na névoa de Arvand sugere que novos aventureiros buscam sua orientação, Mestre."
+            <div className="p-8 rounded-[2rem] bg-primary/5 border border-primary/20 space-y-6 relative overflow-hidden oracle-glow">
+               <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
+               <p className="text-xl font-heading italic leading-relaxed text-muted-foreground">
+                 "Um sussurro na névoa de Arvand sugere que novos aventureiros buscam sua orientação, Mestre. O destino é uma teia que você deve guiar."
                </p>
-               <Button variant="ghost" className="text-xs uppercase font-bold tracking-widest p-0 h-auto hover:bg-transparent text-primary">
-                 Explorar Destino
+               <Button variant="ghost" className="text-[10px] font-display uppercase tracking-widest p-0 h-auto hover:bg-transparent text-primary hover:text-accent transition-colors">
+                 Consultar Destino <ChevronRight className="ml-1 h-3 w-3" />
                </Button>
             </div>
           </section>
 
-          <section className="p-8 rounded-2xl bg-secondary/10 border border-secondary/20 space-y-6 relative overflow-hidden group">
-            <Ghost className="absolute -top-4 -right-4 h-24 w-24 text-secondary opacity-5 group-hover:scale-125 transition-transform" />
-            <div className="space-y-2">
-              <h3 className="text-xl font-display font-bold">Jornada Solo</h3>
-              <p className="text-sm text-muted-foreground font-heading italic leading-relaxed">
-                Quer testar sua ficha ou explorar o mundo sozinho? A IA assumirá o papel de Mestre para você.
+          <section className="p-10 rounded-[2rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/20 space-y-8 relative overflow-hidden group">
+            <Ghost className="absolute -top-6 -right-6 h-32 w-32 text-[#7B4FB3] opacity-5 group-hover:scale-125 group-hover:rotate-12 transition-all duration-1000" />
+            <div className="space-y-4">
+              <h3 className="text-3xl font-display font-bold text-primary">Jornada Solo</h3>
+              <p className="text-lg text-muted-foreground font-heading italic leading-relaxed opacity-70">
+                "Não aguarde pela mesa. O Oráculo pode assumir o papel de Mestre e conduzir sua própria crônica."
               </p>
             </div>
-            <Button variant="outline" className="w-full border-secondary/30 text-secondary hover:bg-secondary/10 literary-shadow rounded-xl">
+            <Button variant="outline" className="w-full border-primary/30 text-primary hover:bg-primary/10 literary-shadow rounded-2xl h-14 font-display text-[10px] tracking-widest">
               Iniciar Aventura Individual
             </Button>
           </section>
