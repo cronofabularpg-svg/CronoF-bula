@@ -5,34 +5,68 @@
 
 @layer base {
   :root {
-    --background: 221 26% 10%;
-    --foreground: 0 0% 98%;
-    --card: 221 26% 12%;
-    --card-foreground: 0 0% 98%;
-    --popover: 221 26% 10%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 268 49% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 235 49% 50%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 221 26% 20%;
-    --muted-foreground: 221 10% 70%;
-    --accent: 235 49% 50%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 221 26% 20%;
-    --input: 221 26% 20%;
-    --ring: 268 49% 50%;
-    --radius: 0.75rem;
-    --sidebar-background: 221 26% 8%;
-    --sidebar-foreground: 221 10% 90%;
-    --sidebar-primary: 268 49% 50%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 221 26% 15%;
-    --sidebar-accent-foreground: 268 49% 70%;
-    --sidebar-border: 221 26% 15%;
-    --sidebar-ring: 268 49% 50%;
+    /* Tema Claro - Pergaminho & Ouro Antigo */
+    --background: 40 56% 88%; /* #F3E7CF */
+    --foreground: 240 20% 5%; /* #101018 */
+    --card: 41 100% 95%; /* #FFF6E5 */
+    --card-foreground: 240 20% 5%;
+    --popover: 41 100% 95%;
+    --popover-foreground: 240 20% 5%;
+    --primary: 227 52% 14%; /* #111936 Midnight Blue */
+    --primary-foreground: 41 100% 95%;
+    --secondary: 266 50% 24%; /* #3A1F5D Arcane Purple */
+    --secondary-foreground: 41 100% 95%;
+    --muted: 39 45% 81%; /* #E7D6B8 Aged Paper */
+    --muted-foreground: 40 10% 40%;
+    --accent: 42 54% 54%; /* #C8A24A Antique Gold */
+    --accent-foreground: 240 20% 5%;
+    --destructive: 1 44% 51%; /* #B94A48 Danger */
+    --destructive-foreground: 0 0% 100%;
+    --border: 42 54% 54%;
+    --input: 39 45% 81%;
+    --ring: 227 52% 14%;
+    --radius: 0.625rem;
+
+    --sidebar-background: 40 56% 85%;
+    --sidebar-foreground: 227 52% 14%;
+    --sidebar-primary: 227 52% 14%;
+    --sidebar-primary-foreground: 41 100% 95%;
+    --sidebar-accent: 42 54% 54%;
+    --sidebar-accent-foreground: 240 20% 5%;
+    --sidebar-border: 42 54% 45%;
+    --sidebar-ring: 227 52% 14%;
+  }
+
+  .dark {
+    /* Tema Escuro - Noite Profunda & Roxo Arcano */
+    --background: 228 50% 6%; /* #080B18 Deep Night */
+    --foreground: 41 100% 95%; /* #FFF6E5 Faded Cream */
+    --card: 240 10% 10%; /* #17171C Graphite */
+    --card-foreground: 41 100% 95%;
+    --popover: 240 10% 10%;
+    --popover-foreground: 41 100% 95%;
+    --primary: 42 54% 54%; /* #C8A24A Antique Gold como primário no Dark */
+    --primary-foreground: 240 10% 5%;
+    --secondary: 266 50% 24%; /* #3A1F5D Arcane Purple */
+    --secondary-foreground: 41 100% 95%;
+    --muted: 227 52% 14%; /* #111936 Midnight Blue */
+    --muted-foreground: 39 45% 81%;
+    --accent: 45 66% 68%; /* #E3C878 Soft Gold */
+    --accent-foreground: 240 10% 5%;
+    --destructive: 1 44% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 310 17% 23%; /* #343044 Border Subtle */
+    --input: 227 52% 14%;
+    --ring: 42 54% 54%;
+
+    --sidebar-background: 228 50% 4%;
+    --sidebar-foreground: 41 100% 95%;
+    --sidebar-primary: 42 54% 54%;
+    --sidebar-primary-foreground: 240 10% 5%;
+    --sidebar-accent: 266 50% 24%;
+    --sidebar-accent-foreground: 41 100% 95%;
+    --sidebar-border: 266 50% 20%;
+    --sidebar-ring: 42 54% 54%;
   }
 }
 
@@ -41,26 +75,60 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body;
+    @apply bg-background text-foreground font-body antialiased;
   }
   h1, h2, h3, h4, h5, h6 {
-    @apply font-headline tracking-tight;
+    @apply font-heading tracking-tight;
   }
 }
 
+@layer components {
+  /* Botão Arcano com Gradiente e Brilho */
+  .btn-arcane {
+    @apply bg-gradient-to-br from-[#3A1F5D] to-[#111936] text-[#FFF6E5] border border-[#E3C878] shadow-[0_0_24px_rgba(58,31,93,0.35)] hover:shadow-[0_0_30px_rgba(123,79,179,0.5)] transition-all duration-300;
+  }
+
+  /* Borda Arcana para Paineis */
+  .arcane-border {
+    @apply border border-transparent bg-gradient-to-br from-card to-card bg-clip-padding relative before:absolute before:inset-0 before:-m-[1px] before:rounded-[inherit] before:bg-gradient-to-br before:from-[#3A1F5D] before:to-[#C8A24A] before:-z-10;
+  }
+
+  /* Sombra Literária */
+  .literary-shadow {
+    @apply shadow-[0_8px_24px_rgba(16,16,24,0.18)];
+  }
+
+  /* Temas de Classe e Raça */
+  [data-race-theme="goblin"] {
+    --primary: 78 51% 37%; /* #6F8F2E Goblin Slime */
+    --accent: 24 59% 40%; /* #A45A2A Goblin Rust */
+  }
+
+  [data-class-theme="wizard"] {
+    --primary: 266 50% 24%; /* Arcane Purple */
+    --accent: 42 54% 54%; /* Antique Gold */
+  }
+
+  [data-class-theme="fighter"] {
+    --primary: 225 11% 18%; /* #2A2D34 Graphite */
+    --accent: 0 49% 24%; /* #5A1F1F Deep Red */
+  }
+
+  [data-class-theme="rogue"] {
+    --primary: 210 33% 9%; /* #101820 Deep Black */
+    --accent: 266 50% 24%; /* Purple Glow */
+  }
+}
+
+/* Utilitários Extras */
 .mesa-viva-bg {
-  background: linear-gradient(180deg, rgba(18, 22, 31, 0) 0%, rgba(18, 22, 31, 0.9) 100%), 
+  background: linear-gradient(180deg, rgba(8, 11, 24, 0.4) 0%, rgba(8, 11, 24, 0.95) 100%), 
               url('https://images.unsplash.com/photo-1519751138087-5bf79df62d5b?auto=format&fit=crop&q=80&w=2070');
   background-size: cover;
   background-position: center;
 }
 
-.arcane-border {
-  border: 1px solid transparent;
-  background: linear-gradient(var(--card), var(--card)) padding-box,
-              linear-gradient(45deg, hsl(var(--primary)), hsl(var(--accent))) border-box;
-}
-
-.literary-shadow {
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-}
+.font-display { font-family: 'Cinzel', serif; }
+.font-heading { font-family: 'Cormorant Garamond', serif; }
+.font-body { font-family: 'Inter', sans-serif; }
+.font-code { font-family: 'JetBrains Mono', monospace; }
