@@ -11,7 +11,8 @@ import {
   Users, 
   BookOpen,
   History,
-  Clock
+  Clock,
+  Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -49,15 +50,17 @@ export default function Dashboard() {
     <div className="p-10 max-w-7xl mx-auto space-y-16">
       <header className="flex justify-between items-end border-b pb-10 border-white/5">
         <div>
-          <h1 className="text-5xl font-display font-black tracking-tighter">Minhas Crônicas</h1>
+          <h1 className="text-5xl font-display font-black tracking-tighter text-accent">Minhas Crônicas</h1>
           <p className="text-muted-foreground mt-3 font-heading text-xl italic">Bem-vindo de volta, aventureiro. O tempo aguarda seu comando.</p>
         </div>
         <div className="flex gap-4">
           <Button variant="outline" className="rounded-full px-8 border-white/10 hover:bg-white/5">
             <History className="mr-2 h-4 w-4" /> Ver Histórico
           </Button>
-          <Button className="rounded-full px-8 bg-primary hover:bg-primary/90 literary-shadow">
-            <PlusCircle className="mr-2 h-4 w-4" /> Nova Campanha
+          <Button asChild className="rounded-full px-8 bg-primary hover:bg-primary/90 literary-shadow">
+            <Link href="/onboarding">
+              <PlusCircle className="mr-2 h-4 w-4" /> Nova Campanha
+            </Link>
           </Button>
         </div>
       </header>
@@ -80,6 +83,7 @@ export default function Dashboard() {
                     alt={campaign.name} 
                     fill 
                     className="object-cover opacity-60 group-hover:opacity-80 transition-opacity"
+                    data-ai-hint="fantasy landscape"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
                   <div className="absolute top-4 left-4">
@@ -172,8 +176,8 @@ export default function Dashboard() {
                 Crie um mundo persistente, convide seus jogadores e deixe a IA Mestre ajudar na narração.
               </p>
             </div>
-            <Button className="w-full bg-primary hover:bg-primary/90 literary-shadow rounded-xl">
-              Criar Nova Campanha
+            <Button asChild className="w-full bg-primary hover:bg-primary/90 literary-shadow rounded-xl">
+              <Link href="/onboarding">Criar Nova Campanha</Link>
             </Button>
           </section>
         </div>
