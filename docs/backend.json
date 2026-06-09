@@ -72,43 +72,62 @@
       },
       "required": ["id", "campaignId", "name", "status"]
     },
-    "Session": {
-      "title": "Session",
-      "description": "A game session within a campaign.",
+    "Location": {
+      "title": "Location",
+      "description": "A point of interest on the Live Map.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "campaignId": { "type": "string" },
-        "title": { "type": "string" },
-        "status": { "type": "string", "enum": ["active", "completed"] },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["city", "dungeon", "forest", "mystery", "danger"] },
+        "status": { "type": "string", "enum": ["unknown", "known", "active", "locked"] },
+        "coords": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          }
+        },
+        "pointsOfInterest": { "type": "array", "items": { "type": "string" } },
+        "isSecret": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "campaignId", "title", "status"]
+      "required": ["id", "campaignId", "name", "status"]
     },
-    "Message": {
-      "title": "Message",
-      "description": "A message sent in the live table chat.",
+    "Item": {
+      "title": "Item",
+      "description": "A narrative object in the chronicle.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "sessionId": { "type": "string" },
-        "senderId": { "type": "string" },
-        "senderName": { "type": "string" },
-        "text": { "type": "string" },
-        "type": { "type": "string", "enum": ["speech", "action", "narration", "dice", "off"] },
-        "npcId": { "type": "string" },
-        "rollData": {
-          "type": "object",
-          "properties": {
-            "formula": { "type": "string" },
-            "result": { "type": "number" },
-            "isPhysical": { "type": "boolean" },
-            "reason": { "type": "string" }
-          }
-        },
+        "name": { "type": "string" },
+        "appearance": { "type": "string" },
+        "howObtained": { "type": "string" },
+        "knownProperties": { "type": "array", "items": { "type": "string" } },
+        "masterSecret": { "type": "string" },
+        "type": { "type": "string", "enum": ["weapon", "armor", "magic", "document", "tool", "misc"] },
+        "ownerId": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "status": { "type": "string", "enum": ["carried", "stored", "lost", "pending"] }
+      },
+      "required": ["id", "name", "campaignId", "status"]
+    },
+    "DiaryEntry": {
+      "title": "Diary Entry",
+      "description": "A personal note in a character's journal.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "characterId": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string", "enum": ["thought", "clue", "speech", "fact"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "sessionId", "senderId", "text", "type"]
+      "required": ["id", "characterId", "content"]
     }
   },
   "auth": {
@@ -131,13 +150,17 @@
       "schema": "NPC",
       "description": "NPCs in a campaign."
     },
-    "/campaigns/{campaignId}/sessions/{sessionId}": {
-      "schema": "Session",
-      "description": "Sessions in a campaign."
+    "/campaigns/{campaignId}/locations/{locationId}": {
+      "schema": "Location",
+      "description": "Locations on the map."
     },
-    "/campaigns/{campaignId}/sessions/{sessionId}/messages/{messageId}": {
-      "schema": "Message",
-      "description": "Messages in a session."
+    "/campaigns/{campaignId}/items/{itemId}": {
+      "schema": "Item",
+      "description": "Campaign items."
+    },
+    "/campaigns/{campaignId}/characters/{characterId}/diary/{entryId}": {
+      "schema": "DiaryEntry",
+      "description": "Journal entries for characters."
     }
   }
 }
