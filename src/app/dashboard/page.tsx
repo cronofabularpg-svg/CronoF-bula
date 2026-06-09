@@ -20,10 +20,12 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Badge } from '@/badge';
+import { Badge } from '@/components/ui/badge';
 import { useUser, useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, orderBy, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { useToast } from "@/hooks/use-toast";
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
 
 export default function Dashboard() {
   const { user } = useUser();
@@ -68,75 +70,89 @@ export default function Dashboard() {
 
   const isMasterView = isDemo ? demoRole === 'master' : true;
 
-  async function handleCreateTestCharacter() {
+  function handleCreateTestCharacter() {
     if (!db || !user) return;
     setIsCreatingTestTestChar(true);
-    try {
-      let targetCampaignId = displayCampaigns[0]?.id;
-      
-      if (!targetCampaignId || isDemo) {
-        const newCampId = doc(collection(db, 'campaigns')).id;
-        await setDoc(doc(db, 'campaigns', newCampId), {
-          id: newCampId,
-          name: "Crônica de Teste",
-          system: "D&D 5e",
-          masterId: user.uid,
-          status: "active",
-          tone: "dark",
-          createdAt: serverTimestamp()
+
+    let targetCampaignId = displayCampaigns[0]?.id;
+    const newCampId = doc(collection(db, 'campaigns')).id;
+
+    const testCampaign = {
+      id: newCampId,
+      name: "Crônica de Teste",
+      system: "D&D 5e",
+      masterId: user.uid,
+      status: "active",
+      tone: "dark",
+      createdAt: serverTimestamp()
+    };
+
+    const charId = doc(collection(db, 'campaigns', targetCampaignId || newCampId, 'characters')).id;
+    const testChar = {
+      id: charId,
+      campaignId: targetCampaignId || newCampId,
+      ownerId: user.uid,
+      name: "Valerius, o Rubro",
+      race: "Tiefling",
+      class: "Mago",
+      level: 3,
+      xp: 1250,
+      hp: 22,
+      maxHp: 30,
+      mana: 15,
+      maxMana: 20,
+      ac: 13,
+      initiative: 2,
+      hasInspiration: true,
+      exhaustion: 1,
+      gold: 150,
+      conditions: ["Bêbado", "Encantado"],
+      savingThrows: ["int", "wis"],
+      stats: {
+        str: 8,
+        dex: 14,
+        con: 14,
+        int: 18,
+        wis: 12,
+        cha: 12
+      },
+      status: "active",
+      createdAt: serverTimestamp()
+    };
+
+    if (!targetCampaignId || isDemo) {
+      setDoc(doc(db, 'campaigns', newCampId), testCampaign)
+        .catch(async (e) => {
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: `campaigns/${newCampId}`,
+            operation: 'write',
+            requestResourceData: testCampaign
+          } satisfies SecurityRuleContext));
         });
-        targetCampaignId = newCampId;
-      }
-
-      const charId = doc(collection(db, 'campaigns', targetCampaignId, 'characters')).id;
-      const testChar = {
-        id: charId,
-        campaignId: targetCampaignId,
-        ownerId: user.uid,
-        name: "Valerius, o Rubro",
-        race: "Tiefling",
-        class: "Mago",
-        level: 3,
-        xp: 1250,
-        hp: 22,
-        maxHp: 30,
-        mana: 15,
-        maxMana: 20,
-        ac: 13,
-        initiative: 2,
-        hasInspiration: true,
-        exhaustion: 1,
-        gold: 150,
-        conditions: ["Bêbado", "Encantado"],
-        savingThrows: ["int", "wis"],
-        stats: {
-          str: 8,
-          dex: 14,
-          con: 14,
-          int: 18,
-          wis: 12,
-          cha: 12
-        },
-        status: "active",
-        createdAt: serverTimestamp()
-      };
-
-      await setDoc(doc(db, 'campaigns', targetCampaignId, 'characters', charId), testChar);
-      
-      toast({ 
-        title: "Herói Evocado", 
-        description: "Valerius foi manifestado com todos os atributos, inspiração e resistência mágica." 
-      });
-      
-      if (isDemo) {
-         localStorage.removeItem('cronofabula_demo_mode');
-         window.location.reload();
-      }
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Erro na Invocação", description: e.message });
-    } finally {
-      setIsCreatingTestTestChar(false);
+      targetCampaignId = newCampId;
     }
+
+    setDoc(doc(db, 'campaigns', targetCampaignId, 'characters', charId), testChar)
+      .then(() => {
+        toast({ 
+          title: "Herói Evocado", 
+          description: "Valerius foi manifestado com todos os atributos, inspiração e resistência mágica." 
+        });
+        if (isDemo) {
+          localStorage.removeItem('cronofabula_demo_mode');
+          window.location.reload();
+        }
+      })
+      .catch(async (e) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: `campaigns/${targetCampaignId}/characters/${charId}`,
+          operation: 'write',
+          requestResourceData: testChar
+        } satisfies SecurityRuleContext));
+      })
+      .finally(() => {
+        setIsCreatingTestTestChar(false);
+      });
   }
 
   return (
