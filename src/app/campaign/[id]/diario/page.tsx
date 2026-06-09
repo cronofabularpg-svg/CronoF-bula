@@ -4,14 +4,28 @@
 import * as React from "react"
 import { useParams } from "next/navigation"
 import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where, orderBy, addDoc, serverTimestamp, doc } from "firebase/firestore"
+import { collection, query, where, orderBy, addDoc, serverTimestamp } from "firebase/firestore"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Book, Plus, Search, Calendar, Ghost, MessageSquare, Star, Trash2 } from "lucide-react"
+import { Label } from "@/components/ui/label"
+import { 
+  Book, 
+  Plus, 
+  Search, 
+  Calendar, 
+  Ghost, 
+  MessageSquare, 
+  Star, 
+  Trash2, 
+  Lock,
+  Hourglass,
+  ChevronRight
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import Link from "next/link"
 
 export default function Diario() {
   const { id: campaignId } = useParams() as { id: string }
@@ -35,11 +49,28 @@ export default function Diario() {
   const { data: chars } = useCollection(charQuery)
   const myChar = chars?.[0]
 
+  // Buscar itens para verificar posse do Diário
+  const itemsQuery = React.useMemo(() => {
+    if (!db || !myChar || !campaignId) return null
+    return query(collection(db, "campaigns", campaignId, "items"), where("ownerId", "==", user?.uid))
+  }, [db, myChar, campaignId, user])
+  const { data: items } = useCollection(itemsQuery)
+
+  // Lógica de verificação de posse do Diário (Real ou Demo)
+  const hasDiary = React.useMemo(() => {
+    if (isDemo) return true; // No modo demo o jogador começa com o item
+    if (!items) return false;
+    return items.some(item => 
+      item.name.toLowerCase().includes('diário') && 
+      item.status === 'carried'
+    );
+  }, [items, isDemo]);
+
   // Buscar entradas do diário
   const diaryQuery = React.useMemo(() => {
-    if (!db || !myChar || !campaignId) return null
+    if (!db || !myChar || !campaignId || !hasDiary) return null
     return query(collection(db, "campaigns", campaignId, "characters", myChar.id, "diary"), orderBy("createdAt", "desc"))
-  }, [db, myChar, campaignId])
+  }, [db, myChar, campaignId, hasDiary])
   const { data: entries, loading } = useCollection(diaryQuery)
 
   const displayEntries = (entries && entries.length > 0) ? entries : (isDemo ? [
@@ -62,6 +93,34 @@ export default function Diario() {
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro na Escrita", description: e.message })
     }
+  }
+
+  // Tela de Bloqueio se não tiver o item
+  if (!hasDiary) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center p-10 bg-[#080B18] text-[#FFF6E5] text-center space-y-8 animate-in fade-in duration-700">
+        <div className="relative">
+          <div className="p-8 rounded-full bg-destructive/10 border-2 border-destructive/30 animate-pulse">
+            <Lock className="h-16 w-16 text-destructive" />
+          </div>
+          <Hourglass className="absolute -bottom-2 -right-2 h-8 w-8 text-accent animate-spin-slow" />
+        </div>
+        <div className="max-w-md space-y-4">
+          <h1 className="text-4xl font-display font-black tracking-tighter">Memórias Inacessíveis</h1>
+          <p className="text-xl font-heading italic text-muted-foreground leading-relaxed">
+            "As páginas de sua jornada não estão em suas mãos. Sem o seu Diário físico, os registros do passado permanecem perdidos nas brumas do esquecimento."
+          </p>
+        </div>
+        <div className="flex gap-4">
+          <Button asChild variant="outline" className="rounded-full border-white/10 hover:bg-white/5 px-8">
+            <Link href={`/campaign/${campaignId}/inventario`}>Verificar Inventário</Link>
+          </Button>
+          <Button asChild className="rounded-full bg-primary hover:bg-primary/90 px-8">
+            <Link href={`/campaign/${campaignId}/mesa-viva`}>Voltar à Mesa</Link>
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -151,10 +210,10 @@ export default function Diario() {
                      </p>
                      <div className="flex gap-4 pt-4 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="sm" className="text-[9px] uppercase font-bold tracking-widest hover:text-primary p-0 h-auto">
-                          <MessageSquare className="mr-1.5 h-3 w-3" /> Compartilhar
+                          <MessageSquare className="mr-1.5 h-3.5 w-3.5" /> Compartilhar
                         </Button>
                         <Button variant="ghost" size="sm" className="text-[9px] uppercase font-bold tracking-widest hover:text-destructive p-0 h-auto">
-                          <Trash2 className="mr-1.5 h-3 w-3" /> Rasgar Página
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Rasgar Página
                         </Button>
                      </div>
                   </div>

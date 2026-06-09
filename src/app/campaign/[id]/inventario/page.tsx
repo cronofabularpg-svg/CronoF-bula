@@ -35,6 +35,7 @@ export default function Inventario() {
   const displayItems = (items && items.length > 0) ? items : (isDemo ? [
     { id: 'i1', name: 'Adaga de Prata', type: 'weapon', appearance: 'Uma lâmina curva com runas gravadas.', status: 'carried', knownProperties: ['Dano Mágico', 'Leve'] },
     { id: 'i2', name: 'Grimório de Couro de Dragão', type: 'magic', appearance: 'Capa escamosa e quente ao toque.', status: 'carried', knownProperties: ['Contém magias de fogo'] },
+    { id: 'i4', name: 'Diário de Arvand', type: 'magic', appearance: 'Um livro de capa dura com o símbolo do Cronofábula.', status: 'carried', knownProperties: ['Registros de Jornada'] },
     { id: 'i3', name: 'Poção de Cura (Menor)', type: 'misc', appearance: 'Líquido vermelho efervescente.', status: 'carried', knownProperties: ['Cura 2d4+2 PV'] },
   ] : [])
 
@@ -143,7 +144,7 @@ function ItemCard({ item, isActive, onClick }: { item: any, isActive: boolean, o
     >
       <div className="flex justify-between items-start mb-4">
         <div className={`p-2 rounded-xl transition-all ${isActive ? 'bg-accent/20 text-accent' : 'bg-white/5 text-muted-foreground group-hover:text-foreground'}`}>
-          {item.type === 'weapon' ? <Sword className="h-5 w-5" /> : item.type === 'magic' ? <Sparkles className="h-5 w-5" /> : <Package className="h-5 w-5" />}
+          {item.name.toLowerCase().includes('diário') ? <Book className="h-5 w-5" /> : item.type === 'weapon' ? <Sword className="h-5 w-5" /> : item.type === 'magic' ? <Sparkles className="h-5 w-5" /> : <Package className="h-5 w-5" />}
         </div>
         <Badge variant="ghost" className="text-[8px] uppercase tracking-tighter opacity-50">{item.status}</Badge>
       </div>
