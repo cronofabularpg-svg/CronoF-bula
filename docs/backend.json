@@ -87,7 +87,7 @@
     },
     "Character": {
       "title": "Character",
-      "description": "A player character linked to a campaign.",
+      "description": "A player character linked to a campaign with D&D 5e stats.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -97,6 +97,22 @@
         "race": { "type": "string" },
         "class": { "type": "string" },
         "level": { "type": "number" },
+        "xp": { "type": "number" },
+        "hp": { "type": "number" },
+        "maxHp": { "type": "number" },
+        "ac": { "type": "number" },
+        "initiative": { "type": "number" },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "str": { "type": "number" },
+            "dex": { "type": "number" },
+            "con": { "type": "number" },
+            "int": { "type": "number" },
+            "wis": { "type": "number" },
+            "cha": { "type": "number" }
+          }
+        },
         "status": { "type": "string", "enum": ["pending", "active", "dead"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },

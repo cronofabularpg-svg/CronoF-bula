@@ -7,30 +7,31 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { 
   PlusCircle, 
   Play, 
-  ScrollText, 
   ShieldCheck, 
-  Compass, 
-  Users, 
-  Sparkles,
-  History,
-  Ghost,
+  Sparkles, 
   User as UserIcon,
   Crown,
   BookOpen,
   Hourglass,
-  ChevronRight
+  ChevronRight,
+  History,
+  Dices,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { useUser, useCollection, useFirestore } from '@/firebase';
-import { collection, query, where, orderBy } from 'firebase/firestore';
+import { collection, query, where, orderBy, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
+import { useToast } from "@/hooks/use-toast";
 
 export default function Dashboard() {
   const { user } = useUser();
   const db = useFirestore();
+  const { toast } = useToast();
   const [isDemo, setIsDemo] = React.useState(false);
   const [demoRole, setDemoRole] = React.useState<'master' | 'player' | null>(null);
+  const [isCreatingTestChar, setIsCreatingTestTestChar] = React.useState(false);
 
   React.useEffect(() => {
     setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true');
@@ -66,6 +67,74 @@ export default function Dashboard() {
     : (firebaseCampaigns || []);
 
   const isMasterView = isDemo ? demoRole === 'master' : true;
+
+  async function handleCreateTestCharacter() {
+    if (!db || !user) return;
+    setIsCreatingTestTestChar(true);
+    try {
+      // 1. Garantir que existe uma campanha para o teste
+      let targetCampaignId = displayCampaigns[0]?.id;
+      
+      if (!targetCampaignId || isDemo) {
+        // Se não houver campanha ou for demo, cria uma campanha de teste real
+        const newCampId = doc(collection(db, 'campaigns')).id;
+        await setDoc(doc(db, 'campaigns', newCampId), {
+          id: newCampId,
+          name: "Crônica de Teste",
+          system: "D&D 5e",
+          masterId: user.uid,
+          status: "active",
+          tone: "dark",
+          createdAt: serverTimestamp()
+        });
+        targetCampaignId = newCampId;
+      }
+
+      // 2. Criar a ficha de teste seguindo o SRD
+      const charId = doc(collection(db, 'campaigns', targetCampaignId, 'characters')).id;
+      const testChar = {
+        id: charId,
+        campaignId: targetCampaignId,
+        ownerId: user.uid,
+        name: "Valerius, o Rubro",
+        race: "Tiefling",
+        class: "Mago",
+        level: 3,
+        xp: 1250,
+        hp: 22,
+        maxHp: 22,
+        ac: 13,
+        initiative: 2,
+        stats: {
+          str: 8,
+          dex: 14,
+          con: 14,
+          int: 18,
+          wis: 12,
+          cha: 12
+        },
+        status: "active",
+        createdAt: serverTimestamp()
+      };
+
+      await setDoc(doc(db, 'campaigns', targetCampaignId, 'characters', charId), testChar);
+      
+      toast({ 
+        title: "Herói Evocado", 
+        description: "Valerius, o Tiefling Mago, foi registrado nos anais." 
+      });
+      
+      // Força recarregamento para ver a ficha
+      if (isDemo) {
+         localStorage.removeItem('cronofabula_demo_mode');
+         window.location.reload();
+      }
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro na Invocação", description: e.message });
+    } finally {
+      setIsCreatingTestTestChar(false);
+    }
+  }
 
   return (
     <div className="p-12 max-w-7xl mx-auto space-y-20 animate-in fade-in duration-700">
@@ -185,21 +254,26 @@ export default function Dashboard() {
         <div className="space-y-16">
           <section className="space-y-8">
             <h2 className="text-2xl font-display font-bold flex items-center gap-3 text-primary">
-              <Sparkles className="h-6 w-6" /> Oráculo
+              <Sparkles className="h-6 w-6" /> Oráculo de Teste
             </h2>
             <div className="p-8 rounded-[2rem] bg-primary/5 border border-primary/20 space-y-6 relative overflow-hidden oracle-glow">
                <div className="absolute top-0 left-0 w-1 h-full bg-primary/50" />
                <p className="text-xl font-heading italic leading-relaxed text-muted-foreground">
-                 "Um sussurro na névoa de Arvand sugere que novos aventureiros buscam sua orientação, Mestre. O destino é uma teia que você deve guiar."
+                 "Deseja manifestar um herói pronto para testar as leis de D&D 5e e os temas visuais?"
                </p>
-               <Button variant="ghost" className="text-[10px] font-display uppercase tracking-widest p-0 h-auto hover:bg-transparent text-primary hover:text-accent transition-colors">
-                 Consultar Destino <ChevronRight className="ml-1 h-3 w-3" />
+               <Button 
+                onClick={handleCreateTestCharacter}
+                disabled={isCreatingTestChar}
+                variant="outline" 
+                className="w-full border-primary/30 text-primary hover:bg-primary/10 rounded-xl h-12 font-display text-[10px] tracking-widest uppercase font-bold"
+               >
+                 {isCreatingTestChar ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Dices className="mr-2 h-4 w-4" /> Evocar Herói de Teste</>}
                </Button>
             </div>
           </section>
 
           <section className="p-10 rounded-[2rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/20 space-y-8 relative overflow-hidden group">
-            <Ghost className="absolute -top-6 -right-6 h-32 w-32 text-[#7B4FB3] opacity-5 group-hover:scale-125 group-hover:rotate-12 transition-all duration-1000" />
+            <Sparkles className="absolute -top-6 -right-6 h-32 w-32 text-[#7B4FB3] opacity-5 group-hover:scale-125 group-hover:rotate-12 transition-all duration-1000" />
             <div className="space-y-4">
               <h3 className="text-3xl font-display font-bold text-primary">Jornada Solo</h3>
               <p className="text-lg text-muted-foreground font-heading italic leading-relaxed opacity-70">
