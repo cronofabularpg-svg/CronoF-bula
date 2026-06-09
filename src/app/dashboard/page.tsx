@@ -19,6 +19,7 @@ import {
   Loader2
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { useUser, useCollection, useFirestore } from '@/firebase';
@@ -30,10 +31,13 @@ import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/e
 export default function Dashboard() {
   const { user } = useUser();
   const db = useFirestore();
+  const router = useRouter();
   const { toast } = useToast();
+  
   const [isDemo, setIsDemo] = React.useState(false);
   const [demoRole, setDemoRole] = React.useState<'master' | 'player' | null>(null);
-  const [isCreatingTestChar, setIsCreatingTestTestChar] = React.useState(false);
+  const [isCreatingTestChar, setIsCreatingTestChar] = React.useState(false);
+  const [isStartingSolo, setIsStartingSolo] = React.useState(false);
 
   React.useEffect(() => {
     setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true');
@@ -70,9 +74,9 @@ export default function Dashboard() {
 
   const isMasterView = isDemo ? demoRole === 'master' : true;
 
-  function handleCreateTestCharacter() {
+  async function handleCreateTestCharacter() {
     if (!db || !user) return;
-    setIsCreatingTestTestChar(true);
+    setIsCreatingTestChar(true);
 
     let targetCampaignId = displayCampaigns[0]?.id;
     const newCampId = doc(collection(db, 'campaigns')).id;
@@ -120,39 +124,66 @@ export default function Dashboard() {
       createdAt: serverTimestamp()
     };
 
-    if (!targetCampaignId || isDemo) {
-      setDoc(doc(db, 'campaigns', newCampId), testCampaign)
-        .catch(async (e) => {
-          errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: `campaigns/${newCampId}`,
-            operation: 'write',
-            requestResourceData: testCampaign
-          } satisfies SecurityRuleContext));
-        });
-      targetCampaignId = newCampId;
-    }
+    try {
+      if (!targetCampaignId || isDemo) {
+        await setDoc(doc(db, 'campaigns', newCampId), testCampaign);
+        targetCampaignId = newCampId;
+      }
 
-    setDoc(doc(db, 'campaigns', targetCampaignId, 'characters', charId), testChar)
-      .then(() => {
-        toast({ 
-          title: "Herói Evocado", 
-          description: "Valerius foi manifestado com todos os atributos, inspiração e resistência mágica." 
-        });
-        if (isDemo) {
-          localStorage.removeItem('cronofabula_demo_mode');
-          window.location.reload();
-        }
-      })
-      .catch(async (e) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-          path: `campaigns/${targetCampaignId}/characters/${charId}`,
-          operation: 'write',
-          requestResourceData: testChar
-        } satisfies SecurityRuleContext));
-      })
-      .finally(() => {
-        setIsCreatingTestTestChar(false);
+      await setDoc(doc(db, 'campaigns', targetCampaignId, 'characters', charId), testChar);
+      
+      toast({ 
+        title: "Herói Evocado", 
+        description: "Valerius foi manifestado. O destino agora pode ser consultado." 
       });
+
+      if (isDemo) {
+        localStorage.removeItem('cronofabula_demo_mode');
+        localStorage.removeItem('cronofabula_demo_role');
+      }
+      
+      router.push(`/campaign/${targetCampaignId}/ficha`);
+    } catch (e: any) {
+      errorEmitter.emit('permission-error', new FirestorePermissionError({
+        path: `campaigns/${targetCampaignId}/characters/${charId}`,
+        operation: 'write',
+        requestResourceData: testChar
+      } satisfies SecurityRuleContext));
+    } finally {
+      setIsCreatingTestChar(false);
+    }
+  }
+
+  async function handleStartSoloAdventure() {
+    if (!db || !user) return;
+    setIsStartingSolo(true);
+    
+    let targetId = displayCampaigns.find(c => c.masterId === user.uid)?.id;
+    
+    if (!targetId) {
+      const newId = doc(collection(db, 'campaigns')).id;
+      const soloCamp = {
+        id: newId,
+        name: "Jornada do Destino Único",
+        masterId: user.uid,
+        status: "active",
+        isSoloJourneyEnabled: true,
+        isAiNarratorEnabled: true,
+        system: "D&D 5e",
+        tone: "epic",
+        createdAt: serverTimestamp()
+      };
+      
+      try {
+        await setDoc(doc(db, 'campaigns', newId), soloCamp);
+        targetId = newId;
+      } catch (e: any) {
+        setIsStartingSolo(false);
+        return;
+      }
+    }
+    
+    router.push(`/campaign/${targetId}/mesa-viva`);
   }
 
   return (
@@ -288,7 +319,15 @@ export default function Dashboard() {
                >
                  {isCreatingTestChar ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Dices className="mr-2 h-4 w-4" /> Evocar Herói de Teste</>}
                </Button>
-               <Button variant="ghost" className="text-[10px] font-display uppercase tracking-widest p-0 h-auto hover:bg-transparent text-primary hover:text-accent transition-colors">
+               <Button 
+                onClick={() => {
+                  const campId = displayCampaigns[0]?.id;
+                  if (campId) router.push(`/campaign/${campId}/ficha`);
+                  else toast({ title: "Nenhuma Crônica", description: "Evoque um herói primeiro." });
+                }}
+                variant="ghost" 
+                className="text-[10px] font-display uppercase tracking-widest p-0 h-auto hover:bg-transparent text-primary hover:text-accent transition-colors"
+               >
                   Consultar Destino <ChevronRight className="ml-1 h-3 w-3" />
                </Button>
             </div>
@@ -302,7 +341,13 @@ export default function Dashboard() {
                 "Não aguarde pela mesa. O Oráculo pode assumir o papel de Mestre e conduzir sua própria crônica."
               </p>
             </div>
-            <Button variant="outline" className="w-full border-primary/30 text-primary hover:bg-primary/10 literary-shadow rounded-2xl h-14 font-display text-[10px] tracking-widest">
+            <Button 
+              onClick={handleStartSoloAdventure}
+              disabled={isStartingSolo}
+              variant="outline" 
+              className="w-full border-primary/30 text-primary hover:bg-primary/10 literary-shadow rounded-2xl h-14 font-display text-[10px] tracking-widest"
+            >
+              {isStartingSolo ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Iniciar Aventura Individual
             </Button>
           </section>
