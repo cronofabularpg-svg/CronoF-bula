@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -22,6 +21,34 @@ import { Switch } from "@/components/ui/switch"
 import { useUser, useFirestore } from "@/firebase"
 import { doc, setDoc, collection, serverTimestamp } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
+
+const DND_RACES = [
+  { id: "human", name: "Humano" },
+  { id: "elf", name: "Elfo" },
+  { id: "dwarf", name: "Anão" },
+  { id: "halfling", name: "Halfling" },
+  { id: "dragonborn", name: "Draconato" },
+  { id: "tiefling", name: "Tiefling" },
+  { id: "gnome", name: "Gnomo" },
+  { id: "half-orc", name: "Meio-Orc" },
+  { id: "half-elf", name: "Meio-Elfo" },
+  { id: "goblin", name: "Goblin (Toca)" }
+];
+
+const DND_CLASSES = [
+  { id: "fighter", name: "Guerreiro" },
+  { id: "wizard", name: "Mago" },
+  { id: "rogue", name: "Ladino" },
+  { id: "cleric", name: "Clérigo" },
+  { id: "paladin", name: "Paladino" },
+  { id: "ranger", name: "Patrulheiro" },
+  { id: "bard", name: "Bardo" },
+  { id: "druid", name: "Druida" },
+  { id: "barbarian", name: "Bárbaro" },
+  { id: "sorcerer", name: "Feiticeiro" },
+  { id: "warlock", name: "Bruxo" },
+  { id: "monk", name: "Monge" }
+];
 
 export default function OnboardingPage() {
   const { user } = useUser()
@@ -80,8 +107,6 @@ export default function OnboardingPage() {
     if (!db || !user) return
     setLoading(true)
     try {
-      // Se não houver campaignId (ex: personagem sem campanha), salvamos em uma coleção global ou tratamos
-      // Para o MVP, focaremos em personagens vinculados.
       const targetCampaignId = campaignId || "global"; 
       const charId = doc(collection(db, 'campaigns', targetCampaignId, 'characters')).id
       
@@ -93,7 +118,7 @@ export default function OnboardingPage() {
         race: characterData.race,
         class: characterData.class,
         level: characterData.level,
-        status: role === 'master' ? 'active' : 'pending', // Mestre aprova automaticamente seu próprio char de teste
+        status: role === 'master' ? 'active' : 'pending',
         createdAt: serverTimestamp()
       })
 
@@ -128,14 +153,14 @@ export default function OnboardingPage() {
               <RoleCard 
                 icon={<ShieldCheck className="h-10 w-10" />}
                 title="Sou Mestre"
-                desc="Quero criar um mundo, gerenciar campanhas e narrar histórias para meus jogadores."
+                desc="Quero criar um mundo, gerenciar campanhas e narrar histórias baseadas em D&D 5e."
                 active={role === 'master'}
                 onClick={() => { setRole('master'); nextStep(); }}
               />
               <RoleCard 
                 icon={<User className="h-10 w-10" />}
                 title="Sou Jogador"
-                desc="Recebi um convite ou quero criar um herói para participar de uma crônica viva."
+                desc="Quero criar um herói oficial do SRD e participar de uma crônica viva."
                 active={role === 'player'}
                 onClick={() => { setRole('player'); nextStep(); }}
               />
@@ -170,8 +195,8 @@ export default function OnboardingPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="dnd5e">D&D 5e (SRD)</SelectItem>
-                          <SelectItem value="custom">Sistema Customizado</SelectItem>
+                          <SelectItem value="dnd5e">D&D 5e (SRD Oficial)</SelectItem>
+                          <SelectItem value="custom">Sistema Customizado (D20)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -192,8 +217,8 @@ export default function OnboardingPage() {
                     </div>
                     <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
                       <div className="space-y-0.5">
-                        <Label className="text-sm font-bold">IA Narradora Ativa</Label>
-                        <p className="text-xs text-muted-foreground italic">Permitir auxílio narrativo da IA Mestre.</p>
+                        <Label className="text-sm font-bold">Oráculo D&D Ativo</Label>
+                        <p className="text-xs text-muted-foreground italic">IA auxiliar com conhecimento estrito do manual.</p>
                       </div>
                       <Switch 
                         checked={campaignData.aiEnabled} 
@@ -214,55 +239,12 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {step === 2 && role === 'player' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-            <div className="text-center space-y-4">
-              <div className="inline-flex items-center rounded-full border border-primary/30 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Passo 2 de 4</div>
-              <h1 className="text-4xl font-display font-black tracking-tighter">Encontre sua Mesa</h1>
-              <p className="text-xl font-heading italic text-muted-foreground">Insira o código enviado pelo seu mestre.</p>
-            </div>
-            
-            <Card className="bg-card/30 border-white/5 backdrop-blur-md max-w-lg mx-auto">
-              <CardContent className="p-10 space-y-8">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">Código de Convite</Label>
-                    <div className="relative">
-                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input 
-                        placeholder="CRONO-1234-ABCD" 
-                        className="pl-10" 
-                        value={campaignId}
-                        onChange={e => setCampaignId(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <Button 
-                    className="w-full bg-accent hover:bg-accent/90 text-accent-foreground rounded-full h-12 font-bold"
-                    onClick={() => {
-                      if(campaignId.length > 5) nextStep();
-                      else toast({ variant: "destructive", title: "Código Inválido", description: "O código inserido parece muito curto." });
-                    }}
-                  >
-                    Validar Convite
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <div className="flex justify-between">
-              <Button variant="ghost" onClick={prevStep}><ChevronLeft className="mr-2 h-4 w-4" /> Voltar</Button>
-              <Button variant="outline" onClick={nextStep} className="rounded-full">Pular por enquanto <ChevronRight className="ml-2 h-4 w-4" /></Button>
-            </div>
-          </div>
-        )}
-
         {step === 3 && (
           <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="text-center space-y-4">
               <div className="inline-flex items-center rounded-full border border-primary/30 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Passo 3 de 4</div>
               <h1 className="text-4xl font-display font-black tracking-tighter">Sua Identidade</h1>
-              <p className="text-xl font-heading italic text-muted-foreground">Crie seu herói para começar.</p>
+              <p className="text-xl font-heading italic text-muted-foreground">Escolha sua raça e classe oficial do manual.</p>
             </div>
             
             <Card className="bg-card/30 border-white/5 backdrop-blur-md">
@@ -285,10 +267,9 @@ export default function OnboardingPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="human">Humano</SelectItem>
-                            <SelectItem value="elf">Elfo</SelectItem>
-                            <SelectItem value="dwarf">Anão</SelectItem>
-                            <SelectItem value="goblin">Goblin</SelectItem>
+                            {DND_RACES.map(r => (
+                              <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -299,18 +280,23 @@ export default function OnboardingPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="fighter">Guerreiro</SelectItem>
-                            <SelectItem value="wizard">Mago</SelectItem>
-                            <SelectItem value="rogue">Ladino</SelectItem>
-                            <SelectItem value="cleric">Clérigo</SelectItem>
+                            {DND_CLASSES.map(c => (
+                              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
                     </div>
                   </div>
                   <div className="space-y-4">
+                    <div className="p-6 rounded-2xl bg-primary/5 border border-primary/20 space-y-3">
+                       <h4 className="text-[10px] uppercase font-black tracking-widest text-primary">Resumo das Regras</h4>
+                       <p className="text-xs text-muted-foreground italic leading-relaxed">
+                         Como um(a) {DND_RACES.find(r => r.id === characterData.race)?.name} {DND_CLASSES.find(c => c.id === characterData.class)?.name}, você começa no Nível 1 com as habilidades básicas do SRD. O Oráculo guiará suas rolagens de atributos em breve.
+                       </p>
+                    </div>
                     <Button variant="outline" className="w-full h-14 border-dashed border-primary/30 text-primary">
-                      <PlusCircle className="mr-2 h-5 w-5" /> Adicionar Retrato (Opcional)
+                      <PlusCircle className="mr-2 h-5 w-5" /> Adicionar Retrato Oficial
                     </Button>
                   </div>
                 </div>
@@ -335,7 +321,7 @@ export default function OnboardingPage() {
             <div className="space-y-4">
               <h1 className="text-6xl font-display font-black tracking-tighter">Sua Fábula Começou</h1>
               <p className="text-2xl font-heading italic text-muted-foreground max-w-2xl mx-auto">
-                Tudo está pronto. O tempo agora corre a seu favor.
+                As leis de D&D 5e foram gravadas no pergaminho. O tempo agora corre a seu favor.
               </p>
             </div>
             <Button asChild size="lg" className="px-16 py-10 text-2xl font-display rounded-full btn-arcane border-2 border-accent">

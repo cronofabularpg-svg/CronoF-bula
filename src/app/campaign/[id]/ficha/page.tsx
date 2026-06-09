@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -17,7 +16,8 @@ import {
   Book, 
   Backpack, 
   User as UserIcon,
-  Sparkles
+  Sparkles,
+  Info
 } from "lucide-react"
 
 export default function FichaPersonagem() {
@@ -58,14 +58,14 @@ export default function FichaPersonagem() {
                 Nvl {character.level}
               </Badge>
             </div>
-            <p className="text-xl font-heading italic text-muted-foreground mt-2">
+            <p className="text-xl font-heading italic text-muted-foreground mt-2 capitalize">
               {character.race} {character.class} • Status: {character.status === 'pending' ? 'Aguardando Aprovação' : 'Ativo'}
             </p>
           </div>
         </div>
         <div className="flex gap-4">
           <div className="text-right">
-            <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground block mb-1">XP Atual</span>
+            <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground block mb-1">XP Atual (Manual)</span>
             <div className="flex items-center gap-3">
               <Progress value={25} className="w-32 h-2" />
               <span className="text-xs font-code font-bold">1200 / 5000</span>
@@ -79,7 +79,7 @@ export default function FichaPersonagem() {
         <div className="space-y-8">
           <section className="space-y-4">
             <h3 className="text-[11px] uppercase font-bold tracking-[0.2em] text-muted-foreground opacity-50 flex items-center font-ui">
-              <Star className="mr-2 h-4 w-4" /> Atributos
+              <Star className="mr-2 h-4 w-4" /> Atributos (SRD)
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <StatCard label="FOR" value={14} mod="+2" />
@@ -95,7 +95,7 @@ export default function FichaPersonagem() {
             <CardContent className="p-6 grid grid-cols-2 gap-6">
               <div className="flex flex-col items-center">
                 <Shield className="h-6 w-6 text-accent mb-2" />
-                <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-widest">Defesa (CA)</span>
+                <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-widest text-center leading-tight">Classe de Armadura</span>
                 <span className="text-2xl font-display font-bold">16</span>
               </div>
               <div className="flex flex-col items-center border-l border-white/5">
@@ -105,6 +105,13 @@ export default function FichaPersonagem() {
               </div>
             </CardContent>
           </Card>
+          
+          <div className="p-6 rounded-2xl bg-accent/5 border border-accent/20 flex gap-4">
+             <Info className="h-5 w-5 text-accent shrink-0" />
+             <p className="text-[10px] text-muted-foreground italic leading-relaxed">
+               Bônus de Proficiência atual: <span className="text-accent font-bold">+2</span>. Adicione aos testes das perícias que você domina.
+             </p>
+          </div>
         </div>
 
         {/* Vitalidade e Combate */}
@@ -118,8 +125,8 @@ export default function FichaPersonagem() {
                     <Heart className="h-6 w-6" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold uppercase tracking-widest">Vitalidade</h4>
-                    <p className="text-xs text-muted-foreground font-ui">Pontos de Vida Atuais</p>
+                    <h4 className="text-sm font-bold uppercase tracking-widest">Vitalidade (PV)</h4>
+                    <p className="text-xs text-muted-foreground font-ui">Seguindo regras de Hit Dice</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -133,21 +140,21 @@ export default function FichaPersonagem() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <section className="space-y-4">
               <h3 className="text-[11px] uppercase font-bold tracking-[0.2em] text-muted-foreground opacity-50 flex items-center font-ui">
-                <Sword className="mr-2 h-4 w-4" /> Ataques
+                <Sword className="mr-2 h-4 w-4" /> Ataques Principais
               </h3>
               <div className="space-y-3">
-                <ActionCard name="Adaga de Prata" detail="+5 para atingir | 1d4+3 per" />
-                <ActionCard name="Arco Curto" detail="+6 para atingir | 1d6+3 perf" />
+                <ActionCard name="Ataque c/ Arma" detail="+5 para atingir | Dano conforme SRD" />
+                <ActionCard name="Magia Ofensiva" detail="CD Resistência: 13 | +5 p/ atingir" />
               </div>
             </section>
 
             <section className="space-y-4">
               <h3 className="text-[11px] uppercase font-bold tracking-[0.2em] text-muted-foreground opacity-50 flex items-center font-ui">
-                <Sparkles className="mr-2 h-4 w-4" /> Habilidades
+                <Sparkles className="mr-2 h-4 w-4" /> Habilidades de Classe
               </h3>
               <div className="space-y-3">
-                <ActionCard name="Ataque Furtivo" detail="2d6 dano extra" />
-                <ActionCard name="Ação Ardilosa" detail="Desengajar/Esconder" />
+                <ActionCard name="Habilidade Nvl 1" detail="Uso Limitado: 1/Descanso Longo" />
+                <ActionCard name="Truque (Cantrip)" detail="Uso Ilimitado" />
               </div>
             </section>
           </div>
@@ -175,7 +182,7 @@ function ActionCard({ name, detail }: { name: string, detail: string }) {
         <p className="text-[10px] text-muted-foreground font-ui uppercase tracking-tighter mt-1">{detail}</p>
       </div>
       <Badge variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity">
-        Rolar
+        Rolar 1d20
       </Badge>
     </div>
   )

@@ -42,59 +42,39 @@ const combatNarratorPrompt = ai.definePrompt({
   name: 'combatNarratorPrompt',
   input: {schema: CombatNarratorInputSchema},
   output: {schema: CombatNarratorOutputSchema},
-  system: `Você é a IA narrativa do Cronofábula, uma plataforma de RPG com campanhas persistentes.
+  system: `Você é o Narrador de Combate Especialista em D&D 5e do Cronofábula.
 
-Respeite estritamente o contexto fornecido pelo sistema.
+Sua função é narrar de forma imersiva e cinematográfica os resultados mecânicos do sistema D20.
 
-Não invente fatos oficiais fora do contexto.
-Não revele segredos que não foram revelados ao personagem.
-Não trate conhecimento do mestre como conhecimento do jogador.
-Não mova personagens oficialmente.
-Não conceda itens, XP, ouro ou recompensas oficialmente.
-Não altere PV, CA, dano, condições ou iniciativa oficialmente.
-Não declare um fato como canônico sem aprovação do mestre.
-Não contradiga o mapa, a cena, a posição dos personagens ou o inventário.
-
-Quando faltar informação, faça uma pergunta, sugira possibilidades ou diga que isso precisa de decisão do mestre.
-
-Priorize narração clara, imersiva e objetiva.
-Use o tom da campanha: {{{campaign.tone}}}.
-Mantenha respostas úteis para a mesa, sem alongar demais.
-
-Você é o Narrador de Combate do Cronofábula.
-
-Sua função é narrar de forma imersiva os resultados já calculados pelo sistema.
-
-Regras:
-- Não altere resultados.
-- Não mude dano.
-- Não mude PV.
-- Não ignore CA, iniciativa ou condições.
-- Não mate personagem se o sistema não indicou.
-- Não crie inimigos novos sem aprovação do mestre.
-- Narre com energia, clareza e brevidade.
-- Mantenha a cena compreensível.`,
+Regras de Narração:
+- Use terminologia de D&D 5e (Classe de Armadura, Ataque Crítico, Falha Crítica).
+- Se o ataque acertou a CA exata, narre um golpe que passou por pouco pela defesa.
+- Se o dano reduziu os PV a 0, narre um golpe de misericórdia ou nocaute definitivo.
+- Se for uma falha crítica (1 natural), narre um erro embaraçoso ou uma abertura na defesa.
+- Se for um acerto crítico (20 natural), narre um impacto devastador que ignora parte da armadura.
+- Use o tom da campanha: {{{campaign.tone}}}.
+- Seja breve, enérgico e mantenha o foco na ação imediata.`,
   prompt: `
 {{#if hit}}
   {{#if critical_hit}}
-    Um golpe devastador! {{{actor}}} desfere um ataque crítico em {{{target}}} {{#if weapon}}com sua {{weapon}}{{else if spell}}com a magia {{{spell}}}{{else if ability}}com sua habilidade {{{ability}}}{{/if}}!
-    O impacto é brutal, causando {{{damage}}} de dano. {{{target}}} cambaleia, {{#if (eq target_remaining_hp 0)}} caindo sem vida. {{else}} ficando com apenas {{{target_remaining_hp}}} de vida. {{/if}}
+    Ataque CRÍTICO! {{{actor}}} desfere um golpe magistral em {{{target}}} {{#if weapon}}com sua {{{weapon}}}{{else if spell}}com a magia {{{spell}}}{{else if ability}}com {{{ability}}}{{/if}}!
+    Dano causado: {{{damage}}}. {{{target}}} {{#if (eq target_remaining_hp 0)}} cai sem vida sob o impacto brutal. {{else}} cambaleia, restando apenas {{{target_remaining_hp}}} PV. {{/if}}
   {{else}}
-    {{{actor}}} ataca {{{target}}} {{#if weapon}} com sua {{weapon}}{{else if spell}}com a magia {{{spell}}}{{else if ability}}com sua habilidade {{{ability}}}{{/if}}! O ataque, com um total de {{{attack_total}}} contra CA {{{target_ac}}}, acerta em cheio!
-    Causando {{{damage}}} de dano. {{{target}}} é atingido {{#if (eq target_remaining_hp 0)}} e cai. {{else}} e resta-lhe apenas {{{target_remaining_hp}}} de vida. {{/if}}
+    {{{actor}}} ataca {{{target}}} (Ataque: {{{attack_total}}} vs CA {{{target_ac}}}). O golpe acerta!
+    Dano: {{{damage}}}. {{{target}}} é atingido {{#if (eq target_remaining_hp 0)}} e tomba em combate. {{else}} e agora tem {{{target_remaining_hp}}} PV restantes. {{/if}}
   {{/if}}
 {{else}}
   {{#if critical_miss}}
-    Um erro terrível! {{{actor}}} falha criticamente ao atacar {{{target}}} {{#if weapon}}com sua {{weapon}}{{else if spell}}com a magia {{{spell}}}{{else if ability}}com sua habilidade {{{ability}}}{{/if}}!
-    A tentativa de ataque de {{{actor}}} com {{{attack_total}}} contra CA {{{target_ac}}} erra por muito, deixando uma abertura.
+    FALHA CRÍTICA! {{{actor}}} comete um erro terrível ao tentar atingir {{{target}}}. 
+    A arma ou energia passa longe, deixando {{{actor}}} vulnerável.
   {{else}}
-    {{{actor}}} tenta atacar {{{target}}} {{#if weapon}} com sua {{weapon}}{{else if spell}}com a magia {{{spell}}}{{else if ability}}com sua habilidade {{{ability}}}{{/if}}, mas o ataque, com um total de {{{attack_total}}} contra CA {{{target_ac}}}, erra!
-    {{{target}}} desvia por pouco do golpe, ou a {{#if weapon}}arma{{else if spell}}magia{{else if ability}}habilidade{{/if}} passa inofensivamente.
+    {{{actor}}} tenta atingir {{{target}}} (Ataque: {{{attack_total}}} vs CA {{{target_ac}}}), mas a defesa resiste!
+    O golpe é desviado pela armadura ou {{{target}}} esquiva no último segundo.
   {{/if}}
 {{/if}}
 
 {{#if condition_applied}}
-  Além disso, {{{target}}} agora está {{{condition_applied}}}.
+O alvo agora está sob o efeito de: {{{condition_applied}}}.
 {{/if}}
 `,
 });
