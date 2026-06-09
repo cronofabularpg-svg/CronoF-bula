@@ -37,8 +37,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where, orderBy, addDoc, serverTimestamp, limit, doc, getDoc } from "firebase/firestore"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useUser, useFirestore, useCollection, useDoc } from "@/firebase"
+import { collection, query, where, orderBy, addDoc, serverTimestamp, limit, doc } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
 import { aiNarratorAndNpcDialogue } from "@/ai/flows/narrator-npc-dialogue"
@@ -59,6 +60,19 @@ export default function MesaViva() {
   const [rollReason, setRollReason] = React.useState('')
   const [physicalResult, setPhysicalResult] = React.useState('')
   const [isDiceDialogOpen, setIsDiceDialogOpen] = React.useState(false)
+  const [activeDiceTab, setActiveDiceTab] = React.useState<string>("virtual")
+
+  // Busca perfil do usuário para saber preferência de dados
+  const userRef = React.useMemo(() => user ? doc(db, "users", user.uid) : null, [db, user])
+  const { data: profile } = useDoc<any>(userRef)
+
+  React.useEffect(() => {
+    if (isDiceDialogOpen && profile?.dicePreference) {
+      if (profile.dicePreference !== 'ask') {
+        setActiveDiceTab(profile.dicePreference)
+      }
+    }
+  }, [isDiceDialogOpen, profile])
 
   // Busca a última sessão ativa
   const activeSessionQuery = React.useMemo(() => {
@@ -146,7 +160,6 @@ export default function MesaViva() {
     setIsAiThinking(true)
     
     try {
-      // Simula contexto para o Genkit
       const input = {
         mode: 'narrator' as const,
         campaign: {
@@ -175,7 +188,7 @@ export default function MesaViva() {
         },
         player_action: playerInput,
         visible_objects: ["Uma névoa persistente"],
-        present_npcs: npcs?.map(n => ({ name: npc.name })) || []
+        present_npcs: npcs?.map(n => ({ name: n.name })) || []
       }
 
       const aiResponse = await aiNarratorAndNpcDialogue(input as any)
@@ -269,7 +282,6 @@ export default function MesaViva() {
 
   return (
     <div className="flex h-screen mesa-viva-bg bg-fixed overflow-hidden">
-      {/* Sidebar: Contexto */}
       <div className="w-80 border-r border-white/5 bg-background/60 backdrop-blur-xl hidden xl:flex flex-col p-6 space-y-10">
         <section className="space-y-4">
           <div className="flex items-center justify-between">
@@ -315,7 +327,6 @@ export default function MesaViva() {
         )}
       </div>
 
-      {/* Área Principal: Chat */}
       <div className="flex-1 flex flex-col relative">
         <header className="p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex justify-between items-center px-10 shrink-0">
           <div className="flex items-center gap-6">
@@ -349,23 +360,49 @@ export default function MesaViva() {
               </DialogTrigger>
               <DialogContent className="bg-card border-accent/30 literary-shadow max-w-sm">
                 <DialogHeader><DialogTitle className="font-display text-2xl text-accent">Lançar Dados</DialogTitle></DialogHeader>
-                <div className="space-y-6 pt-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] uppercase font-bold tracking-widest">Fórmula do Dado</Label>
-                    <div className="flex gap-2">
-                      <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="Ex: 1d20+5" className="font-code text-lg" />
-                      <Button onClick={() => handleRollDice(false)} className="bg-primary hover:bg-primary/90">Rolar</Button>
+                
+                <Tabs value={activeDiceTab} onValueChange={setActiveDiceTab} className="w-full mt-4">
+                  <TabsList className="grid w-full grid-cols-2 bg-black/20">
+                    <TabsTrigger value="virtual" className="text-[10px] uppercase font-bold tracking-widest flex gap-2">
+                      <Dices className="h-3 w-3" /> Virtual
+                    </TabsTrigger>
+                    <TabsTrigger value="physical" className="text-[10px] uppercase font-bold tracking-widest flex gap-2">
+                      <Hash className="h-3 w-3" /> Físico
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="virtual" className="space-y-6 pt-4 animate-in slide-in-from-left-4 duration-300">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold tracking-widest">Fórmula do Dado</Label>
+                        <div className="flex gap-2">
+                          <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="Ex: 1d20+5" className="font-code text-lg" />
+                          <Button onClick={() => handleRollDice(false)} className="bg-primary hover:bg-primary/90 px-6">Rolar</Button>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold tracking-widest">Motivo (Opcional)</Label>
+                        <Input value={rollReason} onChange={e => setRollReason(e.target.value)} placeholder="Ex: Atacar o Orc" className="bg-background/50" />
+                      </div>
                     </div>
-                  </div>
-                  <div className="relative py-2"><div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/10" /></div><div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-muted-foreground"><span className="bg-card px-2">Ou Dado Físico</span></div></div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] uppercase font-bold tracking-widest">Resultado Real</Label>
-                    <div className="flex gap-2">
-                      <Input value={physicalResult} onChange={e => setPhysicalResult(e.target.value)} placeholder="Total" type="number" className="font-code text-lg" />
-                      <Button variant="outline" onClick={() => handleRollDice(true)} className="border-accent/30 text-accent">Registrar</Button>
+                  </TabsContent>
+
+                  <TabsContent value="physical" className="space-y-6 pt-4 animate-in slide-in-from-right-4 duration-300">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold tracking-widest">Resultado Real</Label>
+                        <div className="flex gap-2">
+                          <Input value={physicalResult} onChange={e => setPhysicalResult(e.target.value)} placeholder="Total" type="number" className="font-code text-lg" />
+                          <Button variant="outline" onClick={() => handleRollDice(true)} className="border-accent/30 text-accent px-6">Registrar</Button>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-bold tracking-widest">Motivo (Opcional)</Label>
+                        <Input value={rollReason} onChange={e => setRollReason(e.target.value)} placeholder="Ex: Teste de Percepção" className="bg-background/50" />
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </TabsContent>
+                </Tabs>
               </DialogContent>
              </Dialog>
           </div>
@@ -399,7 +436,6 @@ export default function MesaViva() {
           </div>
         </ScrollArea>
 
-        {/* Action Bar */}
         <div className="p-8 px-12 border-t border-white/5 bg-background/95 backdrop-blur-md shrink-0">
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hide">

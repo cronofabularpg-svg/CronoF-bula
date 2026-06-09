@@ -53,7 +53,7 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
     { icon: Users, label: "NPCs", href: `/campaign/${campaignId}/npcs` },
     { icon: MapPin, label: "Locais", href: `/campaign/${campaignId}/locais` },
     { icon: Sparkles, label: "IA Mestre", href: `/campaign/${campaignId}/ai-mestre` },
-    { icon: Settings, label: "Configurações", href: `/campaign/${campaignId}/settings` },
+    { icon: Settings, label: "Configurações", href: `/settings` },
   ];
 
   return (
