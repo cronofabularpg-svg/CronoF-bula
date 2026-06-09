@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -9,9 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useToast } from "@/hooks/use-toast"
-import { Dices, Hash, Settings as SettingsIcon, Save, Info } from "lucide-react"
+import { Dices, Hash, Settings as SettingsIcon, Save, Info, ChevronLeft } from "lucide-react"
 import { errorEmitter } from '@/firebase/error-emitter'
 import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors'
+import Link from "next/link"
 
 export default function GlobalSettings() {
   const { user } = useUser()
@@ -69,11 +69,18 @@ export default function GlobalSettings() {
 
   return (
     <div className="p-10 max-w-4xl mx-auto space-y-12 animate-in fade-in duration-700">
-      <header className="border-b pb-10 border-white/5">
-        <h1 className="text-5xl font-display font-black tracking-tighter text-accent flex items-center gap-4">
-          <SettingsIcon className="h-12 w-12" /> Configurações Arcanas
-        </h1>
-        <p className="text-muted-foreground mt-3 font-heading text-xl italic">Ajuste a interface ao seu estilo de jogo.</p>
+      <header className="border-b pb-10 border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div className="space-y-3">
+          <Button asChild variant="ghost" size="sm" className="p-0 hover:bg-transparent text-muted-foreground hover:text-primary transition-colors">
+            <Link href="/dashboard" className="flex items-center gap-2">
+              <ChevronLeft className="h-4 w-4" /> Voltar ao Dashboard
+            </Link>
+          </Button>
+          <h1 className="text-5xl font-display font-black tracking-tighter text-accent flex items-center gap-4">
+            <SettingsIcon className="h-12 w-12" /> Configurações Arcanas
+          </h1>
+          <p className="text-muted-foreground font-heading text-xl italic">Ajuste a interface ao seu estilo de jogo.</p>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-10">
