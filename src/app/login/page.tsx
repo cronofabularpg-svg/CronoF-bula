@@ -4,7 +4,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Hourglass } from "lucide-react"
+import { Hourglass, FlaskConical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -30,6 +30,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await signInWithEmailAndPassword(auth, email, password)
+      localStorage.removeItem("cronofabula_demo_mode")
       router.push("/dashboard")
     } catch (error: any) {
       toast({
@@ -57,6 +58,7 @@ export default function LoginPage() {
         createdAt: serverTimestamp()
       }, { merge: true })
 
+      localStorage.removeItem("cronofabula_demo_mode")
       router.push("/dashboard")
     } catch (error: any) {
       toast({
@@ -65,6 +67,16 @@ export default function LoginPage() {
         description: error.message
       })
     }
+  }
+
+  // Função para login fictício de teste
+  function handleDemoLogin() {
+    localStorage.setItem("cronofabula_demo_mode", "true")
+    toast({
+      title: "Modo de Teste Ativado",
+      description: "Entrando como Mestre Arcano (Fictício)."
+    })
+    router.push("/dashboard")
   }
 
   return (
@@ -122,14 +134,19 @@ export default function LoginPage() {
                   <span className="w-full border-t border-white/10" />
                 </div>
                 <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
-                  <span className="bg-card px-3">Ou acesse com</span>
+                  <span className="bg-card px-3">Ou use um atalho</span>
                 </div>
               </div>
               
-              <Button type="button" onClick={handleGoogleSignIn} variant="outline" className="w-full border-white/10 hover:bg-white/5 h-12">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" alt="Google" className="mr-2 h-4 w-4" />
-                Google
-              </Button>
+              <div className="grid grid-cols-2 gap-4">
+                <Button type="button" onClick={handleGoogleSignIn} variant="outline" className="border-white/10 hover:bg-white/5 h-12">
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" alt="Google" className="mr-2 h-4 w-4" />
+                  Google
+                </Button>
+                <Button type="button" onClick={handleDemoLogin} variant="outline" className="border-accent/30 text-accent hover:bg-accent/10 h-12 font-bold uppercase tracking-tighter text-[10px]">
+                  <FlaskConical className="mr-2 h-4 w-4" /> Acesso de Teste
+                </Button>
+              </div>
             </CardContent>
           </form>
           <CardFooter className="flex justify-center border-t border-white/5 p-6">

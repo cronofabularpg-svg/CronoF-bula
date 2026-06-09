@@ -22,20 +22,50 @@ import { Badge } from '@/components/ui/badge';
 import { useUser, useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 
+// Campanhas fictícias para o modo demo
+const MOCK_CAMPAIGNS = [
+  {
+    id: 'demo-1',
+    name: 'Sombras de Arvand',
+    system: 'D&D 5e',
+    status: 'active',
+    masterId: 'demo-user-id-123',
+    bannerImage: 'https://picsum.photos/seed/demo1/800/400',
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: 'demo-2',
+    name: 'O Despertar do Vazio',
+    system: 'Custom',
+    status: 'active',
+    masterId: 'demo-user-id-123',
+    bannerImage: 'https://picsum.photos/seed/demo2/800/400',
+    createdAt: new Date().toISOString()
+  }
+];
+
 export default function Dashboard() {
   const { user } = useUser();
   const db = useFirestore();
+  const [isDemo, setIsDemo] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true');
+  }, []);
 
   const campaignsQuery = React.useMemo(() => {
-    if (!db || !user) return null;
+    if (!db || !user || isDemo) return null;
     return query(
       collection(db, 'campaigns'),
       where('masterId', '==', user.uid),
       orderBy('createdAt', 'desc')
     );
-  }, [db, user]);
+  }, [db, user, isDemo]);
 
-  const { data: myCampaigns, loading: campaignsLoading } = useCollection(campaignsQuery);
+  const { data: firebaseCampaigns, loading: campaignsLoading } = useCollection(campaignsQuery);
+  
+  // Combina campanhas reais e fictícias se estiver no modo demo
+  const displayCampaigns = isDemo ? MOCK_CAMPAIGNS : (firebaseCampaigns || []);
 
   return (
     <div className="p-10 max-w-7xl mx-auto space-y-16">
@@ -43,12 +73,17 @@ export default function Dashboard() {
         <div>
           <h1 className="text-5xl font-display font-black tracking-tighter text-accent">Minhas Crônicas</h1>
           <p className="text-muted-foreground mt-3 font-heading text-xl italic">
-            Bem-vindo de volta, {user?.displayName || 'aventureiro'}. O tempo aguarda seu comando.
+            Bem-vindo de volta, {user?.displayName || 'aventureiro'}. {isDemo && "(Modo de Teste)"}
           </p>
         </div>
         <div className="flex gap-4">
-          <Button variant="outline" className="rounded-full px-8 border-white/10 hover:bg-white/5">
-            <History className="mr-2 h-4 w-4" /> Ver Histórico
+          <Button variant="outline" className="rounded-full px-8 border-white/10 hover:bg-white/5" onClick={() => {
+            if (isDemo) {
+              localStorage.removeItem('cronofabula_demo_mode');
+              window.location.href = '/login';
+            }
+          }}>
+            {isDemo ? "Sair do Teste" : <><History className="mr-2 h-4 w-4" /> Ver Histórico</>}
           </Button>
           <Button asChild className="rounded-full px-8 bg-primary hover:bg-primary/90 literary-shadow">
             <Link href="/onboarding">
@@ -58,6 +93,15 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {isDemo && (
+        <div className="p-4 rounded-xl bg-accent/10 border border-accent/20 flex items-center gap-3 animate-pulse">
+          <Sparkles className="h-5 w-5 text-accent" />
+          <p className="text-sm font-ui text-accent-foreground font-bold uppercase tracking-widest">
+            Você está explorando o Cronofábula com dados fictícios.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
         <div className="xl:col-span-2 space-y-8">
           <h2 className="text-2xl font-display font-bold flex items-center">
@@ -65,10 +109,10 @@ export default function Dashboard() {
           </h2>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {campaignsLoading ? (
+            {campaignsLoading && !isDemo ? (
               <div className="col-span-2 p-12 text-center text-muted-foreground italic">Consultando pergaminhos...</div>
-            ) : myCampaigns && myCampaigns.length > 0 ? (
-              myCampaigns.map((campaign: any) => (
+            ) : displayCampaigns.length > 0 ? (
+              displayCampaigns.map((campaign: any) => (
                 <Card key={campaign.id} className="overflow-hidden bg-card/30 border-white/5 hover:border-accent/30 transition-all group literary-shadow">
                   <div className="relative h-56 w-full bg-muted">
                     <Image 
