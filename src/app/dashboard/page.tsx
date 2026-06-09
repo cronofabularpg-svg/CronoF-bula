@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@/badge';
 import { useUser, useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, orderBy, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { useToast } from "@/hooks/use-toast";
@@ -72,11 +72,9 @@ export default function Dashboard() {
     if (!db || !user) return;
     setIsCreatingTestTestChar(true);
     try {
-      // 1. Garantir que existe uma campanha para o teste
       let targetCampaignId = displayCampaigns[0]?.id;
       
       if (!targetCampaignId || isDemo) {
-        // Se não houver campanha ou for demo, cria uma campanha de teste real
         const newCampId = doc(collection(db, 'campaigns')).id;
         await setDoc(doc(db, 'campaigns', newCampId), {
           id: newCampId,
@@ -90,7 +88,6 @@ export default function Dashboard() {
         targetCampaignId = newCampId;
       }
 
-      // 2. Criar a ficha de teste seguindo o SRD com mana e condições
       const charId = doc(collection(db, 'campaigns', targetCampaignId, 'characters')).id;
       const testChar = {
         id: charId,
@@ -102,12 +99,16 @@ export default function Dashboard() {
         level: 3,
         xp: 1250,
         hp: 22,
-        maxHp: 22,
+        maxHp: 30,
         mana: 15,
         maxMana: 20,
         ac: 13,
         initiative: 2,
+        hasInspiration: true,
+        exhaustion: 1,
+        gold: 150,
         conditions: ["Bêbado", "Encantado"],
+        savingThrows: ["int", "wis"],
         stats: {
           str: 8,
           dex: 14,
@@ -124,10 +125,9 @@ export default function Dashboard() {
       
       toast({ 
         title: "Herói Evocado", 
-        description: "Valerius, o Tiefling Mago, foi registrado nos anais com mana e status ativos." 
+        description: "Valerius foi manifestado com todos os atributos, inspiração e resistência mágica." 
       });
       
-      // Força recarregamento para ver a ficha
       if (isDemo) {
          localStorage.removeItem('cronofabula_demo_mode');
          window.location.reload();
@@ -271,6 +271,9 @@ export default function Dashboard() {
                 className="w-full border-primary/30 text-primary hover:bg-primary/10 rounded-xl h-12 font-display text-[10px] tracking-widest uppercase font-bold"
                >
                  {isCreatingTestChar ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Dices className="mr-2 h-4 w-4" /> Evocar Herói de Teste</>}
+               </Button>
+               <Button variant="ghost" className="text-[10px] font-display uppercase tracking-widest p-0 h-auto hover:bg-transparent text-primary hover:text-accent transition-colors">
+                  Consultar Destino <ChevronRight className="ml-1 h-3 w-3" />
                </Button>
             </div>
           </section>

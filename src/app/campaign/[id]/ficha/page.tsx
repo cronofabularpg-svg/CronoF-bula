@@ -20,15 +20,17 @@ import {
   Sparkles,
   Info,
   Camera,
-  Search,
   Maximize2,
   Skull,
   Ghost,
   Droplets,
-  Wine
+  Wine,
+  Wind,
+  Flame
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
+import { Slider } from "@/components/ui/slider"
 
 export default function FichaPersonagem() {
   const { id: campaignId } = useParams() as { id: string }
@@ -76,14 +78,28 @@ export default function FichaPersonagem() {
     }
   }
 
+  async function toggleInspiration() {
+    if (!db || !campaignId || !character) return
+    updateDoc(doc(db, "campaigns", campaignId, "characters", character.id), {
+      hasInspiration: !character.hasInspiration
+    })
+  }
+
+  async function updateExhaustion(val: number[]) {
+    if (!db || !campaignId || !character) return
+    updateDoc(doc(db, "campaigns", campaignId, "characters", character.id), {
+      exhaustion: val[0]
+    })
+  }
+
   return (
-    <div className="p-10 max-w-5xl mx-auto space-y-12 animate-in fade-in duration-700 pb-32">
+    <div className="p-10 max-w-6xl mx-auto space-y-12 animate-in fade-in duration-700 pb-32">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-10 border-white/5 gap-6">
         <div className="flex items-center gap-8">
           <div className="relative group">
             <Dialog>
               <DialogTrigger asChild>
-                <div className="relative h-40 w-40 rounded-2xl overflow-hidden border-2 border-primary/30 shadow-arcane cursor-zoom-in group">
+                <div className={`relative h-44 w-44 rounded-2xl overflow-hidden border-2 shadow-arcane cursor-zoom-in group transition-all ${character.hasInspiration ? 'border-primary ring-4 ring-primary/20' : 'border-white/10'}`}>
                   <img 
                     src={charPhoto} 
                     alt={character.name} 
@@ -92,6 +108,11 @@ export default function FichaPersonagem() {
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Maximize2 className="h-8 w-8 text-white animate-pulse" />
                   </div>
+                  {character.hasInspiration && (
+                    <div className="absolute top-2 right-2 p-1.5 bg-primary rounded-full shadow-gold animate-bounce">
+                      <Star className="h-4 w-4 text-black" />
+                    </div>
+                  )}
                 </div>
               </DialogTrigger>
               <DialogContent className="bg-black/90 border-primary/20 max-w-4xl p-0 overflow-hidden">
@@ -133,105 +154,118 @@ export default function FichaPersonagem() {
           </div>
           
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-5xl font-display font-black tracking-tighter text-primary">{character.name}</h1>
-              <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-primary/30 text-primary bg-primary/5">
+            <div className="flex items-center gap-4">
+              <h1 className="text-6xl font-display font-black tracking-tighter text-primary">{character.name}</h1>
+              <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-primary/30 text-primary bg-primary/5 px-4 h-6">
                 Nvl {character.level}
               </Badge>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={toggleInspiration}
+                className={`rounded-full border px-4 transition-all ${character.hasInspiration ? 'border-primary bg-primary/20 text-primary' : 'border-white/5 opacity-30 hover:opacity-100'}`}
+              >
+                <Star className={`mr-2 h-4 w-4 ${character.hasInspiration ? 'fill-current' : ''}`} /> Inspiração
+              </Button>
             </div>
-            <p className="text-xl font-heading italic text-muted-foreground mt-2 capitalize">
+            <p className="text-2xl font-heading italic text-muted-foreground mt-2 capitalize opacity-70">
               {character.race} {character.class} • Status: {character.status === 'pending' ? 'Aguardando Aprovação' : 'Ativo'}
             </p>
           </div>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-10">
           <div className="text-right">
-            <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground block mb-1">Experiência (XP)</span>
-            <div className="flex items-center gap-3">
-              <Progress value={((character.xp || 0) % 1000) / 10} className="w-32 h-2" />
+             <span className="text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground block mb-1">Riqueza</span>
+             <span className="text-3xl font-code font-bold text-primary">{character.gold || 0} <span className="text-xs opacity-50 uppercase">po</span></span>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground block mb-1">Experiência (XP)</span>
+            <div className="flex items-center gap-4">
+              <Progress value={((character.xp || 0) % 1000) / 10} className="w-40 h-2" />
               <span className="text-xs font-code font-bold text-primary">{character.xp || 0}</span>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-        {/* Atributos e Defesas */}
-        <div className="space-y-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+        {/* Coluna 1: Atributos e Resistências */}
+        <div className="lg:col-span-3 space-y-10">
           <section className="space-y-4">
-            <h3 className="text-[11px] uppercase font-bold tracking-[0.2em] text-muted-foreground opacity-50 flex items-center font-display">
-              <Star className="mr-2 h-4 w-4 text-primary" /> Atributos SRD
+            <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+              <Star className="mr-2 h-4 w-4 text-primary" /> Atributos Principais
             </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <StatCard label="FOR" value={stats.str} mod={calculateModifier(stats.str)} />
-              <StatCard label="DES" value={stats.dex} mod={calculateModifier(stats.dex)} />
-              <StatCard label="CON" value={stats.con} mod={calculateModifier(stats.con)} />
-              <StatCard label="INT" value={stats.int} mod={calculateModifier(stats.int)} />
-              <StatCard label="SAB" value={stats.wis} mod={calculateModifier(stats.wis)} />
-              <StatCard label="CAR" value={stats.cha} mod={calculateModifier(stats.cha)} />
+            <div className="grid grid-cols-1 gap-4">
+              {Object.entries(stats).map(([key, val]: [string, any]) => (
+                <StatCard key={key} label={key.toUpperCase()} value={val} mod={calculateModifier(val)} />
+              ))}
             </div>
           </section>
 
-          <Card className="bg-card/30 border-white/5 backdrop-blur-xl">
-            <CardContent className="p-6 grid grid-cols-2 gap-6">
-              <div className="flex flex-col items-center">
-                <Shield className="h-6 w-6 text-primary mb-2" />
-                <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-widest text-center leading-tight">Classe de Armadura</span>
-                <span className="text-3xl font-display font-bold text-primary">{character.ac || 10}</span>
-              </div>
-              <div className="flex flex-col items-center border-l border-white/5">
-                <Zap className="h-6 w-6 text-accent mb-2" />
-                <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-widest text-center leading-tight">Iniciativa</span>
-                <span className="text-3xl font-display font-bold text-accent">{character.initiative >= 0 ? `+${character.initiative}` : character.initiative}</span>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <div className="p-6 rounded-2xl bg-primary/5 border border-primary/20 flex gap-4 oracle-glow">
-             <Info className="h-5 w-5 text-primary shrink-0" />
-             <p className="text-[10px] text-muted-foreground italic leading-relaxed">
-               Bônus de Proficiência atual: <span className="text-primary font-bold">+{proficiency}</span>. Adicione aos testes das perícias que você domina.
-             </p>
-          </div>
+          <section className="space-y-4 pt-6">
+            <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+              <Shield className="mr-2 h-4 w-4 text-primary" /> Resistências (Saves)
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              {Object.keys(stats).map(s => {
+                const isProficient = character.savingThrows?.includes(s);
+                const modVal = Number(calculateModifier(stats[s as keyof typeof stats]));
+                const finalSave = isProficient ? modVal + proficiency : modVal;
+                return (
+                  <div key={s} className={`p-3 rounded-lg border flex justify-between items-center ${isProficient ? 'bg-primary/10 border-primary/30' : 'bg-white/5 border-transparent opacity-50'}`}>
+                    <span className="text-[9px] font-black uppercase tracking-widest">{s}</span>
+                    <span className="font-code font-bold">{finalSave >= 0 ? `+${finalSave}` : finalSave}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         </div>
 
-        {/* Vitalidade, Mana e Combate */}
-        <div className="md:col-span-2 space-y-10">
+        {/* Coluna 2: Status Vital e Combate */}
+        <div className="lg:col-span-6 space-y-10">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="bg-[#2B1218]/20 border-destructive/20 literary-shadow overflow-hidden">
+            <Card className="bg-[#2B1218]/20 border-destructive/20 literary-shadow overflow-hidden group">
               <div className="h-1 bg-destructive/30" />
               <CardContent className="p-8 space-y-6">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-xl bg-destructive/20 text-destructive shadow-arcane">
-                      <Heart className="h-6 w-6" />
+                    <div className="p-3 rounded-xl bg-destructive/20 text-destructive shadow-arcane group-hover:scale-110 transition-transform">
+                      <Heart className="h-7 w-7" />
                     </div>
-                    <div>
-                      <h4 className="text-sm font-bold uppercase tracking-widest text-destructive">Vitalidade</h4>
-                    </div>
+                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Vitalidade</h4>
                   </div>
                   <div className="text-right">
-                    <span className="text-3xl font-display font-bold text-destructive">{character.hp || 10} / {character.maxHp || 10}</span>
+                    <span className="text-4xl font-display font-bold text-destructive">{character.hp || 0} / {character.maxHp || 0}</span>
                   </div>
                 </div>
                 <Progress value={((character.hp || 0) / (character.maxHp || 1)) * 100} className="h-2 bg-destructive/10" />
+                
+                {character.hp <= 0 && (
+                   <div className="pt-4 space-y-3">
+                      <p className="text-[9px] uppercase font-black text-center tracking-widest text-destructive">Testes contra Morte</p>
+                      <div className="flex justify-center gap-4">
+                         <div className="flex gap-1"><Skull className="h-4 w-4 opacity-20" /><Skull className="h-4 w-4 opacity-20" /><Skull className="h-4 w-4 opacity-20" /></div>
+                         <div className="h-4 w-px bg-white/10" />
+                         <div className="flex gap-1"><Heart className="h-4 w-4 opacity-20" /><Heart className="h-4 w-4 opacity-20" /><Heart className="h-4 w-4 opacity-20" /></div>
+                      </div>
+                   </div>
+                )}
               </CardContent>
             </Card>
 
-            <Card className="bg-[#12182B]/20 border-accent/20 literary-shadow overflow-hidden">
+            <Card className="bg-[#12182B]/20 border-accent/20 literary-shadow overflow-hidden group">
               <div className="h-1 bg-accent/30" />
               <CardContent className="p-8 space-y-6">
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-xl bg-accent/20 text-accent shadow-arcane">
-                      <Sparkles className="h-6 w-6" />
+                    <div className="p-3 rounded-xl bg-accent/20 text-accent shadow-arcane group-hover:scale-110 transition-transform">
+                      <Sparkles className="h-7 w-7" />
                     </div>
-                    <div>
-                      <h4 className="text-sm font-bold uppercase tracking-widest text-accent">Mana / Slots</h4>
-                    </div>
+                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Energia Arcana</h4>
                   </div>
                   <div className="text-right">
-                    <span className="text-3xl font-display font-bold text-accent">{character.mana ?? 0} / {character.maxMana ?? 0}</span>
+                    <span className="text-4xl font-display font-bold text-accent">{character.mana ?? 0} / {character.maxMana ?? 0}</span>
                   </div>
                 </div>
                 <Progress value={((character.mana || 0) / (character.maxMana || 1)) * 100} className="h-2 bg-accent/10" />
@@ -239,40 +273,93 @@ export default function FichaPersonagem() {
             </Card>
           </div>
 
-          <section className="space-y-6">
-            <h3 className="text-[11px] uppercase font-bold tracking-[0.2em] text-muted-foreground opacity-50 flex items-center font-display">
-              <Ghost className="mr-2 h-4 w-4 text-primary" /> Condições de Status (D&D)
-            </h3>
-            <div className="flex flex-wrap gap-3">
-              {character.conditions?.length > 0 ? character.conditions.map((cond: string, i: number) => (
-                <ConditionBadge key={i} condition={cond} />
-              )) : (
-                <p className="text-sm text-muted-foreground font-heading italic opacity-40">O herói não sofre de enfermidades no momento.</p>
-              )}
-            </div>
+          <div className="grid grid-cols-2 gap-6">
+             <div className="p-8 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                <Shield className="h-10 w-10 text-primary mb-4" />
+                <span className="text-[10px] uppercase font-black tracking-widest opacity-40">Defesa (CA)</span>
+                <span className="text-6xl font-display font-black text-primary">{character.ac || 10}</span>
+             </div>
+             <div className="p-8 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                <Zap className="h-10 w-10 text-accent mb-4" />
+                <span className="text-[10px] uppercase font-black tracking-widest opacity-40">Iniciativa</span>
+                <span className="text-6xl font-display font-black text-accent">{character.initiative >= 0 ? `+${character.initiative}` : character.initiative}</span>
+             </div>
+          </div>
+
+          <section className="space-y-6 bg-white/5 p-10 rounded-[2.5rem] border border-white/5">
+             <div className="flex justify-between items-center">
+                <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+                  <Wind className="mr-2 h-4 w-4 text-primary" /> Nível de Exaustão
+                </h3>
+                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">{character.exhaustion || 0} / 6</Badge>
+             </div>
+             <Slider 
+              value={[character.exhaustion || 0]} 
+              max={6} 
+              step={1} 
+              onValueChange={updateExhaustion}
+              className="py-4"
+             />
+             <p className="text-xs italic text-muted-foreground leading-relaxed">
+               {character.exhaustion === 1 && "Desvantagem em Testes de Atributo."}
+               {character.exhaustion === 2 && "Deslocamento reduzido à metade."}
+               {character.exhaustion === 3 && "Desvantagem em Jogadas de Ataque e Resistência."}
+               {character.exhaustion === 4 && "Pontos de vida máximo reduzidos à metade."}
+               {character.exhaustion === 5 && "Deslocamento reduzido a 0."}
+               {character.exhaustion === 6 && "Morte imediata."}
+               {!character.exhaustion && "O herói está plenamente revigorado."}
+             </p>
           </section>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <section className="space-y-4">
               <h3 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-50 flex items-center font-display">
-                <Sword className="mr-2 h-4 w-4 text-primary" /> Ataques Físicos
+                <Sword className="mr-2 h-4 w-4 text-primary" /> Ataques Principais
               </h3>
               <div className="space-y-3">
-                <ActionCard name="Golpe de Aço" detail={`+${Number(calculateModifier(stats.str)) + proficiency} para atingir | Dano: 1d8 ${calculateModifier(stats.str)}`} />
-                <ActionCard name="Arremesso" detail={`+${Number(calculateModifier(stats.dex)) + proficiency} para atingir | Dano: 1d4 ${calculateModifier(stats.dex)}`} />
+                <ActionCard name="Golpe de Aço" detail={`+${Number(calculateModifier(stats.str)) + proficiency} | 1d8 ${calculateModifier(stats.str)}`} />
+                <ActionCard name="Arremesso" detail={`+${Number(calculateModifier(stats.dex)) + proficiency} | 1d4 ${calculateModifier(stats.dex)}`} />
               </div>
             </section>
 
             <section className="space-y-4">
               <h3 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-50 flex items-center font-display">
-                <Sparkles className="mr-2 h-4 w-4 text-primary" /> Habilidades Arcanas
+                <Flame className="mr-2 h-4 w-4 text-primary" /> Magias / Truques
               </h3>
               <div className="space-y-3">
-                <ActionCard name="Conconjuração" detail={`CD Resistência: ${8 + proficiency + Number(calculateModifier(stats.int))} | +${proficiency + Number(calculateModifier(stats.int))} p/ atingir`} />
-                <ActionCard name="Truque Místico" detail="Uso Ilimitado" />
+                <ActionCard name="Chama Sagrada" detail={`CD ${8 + proficiency + Number(calculateModifier(stats.wis))} | 1d8 Radiano`} />
+                <ActionCard name="Benção" detail="Concentração" />
               </div>
             </section>
           </div>
+        </div>
+
+        {/* Coluna 3: Condições e Informações */}
+        <div className="lg:col-span-3 space-y-10">
+          <section className="space-y-6">
+            <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+              <Ghost className="mr-2 h-4 w-4 text-primary" /> Condições Ativas
+            </h3>
+            <div className="flex flex-col gap-3">
+              {character.conditions?.length > 0 ? character.conditions.map((cond: string, i: number) => (
+                <ConditionBadge key={i} condition={cond} />
+              )) : (
+                <div className="p-6 border border-dashed border-white/5 rounded-2xl text-center opacity-30 italic text-xs">Sem enfermidades</div>
+              )}
+            </div>
+          </section>
+
+          <Card className="bg-primary/5 border-primary/20 oracle-glow">
+            <CardContent className="p-8 space-y-4">
+               <div className="flex items-center gap-3">
+                 <Info className="h-5 w-5 text-primary" />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-primary">Oráculo do SRD</span>
+               </div>
+               <p className="text-[11px] text-muted-foreground italic leading-relaxed">
+                 Seu Bônus de Proficiência de <span className="text-primary font-bold">+{proficiency}</span> é adicionado a testes de perícias que você domina e aos Testes de Resistência marcados como proficientes.
+               </p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
@@ -281,23 +368,30 @@ export default function FichaPersonagem() {
 
 function StatCard({ label, value, mod }: { label: string, value: number, mod: string }) {
   return (
-    <div className="p-4 rounded-xl bg-card/40 border border-white/5 flex flex-col items-center group hover:border-primary/40 transition-all cursor-default">
-      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest mb-1">{label}</span>
-      <span className="text-2xl font-display font-bold group-hover:text-primary transition-colors">{value}</span>
-      <Badge className="mt-2 bg-primary/10 text-primary border-primary/20 group-hover:bg-primary group-hover:text-black font-code">{mod}</Badge>
+    <div className="p-6 rounded-[1.5rem] bg-white/5 border border-white/5 flex justify-between items-center group hover:border-primary/40 transition-all cursor-default overflow-hidden relative">
+      <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-20 transition-opacity">
+         <span className="text-6xl font-black">{label[0]}</span>
+      </div>
+      <div className="flex flex-col">
+        <span className="text-[10px] uppercase font-black text-muted-foreground tracking-[0.2em] mb-1">{label}</span>
+        <span className="text-3xl font-display font-black group-hover:text-primary transition-colors">{value}</span>
+      </div>
+      <div className={`p-4 rounded-xl font-code font-black text-xl transition-all ${Number(mod) >= 0 ? 'bg-primary/20 text-primary' : 'bg-destructive/20 text-destructive'}`}>
+        {mod}
+      </div>
     </div>
   )
 }
 
 function ActionCard({ name, detail }: { name: string, detail: string }) {
   return (
-    <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center group hover:bg-white/10 hover:border-primary/20 transition-all cursor-pointer">
+    <div className="p-4 rounded-2xl bg-white/5 border border-white/5 flex justify-between items-center group hover:bg-white/10 hover:border-primary/20 transition-all cursor-pointer">
       <div>
         <h5 className="text-sm font-bold group-hover:text-primary transition-colors">{name}</h5>
         <p className="text-[10px] text-muted-foreground font-heading italic uppercase tracking-tighter mt-1">{detail}</p>
       </div>
       <Badge variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary/10 text-primary text-[8px] uppercase font-black">
-        Rolar 1d20
+        Rolar
       </Badge>
     </div>
   )
@@ -313,8 +407,12 @@ function ConditionBadge({ condition }: { condition: string }) {
   }
 
   return (
-    <Badge variant="outline" className="border-destructive/30 text-destructive bg-destructive/5 flex gap-2 py-2 px-4 rounded-full font-display text-[10px] uppercase tracking-widest">
-      {getIcon()} {condition}
-    </Badge>
+    <div className="flex items-center justify-between p-4 rounded-xl bg-destructive/5 border border-destructive/20 text-destructive">
+       <div className="flex items-center gap-3">
+         {getIcon()}
+         <span className="text-[10px] font-black uppercase tracking-widest">{condition}</span>
+       </div>
+       <Info className="h-3 w-3 opacity-30" />
+    </div>
   )
 }
