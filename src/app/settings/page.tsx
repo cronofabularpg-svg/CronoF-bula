@@ -3,18 +3,27 @@
 
 import * as React from "react"
 import { useUser, useFirestore, useDoc } from "@/firebase"
-import { doc, updateDoc } from "firebase/firestore"
+import { doc, setDoc } from "firebase/firestore"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useToast } from "@/hooks/use-toast"
 import { Dices, Hash, Settings as SettingsIcon, Save, Info } from "lucide-react"
+import { errorEmitter } from '@/firebase/error-emitter'
+import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors'
 
 export default function GlobalSettings() {
   const { user } = useUser()
   const db = useFirestore()
   const { toast } = useToast()
+
+  const [isDemo, setIsDemo] = React.useState(false)
+  const [dicePref, setDicePref] = React.useState<string>("ask")
+
+  React.useEffect(() => {
+    setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true')
+  }, [])
 
   const userRef = React.useMemo(() => {
     if (!db || !user) return null
@@ -22,7 +31,6 @@ export default function GlobalSettings() {
   }, [db, user])
 
   const { data: profile, loading } = useDoc<any>(userRef)
-  const [dicePref, setDicePref] = React.useState<string>("ask")
 
   React.useEffect(() => {
     if (profile?.dicePreference) {
@@ -30,17 +38,34 @@ export default function GlobalSettings() {
     }
   }, [profile])
 
-  async function handleSave() {
-    if (!userRef) return
-    try {
-      await updateDoc(userRef, { dicePreference: dicePref })
-      toast({ title: "Preferências Salvas", description: "Seu modo de jogo foi atualizado nos anais." })
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Erro ao Salvar", description: e.message })
+  function handleSave() {
+    if (!user || !db) return
+
+    if (isDemo) {
+      toast({ title: "Preferências Salvas (Simulado)", description: "Seu modo de jogo foi atualizado no portal de teste." })
+      return
     }
+
+    const docRef = doc(db, "users", user.uid)
+    const data = { dicePreference: dicePref }
+
+    // Mutação não-bloqueante seguindo as diretrizes
+    setDoc(docRef, data, { merge: true })
+      .then(() => {
+        toast({ title: "Preferências Salvas", description: "Seu modo de jogo foi atualizado nos anais." })
+      })
+      .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'write',
+          requestResourceData: data,
+        } satisfies SecurityRuleContext);
+
+        errorEmitter.emit('permission-error', permissionError);
+      })
   }
 
-  if (loading) return <div className="p-20 text-center italic">Lendo pergaminhos de configuração...</div>
+  if (loading && !isDemo) return <div className="p-20 text-center italic">Lendo pergaminhos de configuração...</div>
 
   return (
     <div className="p-10 max-w-4xl mx-auto space-y-12 animate-in fade-in duration-700">
