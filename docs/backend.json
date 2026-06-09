@@ -77,6 +77,15 @@
         "senderName": { "type": "string" },
         "text": { "type": "string" },
         "type": { "type": "string", "enum": ["speech", "action", "narration", "dice", "off"] },
+        "rollData": {
+          "type": "object",
+          "properties": {
+            "formula": { "type": "string" },
+            "result": { "type": "number" },
+            "isPhysical": { "type": "boolean" },
+            "reason": { "type": "string" }
+          }
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "sessionId", "senderId", "text", "type"]

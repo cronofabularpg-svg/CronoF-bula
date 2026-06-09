@@ -14,12 +14,9 @@ import {
   Users, 
   Dices, 
   MessageSquareDashed, 
-  Search, 
   Volume2, 
-  UserPlus, 
-  Share2,
-  Lock,
-  Ghost
+  Ghost,
+  Hash
 } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { 
@@ -28,9 +25,17 @@ import {
   TooltipTrigger, 
   TooltipProvider 
 } from "@/components/ui/tooltip"
+import { 
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { useUser, useFirestore, useCollection } from "@/firebase"
 import { collection, query, where, orderBy, addDoc, serverTimestamp, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
+import { Label } from "@/components/ui/label"
 
 export default function MesaViva() {
   const { id: campaignId } = useParams() as { id: string }
@@ -40,6 +45,12 @@ export default function MesaViva() {
 
   const [inputValue, setInputValue] = React.useState('')
   const [messageType, setMessageType] = React.useState<'speech' | 'action' | 'narration'>('speech')
+  
+  // Estados para o Rolador de Dados
+  const [diceFormula, setDiceFormula] = React.useState('1d20')
+  const [rollReason, setRollReason] = React.useState('')
+  const [physicalResult, setPhysicalResult] = React.useState('')
+  const [isDiceDialogOpen, setIsDiceDialogOpen] = React.useState(false)
 
   // Busca a última sessão ativa
   const activeSessionQuery = React.useMemo(() => {
@@ -75,21 +86,80 @@ export default function MesaViva() {
   const { data: campaignData } = useCollection(campaignQuery)
   const isMaster = campaignData?.[0]?.masterId === user?.uid
 
-  const handleSend = () => {
-    if (!inputValue.trim() || !session || !user) return
+  const handleSend = (text?: string, type?: string, rollData?: any) => {
+    const finalContent = text || inputValue
+    const finalType = type || (isMaster && messageType === 'narration' ? 'narration' : messageType)
 
-    const type = isMaster && messageType === 'narration' ? 'narration' : messageType
+    if (!finalContent.trim() || !session || !user) return
 
     addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), {
       sessionId: session.id,
       senderId: user.uid,
       senderName: user.displayName || "Aventureiro",
-      text: inputValue,
-      type: type,
+      text: finalContent,
+      type: finalType,
+      rollData: rollData || null,
       createdAt: serverTimestamp()
     }).then(() => {
-      setInputValue('')
+      if (!text) setInputValue('')
     })
+  }
+
+  const handleRollDice = (isPhysical: boolean = false) => {
+    if (!session || !user) return
+
+    let result = 0
+    let formula = diceFormula
+
+    if (isPhysical) {
+      result = parseInt(physicalResult)
+      if (isNaN(result)) {
+        toast({ variant: "destructive", title: "Resultado Inválido", description: "Informe um número para o dado físico." })
+        return
+      }
+    } else {
+      // Motor de busca de dados simples (ex: 1d20+5)
+      try {
+        const parts = formula.toLowerCase().split('d')
+        const numDice = parseInt(parts[0]) || 1
+        const remaining = parts[1]
+        
+        let dieSize = 20
+        let modifier = 0
+
+        if (remaining.includes('+')) {
+          const subParts = remaining.split('+')
+          dieSize = parseInt(subParts[0])
+          modifier = parseInt(subParts[1])
+        } else if (remaining.includes('-')) {
+          const subParts = remaining.split('-')
+          dieSize = parseInt(subParts[0])
+          modifier = -parseInt(subParts[1])
+        } else {
+          dieSize = parseInt(remaining)
+        }
+
+        for (let i = 0; i < numDice; i++) {
+          result += Math.floor(Math.random() * dieSize) + 1
+        }
+        result += modifier
+      } catch (e) {
+        toast({ variant: "destructive", title: "Fórmula Inválida", description: "Use o formato XdY+Z (ex: 1d20+5)" })
+        return
+      }
+    }
+
+    const rollMsg = `Rolou ${formula}${rollReason ? ` para ${rollReason}` : ''}: **${result}**`
+    handleSend(rollMsg, 'dice', {
+      formula,
+      result,
+      isPhysical,
+      reason: rollReason
+    })
+
+    setIsDiceDialogOpen(false)
+    setRollReason('')
+    setPhysicalResult('')
   }
 
   if (loadingSession) return <div className="h-screen flex items-center justify-center italic">Localizando a mesa...</div>
@@ -110,7 +180,7 @@ export default function MesaViva() {
 
   return (
     <div className="flex h-screen mesa-viva-bg bg-fixed">
-      {/* Left Context: Participants & Location */}
+      {/* Left Context: Participants */}
       <div className="w-72 border-r border-white/5 bg-background/60 backdrop-blur-xl hidden lg:flex flex-col p-6 space-y-10">
         <section className="space-y-4">
           <h3 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 flex items-center font-ui">
@@ -149,16 +219,61 @@ export default function MesaViva() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-             <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
-                    <Dices className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Rolar Dados</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+             <Dialog open={isDiceDialogOpen} onOpenChange={setIsDiceDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+                  <Dices className="h-5 w-5" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-card border-accent/30 literary-shadow max-w-sm">
+                <DialogHeader>
+                  <DialogTitle className="font-display text-2xl text-accent">Lançar Dados</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-6 pt-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-bold tracking-widest">Fórmula do Dado</Label>
+                    <div className="flex gap-2">
+                      <Input 
+                        value={diceFormula} 
+                        onChange={e => setDiceFormula(e.target.value)} 
+                        placeholder="Ex: 1d20+5"
+                        className="font-code text-lg"
+                      />
+                      <Button onClick={() => handleRollDice(false)} className="bg-primary hover:bg-primary/90">Rolar</Button>
+                    </div>
+                  </div>
+
+                  <div className="relative py-2">
+                    <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/10" /></div>
+                    <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-muted-foreground"><span className="bg-card px-2">Ou Dado Físico</span></div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-bold tracking-widest">Resultado Real</Label>
+                    <div className="flex gap-2">
+                      <Input 
+                        value={physicalResult} 
+                        onChange={e => setPhysicalResult(e.target.value)} 
+                        placeholder="Total obtido"
+                        type="number"
+                        className="font-code text-lg"
+                      />
+                      <Button variant="outline" onClick={() => handleRollDice(true)} className="border-accent/30 text-accent">Registrar</Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-2">
+                    <Label className="text-[10px] uppercase font-bold tracking-widest">Motivo (Opcional)</Label>
+                    <Input 
+                      value={rollReason} 
+                      onChange={e => setRollReason(e.target.value)} 
+                      placeholder="Ex: Ataque Furtivo"
+                      className="italic font-heading"
+                    />
+                  </div>
+                </div>
+              </DialogContent>
+             </Dialog>
           </div>
         </header>
 
@@ -213,7 +328,7 @@ export default function MesaViva() {
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-3">
-                <Button size="icon" className="h-12 w-12 rounded-xl bg-primary hover:bg-primary/90 literary-shadow" onClick={handleSend}>
+                <Button size="icon" className="h-12 w-12 rounded-xl bg-primary hover:bg-primary/90 literary-shadow" onClick={() => handleSend()}>
                   <Send className="h-5 w-5" />
                 </Button>
               </div>
@@ -229,6 +344,7 @@ function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string 
   const isNarrator = msg.type === 'narration';
   const isMine = msg.senderId === currentUserId;
   const isAction = msg.type === 'action';
+  const isDice = msg.type === 'dice';
 
   if (isNarrator) {
     return (
@@ -244,6 +360,26 @@ function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string 
         </div>
       </div>
     );
+  }
+
+  if (isDice) {
+    return (
+      <div className={`flex gap-6 animate-in duration-500 ${isMine ? 'justify-end' : ''}`}>
+        <div className={`p-4 rounded-2xl border-2 flex items-center gap-4 literary-shadow ${
+          msg.rollData?.isPhysical ? 'bg-accent/5 border-accent/20' : 'bg-secondary/5 border-secondary/20'
+        }`}>
+          <div className={`p-2 rounded-lg ${msg.rollData?.isPhysical ? 'bg-accent/20 text-accent' : 'bg-secondary/20 text-secondary'}`}>
+            {msg.rollData?.isPhysical ? <Hash className="h-5 w-5" /> : <Dices className="h-5 w-5" />}
+          </div>
+          <div>
+            <p className="text-[9px] uppercase font-bold tracking-widest opacity-50">{msg.senderName} role {msg.rollData?.formula}</p>
+            <p className="text-2xl font-display font-black tracking-tight">{msg.rollData?.result}</p>
+            {msg.rollData?.reason && <p className="text-[10px] italic text-muted-foreground mt-1">para {msg.rollData?.reason}</p>}
+          </div>
+          {msg.rollData?.isPhysical && <Badge variant="outline" className="text-[8px] border-accent/30 text-accent uppercase">Físico</Badge>}
+        </div>
+      </div>
+    )
   }
 
   return (
