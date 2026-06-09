@@ -23,7 +23,12 @@ import {
   Settings, 
   ShieldCheck, 
   Home,
-  Hourglass
+  Hourglass,
+  Users,
+  Compass,
+  Package,
+  Sparkles,
+  Database
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -32,17 +37,21 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
   const campaignId = pathname.split('/')[2];
 
-  const menuItems = [
+  const playerItems = [
     { icon: MessageSquare, label: "Mesa Viva", href: `/campaign/${campaignId}/mesa-viva` },
     { icon: MapIcon, label: "Mapa Vivo", href: `/campaign/${campaignId}/mapa-vivo` },
     { icon: Swords, label: "Combate", href: `/campaign/${campaignId}/combate` },
     { icon: User, label: "Ficha", href: `/campaign/${campaignId}/ficha` },
-    { icon: ScrollText, label: "Crônicas", href: `/campaign/${campaignId}/cronicas` },
     { icon: Book, label: "Diário", href: `/campaign/${campaignId}/diario` },
+    { icon: Package, label: "Inventário", href: `/campaign/${campaignId}/inventario` },
+    { icon: ScrollText, label: "Crônicas", href: `/campaign/${campaignId}/cronicas` },
   ];
 
   const masterItems = [
     { icon: ShieldCheck, label: "Aprovações", href: `/campaign/${campaignId}/master` },
+    { icon: Users, label: "NPCs", href: `/campaign/${campaignId}/npcs` },
+    { icon: Compass, label: "Locais", href: `/campaign/${campaignId}/locais` },
+    { icon: Sparkles, label: "IA Mestre", href: `/campaign/${campaignId}/ai-mestre` },
     { icon: Settings, label: "Configurações", href: `/campaign/${campaignId}/settings` },
   ];
 
@@ -55,7 +64,7 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
               <div className="p-2 rounded-lg bg-primary group-hover:scale-110 transition-transform">
                 <Hourglass className="h-5 w-5 text-white" />
               </div>
-              <span className="font-black text-xl tracking-tighter">Cronofábula</span>
+              <span className="font-black text-xl tracking-tighter font-display">Cronofábula</span>
             </Link>
           </SidebarHeader>
           <SidebarContent className="p-4">
@@ -68,10 +77,11 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              
               <div className="mt-8 mb-4 px-4">
-                <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50">Campanha</span>
+                <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 font-ui">Aventureiro</span>
               </div>
-              {menuItems.map((item) => (
+              {playerItems.map((item) => (
                 <SidebarMenuItem key={item.label}>
                   <SidebarMenuButton 
                     asChild 
@@ -86,8 +96,9 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
                 </SidebarMenuItem>
               ))}
               
-              <div className="mt-12 mb-4 px-4">
-                <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50">Mestre</span>
+              <div className="mt-12 mb-4 px-4 flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground opacity-50 font-ui">O Mestre</span>
+                <Database className="h-3 w-3 text-muted-foreground opacity-30" />
               </div>
               {masterItems.map((item) => (
                 <SidebarMenuItem key={item.label}>
@@ -107,12 +118,12 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
           </SidebarContent>
           <SidebarFooter className="p-4 border-t border-white/5">
             <div className="flex items-center gap-3 p-2">
-              <div className="h-8 w-8 rounded-full bg-accent flex items-center justify-center font-bold text-xs">
+              <div className="h-8 w-8 rounded-full bg-accent flex items-center justify-center font-bold text-xs text-accent-foreground">
                 G
               </div>
               <div className="flex flex-col">
                 <span className="text-sm font-bold">Gob</span>
-                <span className="text-[10px] text-muted-foreground">Ladino Nvl 3</span>
+                <span className="text-[10px] text-muted-foreground font-ui">Ladino Nvl 3</span>
               </div>
             </div>
           </SidebarFooter>
