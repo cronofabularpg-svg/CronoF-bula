@@ -37,6 +37,22 @@
       },
       "required": ["id", "name", "masterId", "status"]
     },
+    "ApprovalRequest": {
+      "title": "Approval Request",
+      "description": "A pending request for the GM to approve or reject.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["character", "item", "travel", "combat", "dialogue"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "requesterId": { "type": "string" },
+        "metadata": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "status", "requesterId"]
+    },
     "Character": {
       "title": "Character",
       "description": "A player character linked to a campaign.",
@@ -142,6 +158,10 @@
     "/campaigns/{campaignId}": {
       "schema": "Campaign",
       "description": "Campaign data."
+    },
+    "/campaigns/{campaignId}/approval_requests/{requestId}": {
+      "schema": "ApprovalRequest",
+      "description": "Pending approvals for the GM."
     },
     "/campaigns/{campaignId}/characters/{characterId}": {
       "schema": "Character",

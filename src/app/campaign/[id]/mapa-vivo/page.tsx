@@ -4,16 +4,13 @@
 import * as React from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where, orderBy, doc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore"
+import { collection, query, where, orderBy, doc, updateDoc, addDoc, serverTimestamp, limit } from "firebase/firestore"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { MapPin, Search, ChevronRight, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices } from "lucide-react"
+import { MapPin, Search, ChevronRight, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices, ShieldCheck, XCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function MapaVivo() {
   const { id: campaignId } = useParams() as { id: string }
@@ -24,12 +21,25 @@ export default function MapaVivo() {
 
   const [activeNode, setActiveNode] = React.useState<any>(null)
   const [isTraveling, setIsTraveling] = React.useState(false)
-  const [travelEvent, setTravelEvent] = React.useState<{ type: 'peaceful' | 'item' | 'combat' | 'dialogue', title: string, description: string, roll: number } | null>(null)
-  const [isDemo, setIsDemo] = React.useState(false)
+  const [travelEvent, setTravelEvent] = React.useState<{ 
+    type: 'peaceful' | 'item' | 'combat' | 'dialogue', 
+    title: string, 
+    description: string, 
+    roll: number,
+    targetLocationId: string,
+    targetLocationName: string
+  } | null>(null)
+  
+  const isDemo = localStorage.getItem('cronofabula_demo_mode') === 'true'
+  const isMaster = localStorage.getItem('cronofabula_demo_role') === 'master'
 
-  React.useEffect(() => {
-    setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true')
-  }, [])
+  // Busca sessão ativa para registrar a rolagem
+  const sessionQuery = React.useMemo(() => {
+    if (!db || !campaignId) return null
+    return query(collection(db, "campaigns", campaignId, "sessions"), where("status", "==", "active"), limit(1))
+  }, [db, campaignId])
+  const { data: sessions } = useCollection(sessionQuery)
+  const activeSession = sessions?.[0]
 
   const locationsQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
@@ -44,51 +54,66 @@ export default function MapaVivo() {
     { id: '3', name: 'Beco dos Fundos', status: 'active', type: 'mystery', coords: { x: 350, y: 450 }, description: 'Onde as sombras ganham vida.' },
   ] : [])
 
-  const isMaster = localStorage.getItem('cronofabula_demo_role') === 'master'
-
   async function handleMoveGroup(locationId: string, locationName: string) {
     setIsTraveling(true)
     
-    // Simula uma rolagem de evento (1d20)
+    // Rolagem 1d20 oficial
     const roll = Math.floor(Math.random() * 20) + 1
     
+    // Registro da rolagem no banco (Fase 5/8)
+    if (db && activeSession && user) {
+      await addDoc(collection(db, "campaigns", campaignId, "sessions", activeSession.id, "messages"), {
+        senderId: user.uid,
+        senderName: user.displayName || "Sistema",
+        text: `Rolou 1d20 para Viagem para ${locationName}: **${roll}**`,
+        type: 'dice',
+        rollData: { formula: '1d20', result: roll, reason: `Viagem para ${locationName}` },
+        createdAt: serverTimestamp()
+      })
+    }
+
     setTimeout(() => {
       let event: any = null
       
-      if (roll >= 1 && roll <= 8) {
-        event = {
-          type: 'peaceful',
-          title: 'Viagem Tranquila',
-          description: `O caminho para ${locationName} foi calmo. O grupo aproveitou para discutir estratégias sob a luz do luar.`,
-          roll
-        }
-      } else if (roll >= 9 && roll <= 13) {
-        event = {
-          type: 'dialogue',
-          title: 'Encontro na Estrada',
-          description: `No meio do caminho, um viajante misterioso cruza sua trilha e murmura: "As estrelas não mentem, o destino de ${locationName} já foi selado."`,
-          roll
-        }
-      } else if (roll >= 14 && roll <= 17) {
-        event = {
-          type: 'item',
-          title: 'Objeto Achado',
-          description: `Escondido entre as raízes de uma árvore centenária, você encontra um pequeno embrulho de couro contendo uma moeda antiga de Arvand.`,
-          roll
-        }
+      if (roll <= 8) {
+        event = { type: 'peaceful', title: 'Caminho Desimpedido', description: `A estrada para ${locationName} revela-se clemente. O grupo avança sob o silêncio das estrelas.`, roll }
+      } else if (roll <= 13) {
+        event = { type: 'dialogue', title: 'Vulto na Estrada', description: `Uma figura encapuzada observa vocês de longe. "A crônica de ${locationName} ainda tem páginas em branco", murmura antes de sumir.`, roll }
+      } else if (roll <= 17) {
+        event = { type: 'item', title: 'Relíquia Esquecida', description: `Luzes arcanas refletem em algo enterrado. Parece ser um fragmento de pergaminho antigo ou um amuleto quebrado.`, roll }
       } else {
-        event = {
-          type: 'combat',
-          title: 'Emboscada!',
-          description: `Sombras se movem rápido demais nos arbustos. Antes que pudessem reagir, o tinir do aço revela o perigo. Vocês estão sob ataque!`,
-          roll
-        }
+        event = { type: 'combat', title: 'Presságio de Sangue', description: `O vento traz o cheiro de aço e fumaça. Sombras hostis bloqueiam o caminho para ${locationName}.`, roll }
       }
       
-      setTravelEvent(event)
+      setTravelEvent({ ...event, targetLocationId: locationId, targetLocationName: locationName })
       setIsTraveling(false)
-      toast({ title: "Destino Alcançado", description: `O grupo chegou a ${locationName}.` })
-    }, 2000)
+    }, 1500)
+  }
+
+  async function finalizeTravel(approved: boolean = true) {
+    if (approved && travelEvent) {
+      // No MVP, a mudança de posição é imediata após aprovação/conclusão
+      toast({ title: "Jornada Concluída", description: `O grupo chegou a ${travelEvent.targetLocationName}.` })
+      // Aqui haveria o updateDoc da posição do grupo
+    }
+    setTravelEvent(null)
+  }
+
+  async function sendToApprovals(type: string) {
+    if (!db || !campaignId || !travelEvent) return
+    
+    await addDoc(collection(db, "campaigns", campaignId, "approval_requests"), {
+      type,
+      title: `Encontro de Viagem: ${travelEvent.title}`,
+      description: travelEvent.description,
+      status: 'pending',
+      requesterId: user?.uid,
+      createdAt: serverTimestamp(),
+      metadata: { roll: travelEvent.roll, location: travelEvent.targetLocationName }
+    })
+
+    toast({ title: "Enviado ao Mestre", description: "O evento aguarda validação canônica." })
+    setTravelEvent(null)
   }
 
   return (
@@ -98,26 +123,24 @@ export default function MapaVivo() {
           <h1 className="text-2xl font-display font-bold flex items-center tracking-tight">
             <MapPin className="mr-3 h-6 w-6 text-primary animate-pulse" /> Cartografia da Crônica
           </h1>
-          <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-[0.2em] mt-1">Região: Costa de Arvand</p>
+          <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-[0.2em] mt-1">Costa de Arvand</p>
         </div>
         <div className="flex gap-3">
           {isMaster && (
             <Button variant="outline" size="sm" className="rounded-full border-primary/30 text-primary hover:bg-primary/10">
-              <Plus className="mr-2 h-4 w-4" /> Adicionar Ponto
+              <Plus className="mr-2 h-4 w-4" /> Novo Ponto
             </Button>
           )}
           <Button variant="outline" size="sm" className="rounded-full bg-white/5 border-white/10">
-            <Search className="mr-2 h-4 w-4" /> Investigar Área
+            <Search className="mr-2 h-4 w-4" /> Investigar
           </Button>
         </div>
       </header>
 
       <div className="flex-1 relative overflow-hidden bg-[#0A0A0F]">
-        {/* SVG Grid Background */}
         <div className="absolute inset-0 opacity-10" 
              style={{ backgroundImage: 'radial-gradient(circle, #C8A24A 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
         
-        {/* Renderização dos Nós */}
         <div className="absolute inset-0">
           {displayLocations.map((node: any) => (
             <MapNode 
@@ -129,110 +152,98 @@ export default function MapaVivo() {
           ))}
         </div>
 
-        {/* Legenda */}
-        <div className="absolute bottom-8 left-8 p-5 rounded-2xl bg-card/60 backdrop-blur-xl border border-white/10 literary-shadow space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="h-2 w-2 rounded-full bg-primary shadow-arcane" />
-            <span className="text-[9px] uppercase font-black tracking-widest opacity-60">Localização Atual</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="h-2 w-2 rounded-full bg-accent" />
-            <span className="text-[9px] uppercase font-black tracking-widest opacity-60">Ponto Conhecido</span>
-          </div>
-        </div>
-
-        {/* Detalhes do Local */}
         {activeNode && !isTraveling && (
-          <div className="absolute top-8 right-8 w-80 max-h-[calc(100%-4rem)] rounded-3xl bg-card/90 backdrop-blur-2xl border border-accent/20 literary-shadow flex flex-col overflow-hidden animate-in slide-in-from-right-8 duration-500">
-             <div className="relative h-44 shrink-0">
+          <div className="absolute top-8 right-8 w-80 rounded-3xl bg-card/90 backdrop-blur-2xl border border-accent/20 literary-shadow animate-in slide-in-from-right-8 duration-500 overflow-hidden">
+             <div className="relative h-40">
                <img src={`https://picsum.photos/seed/${activeNode.id}/400/200`} alt={activeNode.name} className="object-cover w-full h-full opacity-40" />
-               <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-transparent" />
+               <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
                <Button variant="ghost" size="icon" className="absolute top-2 right-2 text-white/50" onClick={() => setActiveNode(null)}>
                  <ChevronRight className="h-4 w-4" />
                </Button>
-               <div className="absolute bottom-4 left-4">
-                 <Badge className="bg-primary/20 text-primary border-primary/30 uppercase text-[8px] tracking-[0.2em] font-black">
-                   {activeNode.type}
-                 </Badge>
-               </div>
              </div>
-
-             <ScrollArea className="flex-1">
-               <div className="p-6 space-y-6">
-                 <div>
-                   <h2 className="text-2xl font-display font-bold text-accent tracking-tight">{activeNode.name}</h2>
-                   <p className="text-xs text-muted-foreground leading-relaxed mt-2 font-heading italic">
-                     {activeNode.description || 'Um local envolto em névoas e mistérios da crônica.'}
-                   </p>
-                 </div>
-
-                 <Button 
-                   className="w-full rounded-xl bg-primary hover:bg-primary/90 literary-shadow py-6 text-[11px] font-bold uppercase tracking-widest"
-                   disabled={activeNode.status === 'locked'}
-                   onClick={() => handleMoveGroup(activeNode.id, activeNode.name)}
-                 >
-                   Viajar para este Local <ChevronRight className="ml-2 h-4 w-4" />
-                 </Button>
-               </div>
-             </ScrollArea>
+             <div className="p-6 space-y-6">
+               <h2 className="text-2xl font-display font-bold text-accent">{activeNode.name}</h2>
+               <p className="text-xs text-muted-foreground font-heading italic leading-relaxed">
+                 {activeNode.description || 'Um local envolto em névoas e mistérios.'}
+               </p>
+               <Button 
+                 className="w-full py-6 rounded-xl bg-primary hover:bg-primary/90 font-bold uppercase tracking-widest text-[11px]"
+                 onClick={() => handleMoveGroup(activeNode.id, activeNode.name)}
+               >
+                 Viajar para cá <ChevronRight className="ml-2 h-4 w-4" />
+               </Button>
+             </div>
           </div>
         )}
 
-        {/* Overlay de Viagem */}
         {isTraveling && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-50 animate-in fade-in duration-500">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center z-50 animate-in fade-in duration-500">
              <div className="p-8 rounded-full bg-primary/20 border border-primary/30 animate-pulse mb-6">
                 <MapPin className="h-12 w-12 text-primary" />
              </div>
-             <h2 className="text-3xl font-display font-black text-white tracking-tighter">Viagem em Curso...</h2>
-             <p className="text-muted-foreground font-heading italic mt-2">O tempo flui enquanto o grupo avança.</p>
+             <h2 className="text-3xl font-display font-black text-white">Cruzando a Fronteira...</h2>
+             <p className="text-muted-foreground font-heading italic mt-2">O destino está sendo traçado pelos dados.</p>
           </div>
         )}
 
-        {/* Modal de Encontro */}
-        <Dialog open={!!travelEvent} onOpenChange={() => setTravelEvent(null)}>
-          <DialogContent className="bg-card border-accent/30 literary-shadow max-w-md">
+        <Dialog open={!!travelEvent} onOpenChange={() => finalizeTravel(false)}>
+          <DialogContent className="bg-card border-accent/30 literary-shadow max-w-lg">
             <DialogHeader>
-              <div className="flex justify-center mb-4">
-                <div className={`p-4 rounded-2xl ${
+              <div className="flex justify-center mb-6">
+                <div className={`p-5 rounded-2xl border-2 ${
                   travelEvent?.type === 'combat' ? 'bg-destructive/20 text-destructive border-destructive/30' :
                   travelEvent?.type === 'item' ? 'bg-primary/20 text-primary border-primary/30' :
-                  travelEvent?.type === 'dialogue' ? 'bg-accent/20 text-accent border-accent/30' :
-                  'bg-secondary/20 text-secondary border-secondary/30'
-                } border-2`}>
-                   {travelEvent?.type === 'combat' ? <Sword className="h-8 w-8" /> :
-                    travelEvent?.type === 'item' ? <Package className="h-8 w-8" /> :
-                    travelEvent?.type === 'dialogue' ? <MessageSquare className="h-8 w-8" /> :
-                    <Sparkles className="h-8 w-8" />}
+                  'bg-accent/20 text-accent border-accent/30'
+                }`}>
+                   {travelEvent?.type === 'combat' ? <Sword className="h-10 w-10" /> :
+                    travelEvent?.type === 'item' ? <Package className="h-10 w-10" /> :
+                    <Sparkles className="h-10 w-10" />}
                 </div>
               </div>
-              <DialogTitle className="text-2xl font-display font-bold text-center text-accent">
-                {travelEvent?.title}
-              </DialogTitle>
-              <div className="flex justify-center items-center gap-2 mt-2">
-                 <Badge variant="outline" className="bg-black/20 text-[9px] uppercase font-black tracking-widest border-white/10">
-                   <Dices className="mr-1.5 h-3 w-3 text-primary" /> Dado: {travelEvent?.roll}
-                 </Badge>
+              <DialogTitle className="text-3xl font-display text-center text-accent">{travelEvent?.title}</DialogTitle>
+              <div className="flex justify-center mt-2">
+                <Badge variant="outline" className="bg-black/20 text-[10px] uppercase font-black tracking-widest">
+                  <Dices className="mr-2 h-3 w-3 text-primary" /> Resultado: {travelEvent?.roll}
+                </Badge>
               </div>
-              <DialogDescription className="text-lg font-heading italic text-center text-foreground/80 mt-4 leading-relaxed">
+              <DialogDescription className="text-xl font-heading italic text-center text-foreground/90 mt-6 leading-relaxed">
                 "{travelEvent?.description}"
               </DialogDescription>
             </DialogHeader>
-            <DialogFooter className="mt-8">
-              {travelEvent?.type === 'combat' ? (
-                <Button className="w-full bg-destructive hover:bg-destructive/90 rounded-xl" onClick={() => router.push(`/campaign/${campaignId}/combate`)}>
-                  Entrar em Combate <Sword className="ml-2 h-4 w-4" />
-                </Button>
-              ) : travelEvent?.type === 'item' ? (
-                <Button className="w-full bg-primary hover:bg-primary/90 rounded-xl" onClick={() => router.push(`/campaign/${campaignId}/inventario`)}>
-                  Guardar no Inventário <Package className="ml-2 h-4 w-4" />
-                </Button>
+
+            <div className="mt-8 grid grid-cols-1 gap-3">
+              {isMaster ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button className="bg-primary h-12 rounded-xl text-[10px] font-bold uppercase tracking-widest" onClick={() => finalizeTravel(true)}>
+                      <ShieldCheck className="mr-2 h-4 w-4" /> Concluir Viagem
+                    </Button>
+                    <Button variant="outline" className="h-12 rounded-xl border-destructive/30 text-destructive text-[10px] font-bold uppercase tracking-widest" onClick={() => finalizeTravel(false)}>
+                      <XCircle className="mr-2 h-4 w-4" /> Ignorar Encontro
+                    </Button>
+                  </div>
+                  {travelEvent?.type === 'combat' && (
+                    <Button className="bg-destructive hover:bg-destructive/90 h-12 rounded-xl text-[10px] font-bold uppercase tracking-widest" onClick={() => router.push(`/campaign/${campaignId}/combate`)}>
+                      Iniciar Combate Agora
+                    </Button>
+                  )}
+                  {travelEvent?.type === 'dialogue' && (
+                    <Button variant="secondary" className="h-12 rounded-xl text-[10px] font-bold uppercase tracking-widest" onClick={() => router.push(`/campaign/${campaignId}/mesa-viva`)}>
+                      Transformar em Cena
+                    </Button>
+                  )}
+                </>
               ) : (
-                <Button className="w-full bg-accent text-accent-foreground hover:bg-accent/90 rounded-xl" onClick={() => setTravelEvent(null)}>
-                  Continuar Jornada <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
+                <div className="space-y-4">
+                  <p className="text-[10px] text-center text-muted-foreground uppercase font-bold tracking-widest bg-white/5 p-3 rounded-lg border border-white/5">
+                    Este evento requer validação do Mestre para se tornar canônico.
+                  </p>
+                  <Button className="w-full bg-accent text-accent-foreground h-12 rounded-xl font-bold" onClick={() => sendToApprovals(travelEvent?.type || 'travel')}>
+                    Notificar Mestre e Aguardar
+                  </Button>
+                </div>
               )}
-            </DialogFooter>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
@@ -242,8 +253,6 @@ export default function MapaVivo() {
 
 function MapNode({ node, isActive, onClick }: { node: any, isActive: boolean, onClick: () => void }) {
   const isUnknown = node.status === 'unknown'
-  const isLocked = node.status === 'locked'
-
   return (
     <div 
       className={`absolute cursor-pointer transition-all duration-700 flex flex-col items-center group
@@ -253,16 +262,12 @@ function MapNode({ node, isActive, onClick }: { node: any, isActive: boolean, on
       style={{ left: `${node.coords.x}px`, top: `${node.coords.y}px`, transform: 'translate(-50%, -50%)' }}
       onClick={onClick}
     >
-      <div className={`relative p-4 rounded-2xl border-2 transition-all duration-500 shadow-arcane
+      <div className={`p-4 rounded-2xl border-2 transition-all shadow-arcane
         ${isActive ? 'bg-primary border-accent animate-glow' : 'bg-card border-white/10 group-hover:border-primary/50'}
-        ${isUnknown ? 'bg-muted border-transparent grayscale' : ''}
       `}>
         {isUnknown ? <EyeOff className="h-6 w-6 text-muted-foreground" /> : <MapPin className={`h-6 w-6 ${isActive ? 'text-white' : 'text-primary'}`} />}
-        {isLocked && <Lock className="absolute -top-2 -right-2 h-4 w-4 text-destructive bg-background rounded-full p-0.5 border border-destructive/20" />}
       </div>
-      <span className={`mt-3 text-[9px] font-black uppercase tracking-[0.2em] whitespace-nowrap px-3 py-1 rounded-full transition-all
-        ${isActive ? 'bg-primary text-white scale-110' : 'text-muted-foreground group-hover:text-foreground bg-card/50 backdrop-blur-sm border border-white/5'}
-      `}>
+      <span className={`mt-3 text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full bg-card/50 backdrop-blur-sm border border-white/5 ${isActive ? 'text-white bg-primary' : 'text-muted-foreground'}`}>
         {isUnknown ? '???' : node.name}
       </span>
     </div>
