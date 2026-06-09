@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -227,8 +226,8 @@ export default function MesaViva() {
 
   return (
     <div className="flex h-screen mesa-viva-bg bg-fixed overflow-hidden">
-      {/* Sidebar de Presença - Estilo Encadernação */}
-      <div className="w-85 border-r border-primary/20 bg-[#03040A]/80 backdrop-blur-3xl hidden xl:flex flex-col p-8 space-y-12">
+      {/* Sidebar de Presença */}
+      <div className="w-85 border-r border-primary/20 bg-sidebar/80 backdrop-blur-3xl hidden xl:flex flex-col p-8 space-y-12 shadow-2xl">
         <div className="flex flex-col gap-2">
             <h3 className="text-[10px] font-display uppercase tracking-[0.3em] text-primary opacity-60 flex items-center">
               <Users className="mr-3 h-4 w-4" /> Em Torno da Mesa
@@ -256,9 +255,9 @@ export default function MesaViva() {
                 <p className="text-xs font-display font-bold uppercase tracking-widest text-primary">Política de Dados</p>
              </div>
              <p className="text-[11px] font-heading italic text-muted-foreground leading-relaxed opacity-70">
-               {session.diceMode === 'virtual' ? "Apenas dados virtuais permitidos nesta sessão." : 
-                session.diceMode === 'physical' ? "Apenas resultados físicos permitidos nesta sessão." : 
-                "Política flexível: rolagens físicas ou virtuais permitidas."}
+               {session.diceMode === 'virtual' ? "Apenas dados virtuais permitidos." : 
+                session.diceMode === 'physical' ? "Apenas resultados físicos permitidos." : 
+                "Política flexível: física ou virtual."}
              </p>
           </div>
         </section>
@@ -267,7 +266,7 @@ export default function MesaViva() {
           <section className="mt-auto pt-10 border-t border-white/5">
             <div className="p-6 rounded-3xl bg-secondary/10 border border-secondary/20 space-y-5">
               <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.2em] text-center">Jornada Solo</p>
-              <p className="text-[11px] text-muted-foreground italic text-center font-heading">"O Oráculo narrará as consequências de seus atos."</p>
+              <p className="text-[11px] text-muted-foreground italic text-center font-heading">"O Oráculo narrará seus atos."</p>
               <Button 
                 onClick={() => setIsSoloMode(!isSoloMode)} 
                 className={`w-full rounded-2xl h-12 transition-all font-display text-[10px] tracking-widest ${isSoloMode ? 'btn-arcane' : 'border-secondary text-secondary hover:bg-secondary/10 border-2'}`}
@@ -290,7 +289,7 @@ export default function MesaViva() {
               </h2>
               <div className="flex items-center gap-4 mt-2">
                  <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] font-display tracking-widest px-3 py-0.5">Sessão Ativa</Badge>
-                 <span className="text-[9px] text-muted-foreground font-display uppercase tracking-[0.2em] opacity-40">Local: Desconhecido</span>
+                 <span className="text-[9px] text-muted-foreground font-display uppercase tracking-[0.2em] opacity-40">O tempo corre...</span>
               </div>
             </div>
           </div>
@@ -308,10 +307,10 @@ export default function MesaViva() {
                 
                 <Tabs value={activeDiceTab} onValueChange={setActiveDiceTab} className="w-full mt-8">
                   <TabsList className="grid w-full grid-cols-2 bg-black/40 h-14 p-1.5 rounded-2xl">
-                    <TabsTrigger value="virtual" disabled={session.diceMode === 'physical'} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-black rounded-xl h-full transition-all">
+                    <TabsTrigger value="virtual" disabled={session.diceMode === 'physical'} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-xl h-full transition-all">
                       <Zap className="h-4 w-4" /> Virtual
                     </TabsTrigger>
-                    <TabsTrigger value="physical" disabled={session.diceMode === 'virtual'} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-black rounded-xl h-full transition-all">
+                    <TabsTrigger value="physical" disabled={session.diceMode === 'virtual'} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-xl h-full transition-all">
                       <Hash className="h-4 w-4" /> Físico
                     </TabsTrigger>
                   </TabsList>
@@ -321,13 +320,9 @@ export default function MesaViva() {
                       <div className="space-y-3">
                         <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Fórmula Arcana</Label>
                         <div className="flex gap-3">
-                          <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="Ex: 1d20+5" className="font-code text-2xl h-16 bg-black/20 border-primary/20 text-center" />
+                          <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="1d20+5" className="font-code text-2xl h-16 bg-black/20 border-primary/20 text-center" />
                           <Button onClick={() => handleRollDice(false)} className="btn-ritual h-16 px-10">Rolar</Button>
                         </div>
-                      </div>
-                      <div className="space-y-3">
-                        <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Motivação (Opcional)</Label>
-                        <Input value={rollReason} onChange={e => setRollReason(e.target.value)} placeholder="Ex: Investigar o Portal" className="bg-black/20 border-white/5 h-12 italic font-heading" />
                       </div>
                     </div>
                   </TabsContent>
@@ -341,10 +336,6 @@ export default function MesaViva() {
                           <Button onClick={() => handleRollDice(true)} className="btn-ritual h-16 px-10">Registrar</Button>
                         </div>
                       </div>
-                      <div className="space-y-3">
-                        <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Motivação (Opcional)</Label>
-                        <Input value={rollReason} onChange={e => setRollReason(e.target.value)} placeholder="Ex: Golpe de Espada" className="bg-black/20 border-white/5 h-12 italic font-heading" />
-                      </div>
                     </div>
                   </TabsContent>
                 </Tabs>
@@ -353,13 +344,12 @@ export default function MesaViva() {
           </div>
         </header>
 
-        {/* Linha do Tempo da Crônica */}
-        <ScrollArea className="flex-1 p-10 px-16 bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, rgba(123, 66, 188, 0.05) 1px, transparent 1px)', backgroundSize: '80px 80px' }}>
+        <ScrollArea className="flex-1 p-10 px-16 bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, rgba(var(--primary), 0.05) 1px, transparent 1px)', backgroundSize: '80px 80px' }}>
           <div className="max-w-5xl mx-auto space-y-16 pb-32">
             {loadingMessages ? (
               <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30 animate-pulse">
                  <Hourglass className="h-12 w-12 text-primary animate-spin-slow" />
-                 <p className="font-heading italic text-2xl tracking-widest">Lendo os anais do tempo...</p>
+                 <p className="font-heading italic text-2xl tracking-widest">Consultando os anais...</p>
               </div>
             ) : messages && messages.length > 0 ? (
               messages.map((msg: any) => (
@@ -368,7 +358,7 @@ export default function MesaViva() {
             ) : (
               <div className="text-center py-40 space-y-8 opacity-40">
                 <Sparkles className="h-16 w-16 text-primary/50 mx-auto" />
-                <p className="text-3xl font-heading italic max-w-md mx-auto leading-relaxed">"O tempo parou. As páginas da crônica estão em branco. O que vocês fazem?"</p>
+                <p className="text-3xl font-heading italic max-w-md mx-auto leading-relaxed">"O tempo parou. As páginas estão em branco. O que você faz?"</p>
               </div>
             )}
             {isAiThinking && (
@@ -377,7 +367,7 @@ export default function MesaViva() {
                   <Sparkles className="h-7 w-7 text-secondary animate-spin-slow" />
                 </div>
                 <div className="space-y-4 py-2">
-                  <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.3em]">O Oráculo está tecendo o destino...</p>
+                  <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.3em]">Tecendo o destino...</p>
                   <div className="h-5 w-[30rem] bg-secondary/10 rounded-full" />
                 </div>
               </div>
@@ -385,7 +375,7 @@ export default function MesaViva() {
           </div>
         </ScrollArea>
 
-        {/* Rodapé de Ação - A Mesa de Comando */}
+        {/* Rodapé de Ação */}
         <div className="p-10 px-16 border-t border-primary/10 bg-background/95 backdrop-blur-2xl shrink-0">
           <div className="max-w-5xl mx-auto space-y-8">
             <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-hide">
@@ -394,19 +384,11 @@ export default function MesaViva() {
               {isMaster && (
                 <RitualShortcut icon={<Sparkles />} label="Narrar" active={messageType === 'narration'} onClick={() => setMessageType('narration')} />
               )}
-              <div className="ml-auto flex gap-4">
-                 <Button variant="ghost" size="sm" className="h-10 text-[9px] font-display uppercase tracking-widest text-muted-foreground hover:text-primary transition-all">
-                   <Zap className="mr-2 h-4 w-4" /> Magia
-                 </Button>
-                 <Button variant="ghost" size="sm" className="h-10 text-[9px] font-display uppercase tracking-widest text-muted-foreground hover:text-accent transition-all">
-                   <Shield className="mr-2 h-4 w-4" /> Defesa
-                 </Button>
-              </div>
             </div>
             
             <div className="relative">
               <Input 
-                placeholder={messageType === 'narration' ? "Narre o desenrolar do destino..." : `O que ${user?.displayName?.split(' ')[0]} faz nesta cena?`}
+                placeholder={messageType === 'narration' ? "Narre o destino..." : `O que você faz?`}
                 className="pr-36 py-14 rounded-[2rem] bg-black/40 border-primary/20 font-heading italic focus:ring-primary text-2xl literary-shadow placeholder:text-muted-foreground/30 px-10"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
@@ -434,8 +416,7 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
   if (isNarrator) {
     return (
       <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-1000 max-w-6xl">
-        <div className="h-16 w-16 rounded-[1.5rem] bg-[#3A1F5D]/20 p-4 shrink-0 border border-[#7B4FB3]/40 shadow-arcane flex items-center justify-center group relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent animate-pulse" />
+        <div className="h-16 w-16 rounded-[1.5rem] bg-secondary/20 p-4 shrink-0 border border-secondary/40 shadow-arcane flex items-center justify-center group relative overflow-hidden">
           <Sparkles className="h-full w-full text-primary relative z-10" />
         </div>
         <div className="space-y-4 pt-1">
@@ -443,7 +424,7 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
             O Oráculo Arcano • {msg.senderName}
             <Badge className="bg-primary/10 text-primary border border-primary/30 text-[8px] px-2 h-4 uppercase font-black">Cânone</Badge>
           </p>
-          <div className="text-3xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-6xl first-letter:font-display first-letter:mr-3 first-letter:float-left first-letter:text-[#F0D484] first-letter:drop-shadow-[0_0_15px_rgba(240,212,132,0.3)]">
+          <div className="text-3xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-6xl first-letter:font-display first-letter:mr-3 first-letter:float-left first-letter:text-primary">
             {msg.text}
           </div>
         </div>
@@ -455,15 +436,15 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
     return (
       <div className={`flex gap-8 animate-in duration-700 zoom-in-95 ${isMine ? 'justify-end' : ''}`}>
         <div className={`p-8 rounded-[2.5rem] border-2 flex items-center gap-10 literary-shadow transition-all hover:scale-105 ${
-          msg.rollData?.isPhysical ? 'bg-[#C8A24A]/5 border-[#C8A24A]/40 shadow-gold' : 'bg-secondary/5 border-secondary/40 shadow-arcane'
+          msg.rollData?.isPhysical ? 'bg-primary/5 border-primary/40 shadow-gold' : 'bg-secondary/5 border-secondary/40 shadow-arcane'
         }`}>
-          <div className={`p-5 rounded-[1.5rem] ${msg.rollData?.isPhysical ? 'bg-[#C8A24A]/20 text-[#E3C878]' : 'bg-secondary/20 text-secondary'}`}>
+          <div className={`p-5 rounded-[1.5rem] ${msg.rollData?.isPhysical ? 'bg-primary/20 text-primary' : 'bg-secondary/20 text-secondary'}`}>
             {msg.rollData?.isPhysical ? <Hash className="h-10 w-10" /> : <Dices className="h-10 w-10" />}
           </div>
           <div>
             <p className="text-[10px] font-display uppercase font-bold tracking-[0.2em] opacity-40 mb-2">{msg.senderName} conjurou {msg.rollData?.formula}</p>
-            <p className="text-6xl font-display font-black tracking-tighter text-foreground drop-shadow-2xl">{msg.rollData?.result}</p>
-            {msg.rollData?.reason && <p className="text-sm font-heading italic text-muted-foreground mt-3 border-l-2 border-primary/20 pl-4">"Para {msg.rollData?.reason}"</p>}
+            <p className="text-6xl font-display font-black tracking-tighter text-foreground">{msg.rollData?.result}</p>
+            {msg.rollData?.reason && <p className="text-sm font-heading italic text-muted-foreground mt-3 border-l-2 border-primary/20 pl-4">"{msg.rollData?.reason}"</p>}
           </div>
         </div>
       </div>
@@ -474,12 +455,12 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
     <div className={`flex gap-8 animate-in duration-500 ${isMine ? 'justify-end slide-in-from-right-8' : 'slide-in-from-left-8'}`}>
       {!isMine && (
         <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-white/5 bg-black/40 shadow-lg">
-          <AvatarFallback className="text-xl font-display font-bold bg-gradient-to-br from-white/10 to-white/5">{msg.senderName[0]}</AvatarFallback>
+          <AvatarFallback className="text-xl font-display font-bold">{msg.senderName[0]}</AvatarFallback>
         </Avatar>
       )}
       <div className={`space-y-4 ${isMine ? 'text-right' : 'text-left'}`}>
         <p className={`text-[10px] font-display uppercase font-bold tracking-[0.3em] ${isMine ? 'text-primary' : 'text-muted-foreground opacity-60'}`}>
-          {msg.senderName} {isAction && <span className="text-secondary ml-3 opacity-100">• Ação</span>}
+          {msg.senderName} {isAction && <span className="text-secondary ml-3">• Ação</span>}
         </p>
         <div className={`p-8 rounded-[2rem] border-2 text-2xl inline-block max-w-2xl literary-shadow transition-all relative overflow-hidden ${
           isMine 

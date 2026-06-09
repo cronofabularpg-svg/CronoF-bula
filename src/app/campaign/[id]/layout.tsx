@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -25,7 +24,6 @@ import {
   Home,
   Hourglass,
   Users,
-  Compass,
   Package,
   Sparkles,
   Database,
@@ -33,11 +31,33 @@ import {
   ChevronRight
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useParams } from "next/navigation"
+import { useUser, useFirestore, useCollection } from "@/firebase"
+import { collection, query, where } from "firebase/firestore"
+import { getCharacterTheme } from "@/lib/themes"
 
 export default function CampaignLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const campaignId = pathname.split('/')[2];
+  const { id: campaignId } = useParams() as { id: string };
+  const { user } = useUser();
+  const db = useFirestore();
+
+  // Get active character to apply theme
+  const charactersQuery = React.useMemo(() => {
+    if (!db || !user || !campaignId) return null;
+    return query(
+      collection(db, "campaigns", campaignId, "characters"),
+      where("ownerId", "==", user.uid)
+    );
+  }, [db, user, campaignId]);
+
+  const { data: chars } = useCollection(charactersQuery);
+  const activeChar = chars?.[0];
+
+  const theme = React.useMemo(() => {
+    if (!activeChar) return 'institutional';
+    return getCharacterTheme(activeChar.class, activeChar.race);
+  }, [activeChar]);
 
   const playerItems = [
     { icon: MessageSquare, label: "Mesa Viva", href: `/campaign/${campaignId}/mesa-viva` },
@@ -53,18 +73,17 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
     { icon: ShieldCheck, label: "Portal do Mestre", href: `/campaign/${campaignId}/master` },
     { icon: Users, label: "NPCs", href: `/campaign/${campaignId}/npcs` },
     { icon: MapPin, label: "Locais", href: `/campaign/${campaignId}/locais` },
-    { icon: Sparkles, label: "IA Mestre", href: `/campaign/${campaignId}/ai-mestre` },
     { icon: Settings, label: "Configurações", href: `/settings` },
   ];
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-[#050711]">
-        <Sidebar className="border-r border-primary/20 bg-[#03040A] text-foreground">
+      <div className="flex min-h-screen w-full bg-background" data-theme={theme}>
+        <Sidebar className="border-r border-primary/20 bg-sidebar text-foreground shadow-2xl">
           <SidebarHeader className="p-8 border-b border-primary/10">
             <Link href="/dashboard" className="flex items-center gap-4 group">
               <div className="p-2 rounded-xl bg-primary group-hover:rotate-[360deg] transition-all duration-1000 shadow-arcane">
-                <Hourglass className="h-6 w-6 text-black" />
+                <Hourglass className="h-6 w-6 text-primary-foreground" />
               </div>
               <span className="font-black text-2xl tracking-tighter font-display text-primary">Cronofábula</span>
             </Link>
@@ -91,10 +110,10 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
                     asChild 
                     isActive={pathname === item.href} 
                     tooltip={item.label}
-                    className={`h-12 rounded-xl transition-all mb-1 ${pathname === item.href ? 'bg-primary/10 text-primary border-l-2 border-primary' : 'hover:bg-primary/5 text-muted-foreground'}`}
+                    className={`h-12 rounded-xl transition-all mb-1 ${pathname === item.href ? 'bg-primary/10 text-primary border-l-2 border-primary shadow-sm' : 'hover:bg-primary/5 text-muted-foreground'}`}
                   >
                     <Link href={item.href} className="flex items-center gap-3">
-                      <item.icon className={`h-5 w-5 ${pathname === item.href ? 'text-primary animate-glow' : ''}`} />
+                      <item.icon className={`h-5 w-5 ${pathname === item.href ? 'text-primary animate-pulse' : ''}`} />
                       <span className="font-display text-[10px] uppercase tracking-widest font-bold">{item.label}</span>
                       {pathname === item.href && <ChevronRight className="ml-auto h-3 w-3 animate-in slide-in-from-left-2" />}
                     </Link>
@@ -116,7 +135,7 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
                     asChild 
                     isActive={pathname === item.href} 
                     tooltip={item.label}
-                    className={`h-12 rounded-xl transition-all mb-1 ${pathname === item.href ? 'bg-[#3A1F5D]/20 text-primary border-l-2 border-primary' : 'hover:bg-primary/5 text-muted-foreground'}`}
+                    className={`h-12 rounded-xl transition-all mb-1 ${pathname === item.href ? 'bg-secondary/20 text-primary border-l-2 border-primary' : 'hover:bg-primary/5 text-muted-foreground'}`}
                   >
                     <Link href={item.href} className="flex items-center gap-3">
                       <item.icon className="h-5 w-5" />
@@ -129,12 +148,16 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
           </SidebarContent>
           <SidebarFooter className="p-8 border-t border-primary/10 bg-black/40">
             <div className="flex items-center gap-5 group cursor-default">
-              <div className="h-12 w-12 rounded-2xl bg-primary/20 flex items-center justify-center font-display font-black text-lg text-primary border-2 border-primary/30 group-hover:scale-110 transition-transform shadow-arcane">
-                G
+              <div className="h-12 w-12 rounded-2xl bg-primary/20 flex items-center justify-center font-display font-black text-lg text-primary border-2 border-primary/30 group-hover:scale-110 transition-transform shadow-arcane overflow-hidden">
+                {activeChar?.name?.[0] || 'G'}
               </div>
               <div className="flex flex-col">
-                <span className="text-lg font-display font-bold tracking-tight text-primary">Gob</span>
-                <span className="text-[9px] text-muted-foreground uppercase font-black tracking-[0.2em] opacity-40">Ladino Nvl 3</span>
+                <span className="text-lg font-display font-bold tracking-tight text-primary truncate max-w-[120px]">
+                  {activeChar?.name || 'Aventureiro'}
+                </span>
+                <span className="text-[9px] text-muted-foreground uppercase font-black tracking-[0.2em] opacity-40">
+                  {activeChar ? `${activeChar.race} ${activeChar.class}` : 'Explorador'}
+                </span>
               </div>
             </div>
           </SidebarFooter>
