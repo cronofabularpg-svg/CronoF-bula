@@ -1,0 +1,74 @@
+
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Public and private profile data for users.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "favoriteClasses": { "type": "array", "items": { "type": "string" } },
+        "favoriteRaces": { "type": "array", "items": { "type": "string" } },
+        "defaultTheme": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "A game campaign managed by a Game Master.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "masterId": { "type": "string" },
+        "system": { "type": "string" },
+        "tone": { "type": "string" },
+        "bannerImage": { "type": "string" },
+        "isAiNarratorEnabled": { "type": "boolean" },
+        "isSoloJourneyEnabled": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "archived", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "masterId", "status"]
+    },
+    "Character": {
+      "title": "Character",
+      "description": "A player character or NPC linked to a campaign.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "race": { "type": "string" },
+        "class": { "type": "string" },
+        "level": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "active", "dead"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campaignId", "ownerId", "name", "status"]
+    }
+  },
+  "auth": {
+    "providers": ["password", "google"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents."
+    },
+    "/campaigns/{campaignId}": {
+      "schema": "Campaign",
+      "description": "Campaign data."
+    },
+    "/campaigns/{campaignId}/characters/{characterId}": {
+      "schema": "Character",
+      "description": "Characters in a campaign."
+    }
+  }
+}
