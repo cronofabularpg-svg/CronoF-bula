@@ -78,76 +78,71 @@ export default function Dashboard() {
     if (!db || !user) return;
     setIsCreatingTestChar(true);
 
-    let targetCampaignId = displayCampaigns[0]?.id;
-    const newCampId = doc(collection(db, 'campaigns')).id;
-
-    const testCampaign = {
-      id: newCampId,
-      name: "Crônica de Teste",
-      system: "D&D 5e",
-      masterId: user.uid,
-      status: "active",
-      tone: "dark",
-      createdAt: serverTimestamp()
-    };
-
-    const charId = doc(collection(db, 'campaigns', targetCampaignId || newCampId, 'characters')).id;
-    const testChar = {
-      id: charId,
-      campaignId: targetCampaignId || newCampId,
-      ownerId: user.uid,
-      name: "Valerius, o Rubro",
-      race: "Tiefling",
-      class: "Mago",
-      level: 3,
-      xp: 1250,
-      hp: 22,
-      maxHp: 30,
-      mana: 15,
-      maxMana: 20,
-      ac: 13,
-      initiative: 2,
-      hasInspiration: true,
-      exhaustion: 1,
-      gold: 150,
-      conditions: ["Bêbado", "Encantado"],
-      savingThrows: ["int", "wis"],
-      stats: {
-        str: 8,
-        dex: 14,
-        con: 14,
-        int: 18,
-        wis: 12,
-        cha: 12
-      },
-      status: "active",
-      createdAt: serverTimestamp()
-    };
-
     try {
-      if (!targetCampaignId || isDemo) {
-        await setDoc(doc(db, 'campaigns', newCampId), testCampaign);
-        targetCampaignId = newCampId;
+      // Se estiver no modo demo, sai dele para criar dados reais
+      if (isDemo) {
+        localStorage.removeItem('cronofabula_demo_mode');
+        localStorage.removeItem('cronofabula_demo_role');
+        setIsDemo(false);
       }
 
-      await setDoc(doc(db, 'campaigns', targetCampaignId, 'characters', charId), testChar);
+      const newCampId = doc(collection(db, 'campaigns')).id;
+      const testCampaign = {
+        id: newCampId,
+        name: "Crônica de Teste: Valerius",
+        system: "D&D 5e",
+        masterId: user.uid,
+        status: "active",
+        tone: "dark",
+        createdAt: serverTimestamp()
+      };
+
+      const charId = doc(collection(db, 'campaigns', newCampId, 'characters')).id;
+      const testChar = {
+        id: charId,
+        campaignId: newCampId,
+        ownerId: user.uid,
+        name: "Valerius, o Rubro",
+        race: "Tiefling",
+        class: "Mago",
+        level: 3,
+        xp: 1250,
+        hp: 22,
+        maxHp: 30,
+        mana: 15,
+        maxMana: 20,
+        ac: 13,
+        initiative: 2,
+        hasInspiration: true,
+        exhaustion: 1,
+        gold: 150,
+        conditions: ["Bêbado", "Encantado"],
+        savingThrows: ["int", "wis"],
+        stats: {
+          str: 8,
+          dex: 14,
+          con: 14,
+          int: 18,
+          wis: 12,
+          cha: 12
+        },
+        status: "active",
+        createdAt: serverTimestamp()
+      };
+
+      await setDoc(doc(db, 'campaigns', newCampId), testCampaign);
+      await setDoc(doc(db, 'campaigns', newCampId, 'characters', charId), testChar);
       
       toast({ 
         title: "Herói Evocado", 
         description: "Valerius foi manifestado. O destino agora pode ser consultado." 
       });
 
-      if (isDemo) {
-        localStorage.removeItem('cronofabula_demo_mode');
-        localStorage.removeItem('cronofabula_demo_role');
-      }
-      
-      router.push(`/campaign/${targetCampaignId}/ficha`);
+      router.push(`/campaign/${newCampId}/ficha`);
     } catch (e: any) {
       errorEmitter.emit('permission-error', new FirestorePermissionError({
-        path: `campaigns/${targetCampaignId}/characters/${charId}`,
-        operation: 'write',
-        requestResourceData: testChar
+        path: `campaigns/new`,
+        operation: 'write'
       } satisfies SecurityRuleContext));
     } finally {
       setIsCreatingTestChar(false);
@@ -158,9 +153,14 @@ export default function Dashboard() {
     if (!db || !user) return;
     setIsStartingSolo(true);
     
-    let targetId = displayCampaigns.find(c => c.masterId === user.uid)?.id;
-    
-    if (!targetId) {
+    try {
+      // Se estiver no modo demo, sai dele para criar dados reais
+      if (isDemo) {
+        localStorage.removeItem('cronofabula_demo_mode');
+        localStorage.removeItem('cronofabula_demo_role');
+        setIsDemo(false);
+      }
+
       const newId = doc(collection(db, 'campaigns')).id;
       const soloCamp = {
         id: newId,
@@ -174,16 +174,23 @@ export default function Dashboard() {
         createdAt: serverTimestamp()
       };
       
-      try {
-        await setDoc(doc(db, 'campaigns', newId), soloCamp);
-        targetId = newId;
-      } catch (e: any) {
-        setIsStartingSolo(false);
-        return;
-      }
+      await setDoc(doc(db, 'campaigns', newId), soloCamp);
+      
+      // Criar também uma sessão ativa para que a Mesa Viva funcione
+      await addDoc(collection(db, "campaigns", newId, "sessions"), {
+        campaignId: newId,
+        title: "Abertura da Crônica",
+        status: "active",
+        diceMode: "flexible",
+        createdAt: serverTimestamp()
+      });
+
+      router.push(`/campaign/${newId}/mesa-viva`);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro ao Iniciar", description: "O portal solo não pôde ser aberto." });
+    } finally {
+      setIsStartingSolo(false);
     }
-    
-    router.push(`/campaign/${targetId}/mesa-viva`);
   }
 
   return (
@@ -258,7 +265,7 @@ export default function Dashboard() {
                   <CardContent className="px-8 pb-10 space-y-6">
                     <div className="flex justify-between items-center text-sm font-display uppercase tracking-widest border-b border-white/5 pb-3">
                       <span className="text-muted-foreground opacity-40">Sistema Arcano</span>
-                      <span className="text-primary font-bold">{campaign.system}</span>
+                      <span className="text-primary font-bold">{campaign.system || 'D&D 5e'}</span>
                     </div>
                   </CardContent>
                   <CardFooter className="grid grid-cols-2 gap-6 p-8 pt-0">
@@ -286,7 +293,7 @@ export default function Dashboard() {
             ) : (
               <div className="col-span-2 p-32 border-2 border-dashed border-primary/20 rounded-[2rem] text-center space-y-10 bg-primary/5">
                 <div className="p-8 rounded-full bg-primary/10 w-fit mx-auto">
-                   <Hourglass className="h-16 w-16 text-primary opacity-30" />
+                   <Hourglass className="h-16 v-16 text-primary opacity-30" />
                 </div>
                 <div className="space-y-4">
                   <p className="text-muted-foreground font-heading italic text-3xl">O silêncio ecoa nestas páginas. Nenhuma crônica foi iniciada.</p>
@@ -321,7 +328,7 @@ export default function Dashboard() {
                </Button>
                <Button 
                 onClick={() => {
-                  const campId = displayCampaigns[0]?.id;
+                  const campId = firebaseCampaigns?.[0]?.id;
                   if (campId) router.push(`/campaign/${campId}/ficha`);
                   else toast({ title: "Nenhuma Crônica", description: "Evoque um herói primeiro." });
                 }}
