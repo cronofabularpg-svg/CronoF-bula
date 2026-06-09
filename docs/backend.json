@@ -51,6 +51,24 @@
       },
       "required": ["id", "campaignId", "title", "status"]
     },
+    "Chronicle": {
+      "title": "Chronicle",
+      "description": "A canonical historical record of a completed session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "importantDecisions": { "type": "array", "items": { "type": "string" } },
+        "npcsEncountered": { "type": "array", "items": { "type": "string" } },
+        "itemsGained": { "type": "array", "items": { "type": "string" } },
+        "masterSecrets": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campaignId", "sessionId", "title", "summary"]
+    },
     "ApprovalRequest": {
       "title": "Approval Request",
       "description": "A pending request for the GM to approve or reject.",
@@ -139,7 +157,7 @@
         "knownProperties": { "type": "array", "items": { "type": "string" } },
         "masterSecret": { "type": "string" },
         "type": { "type": "string", "enum": ["weapon", "armor", "magic", "document", "tool", "misc"] },
-        "ownerId": { "type": "string" },
+        "ownerId": { "type": "string", "description": "ID of Character or NPC who currently holds the item." },
         "campaignId": { "type": "string" },
         "status": { "type": "string", "enum": ["carried", "stored", "lost", "pending"] }
       },
@@ -176,6 +194,10 @@
     "/campaigns/{campaignId}/sessions/{sessionId}": {
       "schema": "Session",
       "description": "Sessions for a campaign."
+    },
+    "/campaigns/{campaignId}/chronicles/{chronicleId}": {
+      "schema": "Chronicle",
+      "description": "Canonical records for the campaign history."
     },
     "/campaigns/{campaignId}/approval_requests/{requestId}": {
       "schema": "ApprovalRequest",

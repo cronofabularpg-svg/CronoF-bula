@@ -26,11 +26,16 @@ import {
   Play,
   Dices,
   Hash,
-  Infinity
+  Infinity,
+  ScrollText,
+  Loader2
 } from "lucide-react"
 import { useFirestore, useCollection, useUser } from "@/firebase"
-import { collection, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy } from "firebase/firestore"
+import { collection, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy, getDocs, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
+import { summarizeSession } from "@/ai/flows/session-summarizer"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 
 export default function MasterPanel() {
   const { id: campaignId } = useParams() as { id: string }
@@ -42,46 +47,39 @@ export default function MasterPanel() {
   const [diceMode, setDiceMode] = React.useState("flexible")
   const [isStartingSession, setIsStartingSession] = React.useState(false)
 
-  // Busca personagens pendentes na campanha
+  // Estados para o Resumo
+  const [isSummarizing, setIsSummarizing] = React.useState(false)
+  const [summaryResult, setSummaryResult] = React.useState<any>(null)
+  const [isSummaryOpen, setIsSummaryOpen] = React.useState(false)
+
+  const campaignQuery = React.useMemo(() => {
+    if (!db || !campaignId) return null
+    return query(collection(db, "campaigns"), where("id", "==", campaignId), limit(1))
+  }, [db, campaignId])
+  const { data: campaigns } = useCollection(campaignQuery)
+  const campaign = campaigns?.[0]
+
   const pendingCharsQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
-    return query(
-      collection(db, "campaigns", campaignId, "characters"),
-      where("status", "==", "pending")
-    )
+    return query(collection(db, "campaigns", campaignId, "characters"), where("status", "==", "pending"))
   }, [db, campaignId])
+  const { data: pendingCharacters } = useCollection(pendingCharsQuery)
 
-  const { data: pendingCharacters, loading: loadingChars } = useCollection(pendingCharsQuery)
-
-  // Busca sessões da campanha
   const sessionsQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
-    return query(
-      collection(db, "campaigns", campaignId, "sessions"),
-      orderBy("createdAt", "desc")
-    )
+    return query(collection(db, "campaigns", campaignId, "sessions"), orderBy("createdAt", "desc"))
   }, [db, campaignId])
-
   const { data: sessions, loading: loadingSessions } = useCollection(sessionsQuery)
 
   async function handleApproveCharacter(charId: string) {
     if (!db || !campaignId) return
-    const charRef = doc(db, "campaigns", campaignId, "characters", charId)
-    updateDoc(charRef, { status: "active" })
+    updateDoc(doc(db, "campaigns", campaignId, "characters", charId), { status: "active" })
       .then(() => toast({ title: "Aprovado!", description: "O personagem agora faz parte da crônica." }))
-  }
-
-  async function handleRejectCharacter(charId: string) {
-    if (!db || !campaignId) return
-    const charRef = doc(db, "campaigns", campaignId, "characters", charId)
-    updateDoc(charRef, { status: "rejected" })
-      .then(() => toast({ title: "Rejeitado", description: "O herói foi arquivado." }))
   }
 
   async function handleStartSession() {
     if (!db || !campaignId || !newSessionTitle.trim()) return
     setIsStartingSession(true)
-    
     addDoc(collection(db, "campaigns", campaignId, "sessions"), {
       campaignId,
       title: newSessionTitle,
@@ -91,8 +89,58 @@ export default function MasterPanel() {
     }).then(() => {
       setNewSessionTitle("")
       setIsStartingSession(false)
-      toast({ title: "Sessão Iniciada!", description: `"${newSessionTitle}" já está no ar com política de dados: ${diceMode}.` })
+      toast({ title: "Sessão Iniciada!" })
     })
+  }
+
+  async function handleEndSession(session: any) {
+    if (!db || !campaignId || !campaign) return
+    setIsSummarizing(true)
+    try {
+      // Busca logs da sessão
+      const logsSnap = await getDocs(query(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), orderBy("createdAt", "asc")))
+      const sessionLog = logsSnap.docs.map(d => `${d.data().senderName}: ${d.data().text}`)
+
+      if (sessionLog.length === 0) {
+        toast({ variant: "destructive", title: "Sessão Vazia", description: "Não há registros suficientes para resumir." })
+        setIsSummarizing(false)
+        return
+      }
+
+      const summary = await summarizeSession({
+        campaign: { name: campaign.name, tone: campaign.tone || "fantasia sombria" },
+        sessionTitle: session.title,
+        sessionLog
+      })
+
+      setSummaryResult({ ...summary, sessionId: session.id })
+      setIsSummaryOpen(true)
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro na IA", description: e.message })
+    } finally {
+      setIsSummarizing(false)
+    }
+  }
+
+  async function handlePublishChronicle() {
+    if (!db || !campaignId || !summaryResult) return
+    try {
+      // 1. Criar Crônica
+      await addDoc(collection(db, "campaigns", campaignId, "chronicles"), {
+        campaignId,
+        sessionId: summaryResult.sessionId,
+        ...summaryResult,
+        createdAt: serverTimestamp()
+      })
+      // 2. Encerrar Sessão
+      await updateDoc(doc(db, "campaigns", campaignId, "sessions", summaryResult.sessionId), {
+        status: "completed"
+      })
+      setIsSummaryOpen(false)
+      toast({ title: "Crônica Eternizada", description: "A história foi gravada nos anais do tempo." })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro ao Publicar", description: e.message })
+    }
   }
 
   return (
@@ -113,7 +161,7 @@ export default function MasterPanel() {
         <TabsList className="bg-card/50 border border-white/5 p-1.5 rounded-2xl h-14">
           <TabsTrigger value="approvals" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Pendências</TabsTrigger>
           <TabsTrigger value="sessions" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Sessões</TabsTrigger>
-          <TabsTrigger value="ai-config" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Memória da IA</TabsTrigger>
+          <TabsTrigger value="ai-config" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Configurações</TabsTrigger>
         </TabsList>
 
         <TabsContent value="approvals" className="space-y-10">
@@ -123,23 +171,18 @@ export default function MasterPanel() {
                 <Database className="mr-2 h-4 w-4" /> Solicitações de Jogadores
               </h3>
               <div className="space-y-4">
-                {loadingChars ? (
-                  <div className="p-8 text-center italic opacity-50">Consultando pergaminhos...</div>
-                ) : pendingCharacters && pendingCharacters.length > 0 ? (
-                  pendingCharacters.map((char: any) => (
-                    <ApprovalCard 
-                      key={char.id}
-                      icon={<UserIcon className="h-4 w-4" />}
-                      type="Personagem"
-                      title={char.name}
-                      desc={`Um(a) ${char.race} ${char.class} nível ${char.level} aguarda sua bênção.`}
-                      character={char.ownerId.substring(0, 6)}
-                      time="Pendente"
-                      onApprove={() => handleApproveCharacter(char.id)}
-                      onReject={() => handleRejectCharacter(char.id)}
-                    />
-                  ))
-                ) : (
+                {pendingCharacters?.map((char: any) => (
+                  <ApprovalCard 
+                    key={char.id}
+                    icon={<UserIcon className="h-4 w-4" />}
+                    type="Personagem"
+                    title={char.name}
+                    desc={`Um(a) ${char.race} ${char.class} nível ${char.level} aguarda sua bênção.`}
+                    time="Pendente"
+                    onApprove={() => handleApproveCharacter(char.id)}
+                  />
+                ))}
+                {pendingCharacters?.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
                     Nenhum herói aguardando no portão.
                   </div>
@@ -166,18 +209,16 @@ export default function MasterPanel() {
               </div>
               <div className="text-center">
                 <h4 className="font-display font-bold text-xl">Nova Sessão</h4>
-                <p className="text-sm text-muted-foreground font-heading italic">Defina as leis da realidade para este capítulo.</p>
+                <p className="text-sm text-muted-foreground font-heading italic">Defina as leis da realidade.</p>
               </div>
               
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <Label htmlFor="session-title" className="text-[10px] uppercase font-bold tracking-widest">Título da Sessão</Label>
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Título da Sessão</Label>
                   <Input 
-                    id="session-title" 
                     placeholder="Ex: O Encontro nas Docas" 
                     value={newSessionTitle}
                     onChange={(e) => setNewSessionTitle(e.target.value)}
-                    className="bg-background/50 h-12"
                   />
                 </div>
 
@@ -187,17 +228,12 @@ export default function MasterPanel() {
                       <Label htmlFor="mode-flexible" className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${diceMode === 'flexible' ? 'border-primary bg-primary/10' : 'border-white/5 opacity-50'}`}>
                         <RadioGroupItem value="flexible" id="mode-flexible" className="sr-only" />
                         <Infinity className="h-4 w-4" />
-                        <span className="text-[10px] uppercase font-bold">Livre (Escolha do Jogador)</span>
+                        <span className="text-[10px] uppercase font-bold">Livre</span>
                       </Label>
                       <Label htmlFor="mode-virtual" className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${diceMode === 'virtual' ? 'border-primary bg-primary/10' : 'border-white/5 opacity-50'}`}>
                         <RadioGroupItem value="virtual" id="mode-virtual" className="sr-only" />
                         <Dices className="h-4 w-4" />
                         <span className="text-[10px] uppercase font-bold">Apenas Virtuais</span>
-                      </Label>
-                      <Label htmlFor="mode-physical" className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${diceMode === 'physical' ? 'border-primary bg-primary/10' : 'border-white/5 opacity-50'}`}>
-                        <RadioGroupItem value="physical" id="mode-physical" className="sr-only" />
-                        <Hash className="h-4 w-4" />
-                        <span className="text-[10px] uppercase font-bold">Apenas Físicos</span>
                       </Label>
                    </RadioGroup>
                 </div>
@@ -205,9 +241,9 @@ export default function MasterPanel() {
                 <Button 
                   onClick={handleStartSession} 
                   disabled={isStartingSession || !newSessionTitle.trim()} 
-                  className="w-full rounded-full bg-primary hover:bg-primary/90 font-ui text-[11px] font-bold uppercase tracking-widest h-14"
+                  className="w-full rounded-full bg-primary h-14"
                 >
-                  <Play className="mr-2 h-4 w-4" /> Iniciar Sessão Oficial
+                  <Play className="mr-2 h-4 w-4" /> Iniciar Sessão
                 </Button>
               </div>
             </Card>
@@ -215,91 +251,130 @@ export default function MasterPanel() {
             <Card className="col-span-1 xl:col-span-2 bg-card/30 border-white/5 p-8">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-display font-bold text-2xl">Histórico de Sessões</h3>
-                <Badge variant="outline">{sessions?.length || 0} Registradas</Badge>
               </div>
               <div className="space-y-4">
-                {loadingSessions ? (
-                  <div className="p-8 text-center italic opacity-50">Abrindo os anais...</div>
-                ) : sessions && sessions.length > 0 ? (
-                  sessions.map((session: any) => (
-                    <div key={session.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center hover:bg-white/10 transition-all">
-                      <div className="flex gap-4 items-center">
-                        <div className="p-2 rounded-lg bg-black/20 text-accent">
-                           {session.diceMode === 'virtual' ? <Dices className="h-4 w-4" /> : session.diceMode === 'physical' ? <Hash className="h-4 w-4" /> : <Infinity className="h-4 w-4" />}
-                        </div>
-                        <div>
-                          <h5 className="font-bold">{session.title}</h5>
-                          <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
-                            Status: {session.status} • Política: {session.diceMode || 'flexible'}
-                          </p>
-                        </div>
-                      </div>
+                {sessions?.map((session: any) => (
+                  <div key={session.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center">
+                    <div>
+                      <h5 className="font-bold">{session.title}</h5>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
+                        Status: {session.status}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {session.status === 'active' && (
+                        <Button 
+                          onClick={() => handleEndSession(session)} 
+                          disabled={isSummarizing}
+                          variant="outline" 
+                          size="sm" 
+                          className="border-accent/30 text-accent hover:bg-accent/10"
+                        >
+                          {isSummarizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ScrollText className="mr-2 h-4 w-4" /> Finalizar & Crônica</>}
+                        </Button>
+                      )}
                       <Badge className={session.status === 'active' ? 'bg-primary' : 'bg-muted'}>
-                        {session.status === 'active' ? 'Ativa' : 'Encerrada'}
+                        {session.status === 'active' ? 'Em curso' : 'Eternizada'}
                       </Badge>
                     </div>
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
-                    Nenhuma sessão realizada nesta campanha.
                   </div>
-                )}
+                ))}
               </div>
             </Card>
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Modal de Revisão da Crônica */}
+      <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>
+        <DialogContent className="bg-card border-accent/30 max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-3xl font-display text-accent flex items-center gap-3">
+              <Sparkles className="h-6 w-6" /> Oráculo do Cronista
+            </DialogTitle>
+            <DialogDescription className="font-heading italic text-lg">
+              Revise o registro histórico gerado pela IA antes de torná-lo canônico.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {summaryResult && (
+            <div className="space-y-8 py-6">
+              <div className="space-y-2">
+                <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Título Sugerido</Label>
+                <Input 
+                  value={summaryResult.title} 
+                  onChange={e => setSummaryResult({...summaryResult, title: e.target.value})}
+                  className="bg-background/50 text-xl font-display"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="uppercase text-[10px] font-black tracking-widest text-primary">A Crônica (Sumário)</Label>
+                <Textarea 
+                  value={summaryResult.summary} 
+                  onChange={e => setSummaryResult({...summaryResult, summary: e.target.value})}
+                  className="min-h-[200px] bg-background/50 font-heading text-lg italic leading-relaxed"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                 <div className="space-y-2">
+                    <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Figuras & NPCs</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {summaryResult.npcsEncountered.map((n: string, i: number) => (
+                        <Badge key={i} variant="secondary">{n}</Badge>
+                      ))}
+                    </div>
+                 </div>
+                 <div className="space-y-2">
+                    <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Itens Relevantes</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {summaryResult.itemsGained.map((it: string, i: number) => (
+                        <Badge key={i} variant="outline" className="border-accent/30 text-accent">{it}</Badge>
+                      ))}
+                    </div>
+                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Segredos do Mestre (Não visível aos jogadores)</Label>
+                <Textarea 
+                  value={summaryResult.masterSecrets} 
+                  onChange={e => setSummaryResult({...summaryResult, masterSecrets: e.target.value})}
+                  className="bg-primary/5 border-primary/20 text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsSummaryOpen(false)}>Descartar Resumo</Button>
+            <Button onClick={handlePublishChronicle} className="bg-primary px-10 rounded-full h-12 shadow-arcane">
+              Tornar Canônico & Encerrar Sessão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function ApprovalCard({ 
-  icon, 
-  type, 
-  title, 
-  desc, 
-  character, 
-  isAI = false, 
-  time,
-  onApprove,
-  onReject
-}: { 
-  icon: React.ReactNode, 
-  type: string, 
-  title: string, 
-  desc: string, 
-  character?: string, 
-  isAI?: boolean, 
-  time: string,
-  onApprove?: () => void,
-  onReject?: () => void
-}) {
+function ApprovalCard({ icon, type, title, desc, onApprove }: { icon: React.ReactNode, type: string, title: string, desc: string, time: string, onApprove?: () => void }) {
   return (
-    <Card className={`bg-card/40 border-white/5 hover:border-white/10 transition-all literary-shadow ${isAI ? 'border-primary/20 bg-primary/5' : ''}`}>
+    <Card className="bg-card/40 border-white/5 transition-all">
       <CardHeader className="p-6 pb-2">
-        <div className="flex justify-between items-start">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-xl ${isAI ? 'bg-primary/20 text-primary' : 'bg-accent/20 text-accent'}`}>
-              {icon}
-            </div>
-            <div>
-              <span className="text-[10px] uppercase font-bold tracking-[0.2em] opacity-50 font-ui">{type}</span>
-              <p className="text-[10px] text-muted-foreground font-ui">{time}</p>
-            </div>
-          </div>
-          {isAI && <Badge variant="outline" className="text-[9px] bg-primary/10 border-primary/30 text-primary uppercase font-bold tracking-widest">Sugerido por IA</Badge>}
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-accent/20 text-accent">{icon}</div>
+          <span className="text-[10px] uppercase font-bold tracking-[0.2em] opacity-50 font-ui">{type}</span>
         </div>
         <CardTitle className="text-xl mt-4 font-display">{title}</CardTitle>
       </CardHeader>
       <CardContent className="p-6 pt-2">
-        <p className="text-sm text-muted-foreground leading-relaxed font-ui">{desc}</p>
+        <p className="text-sm text-muted-foreground font-ui">{desc}</p>
       </CardContent>
-      <div className="p-6 pt-0 grid grid-cols-2 gap-4">
-        <Button size="sm" variant="outline" onClick={onReject} className="border-destructive/20 text-destructive hover:bg-destructive/10 rounded-xl h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
-          <X className="mr-2 h-4 w-4" /> Rejeitar
-        </Button>
-        <Button size="sm" variant="default" onClick={onApprove} className="bg-primary hover:bg-primary/90 rounded-xl h-10 font-ui text-[11px] font-bold uppercase tracking-widest literary-shadow">
-          <Check className="mr-2 h-4 w-4" /> Aprovar
+      <div className="p-6 pt-0">
+        <Button onClick={onApprove} className="w-full bg-primary hover:bg-primary/90 h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
+          <Check className="mr-2 h-4 w-4" /> Aprovar Entrada
         </Button>
       </div>
     </Card>
