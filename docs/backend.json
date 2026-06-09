@@ -38,7 +38,7 @@
     },
     "Character": {
       "title": "Character",
-      "description": "A player character or NPC linked to a campaign.",
+      "description": "A player character linked to a campaign.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -52,6 +52,25 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "campaignId", "ownerId", "name", "status"]
+    },
+    "NPC": {
+      "title": "NPC",
+      "description": "A non-player character managed by the GM or IA.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "personality": { "type": "string" },
+        "goals": { "type": "string" },
+        "knows": { "type": "array", "items": { "type": "string" } },
+        "secrets": { "type": "array", "items": { "type": "string" } },
+        "imageURL": { "type": "string" },
+        "status": { "type": "string", "enum": ["alive", "dead", "missing"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "campaignId", "name", "status"]
     },
     "Session": {
       "title": "Session",
@@ -77,6 +96,7 @@
         "senderName": { "type": "string" },
         "text": { "type": "string" },
         "type": { "type": "string", "enum": ["speech", "action", "narration", "dice", "off"] },
+        "npcId": { "type": "string" },
         "rollData": {
           "type": "object",
           "properties": {
@@ -106,6 +126,10 @@
     "/campaigns/{campaignId}/characters/{characterId}": {
       "schema": "Character",
       "description": "Characters in a campaign."
+    },
+    "/campaigns/{campaignId}/npcs/{npcId}": {
+      "schema": "NPC",
+      "description": "NPCs in a campaign."
     },
     "/campaigns/{campaignId}/sessions/{sessionId}": {
       "schema": "Session",

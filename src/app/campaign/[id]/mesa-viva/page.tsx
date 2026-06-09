@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -19,7 +20,8 @@ import {
   Crown,
   Zap,
   Shield,
-  Eye
+  Eye,
+  MessageSquare
 } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { 
@@ -36,9 +38,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where, orderBy, addDoc, serverTimestamp, limit } from "firebase/firestore"
+import { collection, query, where, orderBy, addDoc, serverTimestamp, limit, doc, getDoc } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
+import { aiNarratorAndNpcDialogue } from "@/ai/flows/narrator-npc-dialogue"
 
 export default function MesaViva() {
   const { id: campaignId } = useParams() as { id: string }
@@ -49,6 +52,7 @@ export default function MesaViva() {
   const [inputValue, setInputValue] = React.useState('')
   const [messageType, setMessageType] = React.useState<'speech' | 'action' | 'narration'>('speech')
   const [isSoloMode, setIsSoloMode] = React.useState(false)
+  const [isAiThinking, setIsAiThinking] = React.useState(false)
   
   // Estados para o Rolador de Dados
   const [diceFormula, setDiceFormula] = React.useState('1d20')
@@ -70,6 +74,22 @@ export default function MesaViva() {
   const { data: activeSessions, loading: loadingSession } = useCollection(activeSessionQuery)
   const session = activeSessions?.[0]
 
+  // Busca NPCs da campanha
+  const npcsQuery = React.useMemo(() => {
+    if (!db || !campaignId) return null
+    return query(collection(db, "campaigns", campaignId, "npcs"), where("status", "==", "alive"))
+  }, [db, campaignId])
+
+  const { data: npcs } = useCollection(npcsQuery)
+
+  // Busca personagens ativos
+  const charactersQuery = React.useMemo(() => {
+    if (!db || !campaignId) return null
+    return query(collection(db, "campaigns", campaignId, "characters"), where("status", "==", "active"))
+  }, [db, campaignId])
+  const { data: characters } = useCollection(charactersQuery)
+  const myCharacter = characters?.find(c => c.ownerId === user?.uid)
+
   // Busca mensagens da sessão ativa
   const messagesQuery = React.useMemo(() => {
     if (!db || !campaignId || !session) return null
@@ -88,15 +108,16 @@ export default function MesaViva() {
   }, [db, campaignId])
   
   const { data: campaignData } = useCollection(campaignQuery)
-  const isMaster = campaignData?.[0]?.masterId === user?.uid || localStorage.getItem('cronofabula_demo_role') === 'master';
+  const campaign = campaignData?.[0]
+  const isMaster = campaign?.masterId === user?.uid || localStorage.getItem('cronofabula_demo_role') === 'master';
 
-  const handleSend = (text?: string, type?: string, rollData?: any) => {
+  const handleSend = async (text?: string, type?: string, rollData?: any) => {
     const finalContent = text || inputValue
     const finalType = type || (isMaster && messageType === 'narration' ? 'narration' : messageType)
 
     if (!finalContent.trim() || !session || !user) return
 
-    addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), {
+    const messageData = {
       sessionId: session.id,
       senderId: user.uid,
       senderName: user.displayName || "Aventureiro",
@@ -104,27 +125,75 @@ export default function MesaViva() {
       type: finalType,
       rollData: rollData || null,
       createdAt: serverTimestamp()
-    }).then(() => {
+    }
+
+    try {
+      await addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), messageData)
       if (!text) setInputValue('')
       
-      // Lógica de Jornada Solo: Se o jogador estiver sozinho e enviar uma ação, a IA responde como mestre
+      // Lógica de IA Mestre Avançada
       if (isSoloMode && !isMaster && (finalType === 'action' || finalType === 'speech')) {
-        simulateAiMasterResponse(finalContent)
+        handleAiMasterResponse(finalContent, finalType)
       }
-    })
+    } catch (e) {
+      console.error(e)
+    }
   }
 
-  const simulateAiMasterResponse = (playerInput: string) => {
-    setTimeout(() => {
-      addDoc(collection(db, "campaigns", campaignId, "sessions", session!.id, "messages"), {
-        sessionId: session!.id,
+  const handleAiMasterResponse = async (playerInput: string, type: 'action' | 'speech') => {
+    if (!session || !campaign || !myCharacter) return
+    
+    setIsAiThinking(true)
+    
+    try {
+      // Simula contexto para o Genkit
+      const input = {
+        mode: 'narrator' as const,
+        campaign: {
+          id: campaign.id,
+          name: campaign.name,
+          tone: campaign.tone || "fantasia sombria",
+          rule_system: campaign.system || "dnd_srd"
+        },
+        session: {
+          id: session.id,
+          title: session.title,
+          status: "active"
+        },
+        scene: {
+          id: "current-scene",
+          title: "Cena em Andamento",
+          visibility: "public",
+          location: "Desconhecida"
+        },
+        active_character: {
+          id: myCharacter.id,
+          name: myCharacter.name,
+          race: myCharacter.race,
+          class: myCharacter.class,
+          known_information: ["Está explorando uma área nova."]
+        },
+        player_action: playerInput,
+        visible_objects: ["Uma névoa persistente"],
+        present_npcs: npcs?.map(n => ({ name: npc.name })) || []
+      }
+
+      const aiResponse = await aiNarratorAndNpcDialogue(input as any)
+
+      await addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), {
+        sessionId: session.id,
         senderId: 'ai-narrator',
         senderName: 'IA Mestre',
-        text: `O destino se molda à sua vontade. Após você "${playerInput}", o ambiente reage com um presságio. Role um dado para descobrir a consequência.`,
+        text: aiResponse,
         type: 'narration',
         createdAt: serverTimestamp()
       })
-    }, 1500)
+    } catch (e) {
+      console.error("Erro na IA:", e)
+      toast({ variant: "destructive", title: "Erro do Oráculo", description: "A IA encontrou uma bruma mental. Tente novamente." })
+    } finally {
+      setIsAiThinking(false)
+    }
   }
 
   const handleRollDice = (isPhysical: boolean = false) => {
@@ -210,8 +279,11 @@ export default function MesaViva() {
             {isSoloMode && <Badge className="bg-secondary/20 text-secondary border-secondary/30 text-[8px] uppercase tracking-tighter">Solo Ativo</Badge>}
           </div>
           <div className="space-y-4">
-             <ParticipantItem name={user?.displayName || "Você"} role={isMaster ? "Mestre" : "Jogador"} status="Ativo" />
-             {isSoloMode && <ParticipantItem name="IA Mestre" role="Narrador" status="Pensando..." isAI />}
+             <ParticipantItem name={user?.displayName || "Você"} role={isMaster ? "Mestre" : (myCharacter?.class || "Aventureiro")} status="Ativo" />
+             {isSoloMode && <ParticipantItem name="IA Mestre" role="Narrador" status={isAiThinking ? "Pensando..." : "Observando"} isAI />}
+             {npcs?.map(npc => (
+               <ParticipantItem key={npc.id} name={npc.name} role={npc.role} status="Presente" isNPC />
+             ))}
           </div>
         </section>
 
@@ -230,7 +302,7 @@ export default function MesaViva() {
           <section className="mt-auto pt-6 border-t border-white/5">
             <div className="p-4 rounded-2xl bg-secondary/10 border border-secondary/20 space-y-4">
               <p className="text-[10px] uppercase font-bold text-secondary tracking-widest text-center">Jornada Solo</p>
-              <p className="text-[11px] text-muted-foreground italic text-center">Transforme esta sessão em uma aventura individual controlada pela IA.</p>
+              <p className="text-[11px] text-muted-foreground italic text-center">A IA assumirá a narração e os NPCs para você.</p>
               <Button 
                 onClick={() => setIsSoloMode(!isSoloMode)} 
                 variant={isSoloMode ? "default" : "outline"} 
@@ -311,6 +383,17 @@ export default function MesaViva() {
               <div className="text-center italic text-muted-foreground p-12 bg-white/5 rounded-3xl border border-dashed border-white/10 flex flex-col items-center gap-4">
                 <Sparkles className="h-10 w-10 text-primary/30" />
                 <p className="max-w-xs leading-relaxed">O tempo parou. Não há nada registrado nesta cena. O que vocês fazem?</p>
+              </div>
+            )}
+            {isAiThinking && (
+              <div className="flex gap-8 animate-pulse">
+                <div className="h-12 w-12 rounded-2xl bg-secondary/20 border border-secondary/30 flex items-center justify-center">
+                  <Sparkles className="h-5 w-5 text-secondary animate-spin-slow" />
+                </div>
+                <div className="space-y-3">
+                  <p className="text-[10px] uppercase font-bold text-secondary tracking-widest">IA Mestre está tecendo o destino...</p>
+                  <div className="h-4 w-64 bg-secondary/10 rounded-full" />
+                </div>
               </div>
             )}
           </div>
@@ -424,20 +507,22 @@ function ChatMessage({ msg, currentUserId }: { msg: any, currentUserId?: string 
   );
 }
 
-function ParticipantItem({ name, role, status, isAI = false }: { name: string, role: string, status: string, isAI?: boolean }) {
+function ParticipantItem({ name, role, status, isAI = false, isNPC = false }: { name: string, role: string, status: string, isAI?: boolean, isNPC?: boolean }) {
   return (
     <div className="flex items-center gap-4 group cursor-default">
       <div className={`h-12 w-12 rounded-2xl flex items-center justify-center font-bold text-sm transition-all group-hover:scale-110 border ${
-        isAI ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-primary/20 text-primary border-primary/30'
+        isAI ? 'bg-secondary/20 text-secondary border-secondary/30' : 
+        isNPC ? 'bg-accent/20 text-accent border-accent/30' :
+        'bg-primary/20 text-primary border-primary/30'
       }`}>
         {isAI ? <Sparkles className="h-5 w-5" /> : name[0]}
       </div>
       <div className="flex flex-col">
-        <span className={`text-sm font-bold group-hover:text-primary transition-colors ${isAI ? 'text-secondary' : ''}`}>{name}</span>
+        <span className={`text-sm font-bold group-hover:text-primary transition-colors ${isAI ? 'text-secondary' : isNPC ? 'text-accent' : ''}`}>{name}</span>
         <div className="flex items-center gap-2">
           <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-ui">{role}</span>
           <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
-          <span className="text-[9px] text-accent font-medium italic font-heading animate-pulse">{status}</span>
+          <span className={`text-[9px] font-medium italic font-heading ${status === 'Pensando...' ? 'animate-pulse text-accent' : 'text-muted-foreground'}`}>{status}</span>
         </div>
       </div>
     </div>
