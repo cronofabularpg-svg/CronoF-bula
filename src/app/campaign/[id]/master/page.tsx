@@ -2,6 +2,7 @@
 "use client"
 
 import * as React from "react"
+import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -16,15 +17,56 @@ import {
   Package, 
   Trophy,
   History,
-  Eye,
   Settings,
-  Database
+  Database,
+  User as UserIcon
 } from "lucide-react"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { useFirestore, useCollection } from "@/firebase"
+import { collection, query, where, doc, updateDoc } from "firebase/firestore"
+import { useToast } from "@/hooks/use-toast"
 
 export default function MasterPanel() {
+  const { id: campaignId } = useParams() as { id: string }
+  const db = useFirestore()
+  const { toast } = useToast()
+
+  // Busca personagens pendentes na campanha real
+  const pendingCharsQuery = React.useMemo(() => {
+    if (!db || !campaignId) return null
+    return query(
+      collection(db, "campaigns", campaignId, "characters"),
+      where("status", "==", "pending")
+    )
+  }, [db, campaignId])
+
+  const { data: pendingCharacters, loading: loadingChars } = useCollection(pendingCharsQuery)
+
+  async function handleApproveCharacter(charId: string) {
+    if (!db || !campaignId) return
+    try {
+      await updateDoc(doc(db, "campaigns", campaignId, "characters", charId), {
+        status: "active"
+      })
+      toast({ title: "Aprovado!", description: "O personagem agora faz parte da crônica." })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro ao aprovar", description: e.message })
+    }
+  }
+
+  async function handleRejectCharacter(charId: string) {
+    if (!db || !campaignId) return
+    try {
+      await updateDoc(doc(db, "campaigns", campaignId, "characters", charId), {
+        status: "rejected"
+      })
+      toast({ title: "Rejeitado", description: "O herói foi arquivado." })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro ao rejeitar", description: e.message })
+    }
+  }
+
   return (
-    <div className="p-10 max-w-7xl mx-auto space-y-12">
+    <div className="p-10 max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700">
       <header className="flex justify-between items-center border-b pb-10 border-white/5">
         <div className="flex items-center gap-6">
           <div className="p-4 rounded-2xl bg-primary/20 text-primary border border-primary/30">
@@ -57,21 +99,36 @@ export default function MasterPanel() {
                 <Database className="mr-2 h-4 w-4" /> Solicitações de Jogadores
               </h3>
               <div className="space-y-4">
+                {loadingChars ? (
+                  <div className="p-8 text-center italic opacity-50">Consultando pergaminhos...</div>
+                ) : pendingCharacters && pendingCharacters.length > 0 ? (
+                  pendingCharacters.map((char: any) => (
+                    <ApprovalCard 
+                      key={char.id}
+                      icon={<UserIcon className="h-4 w-4" />}
+                      type="Personagem"
+                      title={char.name}
+                      desc={`Um(a) ${char.race} ${char.class} nível ${char.level} aguarda sua bênção para entrar na cena.`}
+                      character={char.ownerId.substring(0, 6)}
+                      time="Recém-criado"
+                      onApprove={() => handleApproveCharacter(char.id)}
+                      onReject={() => handleRejectCharacter(char.id)}
+                    />
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
+                    Nenhum personagem pendente.
+                  </div>
+                )}
+                
+                {/* Mock para outros tipos de aprovações (Fase Futura) */}
                 <ApprovalCard 
                   icon={<Package className="h-4 w-4" />}
                   type="Item"
-                  title="Adaga de Prata"
-                  desc="Gob encontrou esta adaga no corpo do mercador durante a jornada solo 'Investigação no Beco'."
-                  character="Gob"
+                  title="Adaga de Prata (Mock)"
+                  desc="Exemplo de solicitação de item encontrado em jornada solo."
+                  character="Demo"
                   time="Há 1 hora"
-                />
-                <ApprovalCard 
-                  icon={<Trophy className="h-4 w-4" />}
-                  type="Recompensa"
-                  title="+200 XP (Marcos)"
-                  desc="Pela descoberta da passagem secreta no porão da taverna."
-                  character="Gob"
-                  time="Há 2 horas"
                 />
               </div>
             </section>
@@ -89,21 +146,13 @@ export default function MasterPanel() {
                   isAI
                   time="Há 10 min"
                 />
-                <ApprovalCard 
-                  icon={<MessageSquare className="h-4 w-4" />}
-                  type="Crônica"
-                  title="Resumo da Sessão #12"
-                  desc="Transformar os eventos de hoje em um registro histórico oficial para todos os jogadores."
-                  isAI
-                  time="Pendente"
-                />
               </div>
             </section>
           </div>
         </TabsContent>
 
         <TabsContent value="sessions" className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <Card className="bg-primary/5 border-primary/20 border-dashed col-span-1 flex flex-col items-center justify-center p-12 text-center group cursor-pointer hover:bg-primary/10 transition-all">
               <div className="p-4 rounded-full bg-primary/20 text-primary mb-6 group-hover:scale-125 transition-transform">
                 <Database className="h-8 w-8" />
@@ -120,14 +169,11 @@ export default function MasterPanel() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="p-5 rounded-xl bg-white/5 border border-white/5 font-heading text-lg leading-relaxed text-foreground/80">
-                  "O grupo está no Beco dos Fundos. Halvek foi confrontado, mas a porta de ferro ainda oculta o que está por vir. A chuva continua a cair, lavando os segredos das docas..."
+                  "O grupo está pronto. O destino ainda é incerto, mas as peças estão no tabuleiro."
                 </div>
                 <div className="flex gap-4">
                   <Button size="sm" variant="outline" className="rounded-full font-ui text-[10px] font-bold uppercase tracking-tighter">
                     <History className="mr-2 h-4 w-4" /> Ver Histórico
-                  </Button>
-                  <Button size="sm" variant="default" className="rounded-full bg-primary hover:bg-primary/90 font-ui text-[10px] font-bold uppercase tracking-tighter">
-                    <Sparkles className="mr-2 h-4 w-4" /> Regenerar com IA
                   </Button>
                 </div>
               </CardContent>
@@ -139,7 +185,27 @@ export default function MasterPanel() {
   );
 }
 
-function ApprovalCard({ icon, type, title, desc, character, isAI = false, time }: { icon: React.ReactNode, type: string, title: string, desc: string, character?: string, isAI?: boolean, time: string }) {
+function ApprovalCard({ 
+  icon, 
+  type, 
+  title, 
+  desc, 
+  character, 
+  isAI = false, 
+  time,
+  onApprove,
+  onReject
+}: { 
+  icon: React.ReactNode, 
+  type: string, 
+  title: string, 
+  desc: string, 
+  character?: string, 
+  isAI?: boolean, 
+  time: string,
+  onApprove?: () => void,
+  onReject?: () => void
+}) {
   return (
     <Card className={`bg-card/40 border-white/5 hover:border-white/10 transition-all literary-shadow ${isAI ? 'border-primary/20 bg-primary/5' : ''}`}>
       <CardHeader className="p-6 pb-2">
@@ -161,16 +227,16 @@ function ApprovalCard({ icon, type, title, desc, character, isAI = false, time }
         <p className="text-sm text-muted-foreground leading-relaxed font-ui">{desc}</p>
         {character && (
           <div className="flex items-center gap-2 mt-4">
-            <div className="h-5 w-5 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent">G</div>
-            <p className="text-[10px] text-accent font-bold uppercase tracking-widest font-ui">Requerente: {character}</p>
+            <div className="h-5 w-5 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent">{character[0]}</div>
+            <p className="text-[10px] text-accent font-bold uppercase tracking-widest font-ui">ID Requerente: {character}</p>
           </div>
         )}
       </CardContent>
       <div className="p-6 pt-0 grid grid-cols-2 gap-4">
-        <Button size="sm" variant="outline" className="border-destructive/20 text-destructive hover:bg-destructive/10 rounded-xl h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
+        <Button size="sm" variant="outline" onClick={onReject} className="border-destructive/20 text-destructive hover:bg-destructive/10 rounded-xl h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
           <X className="mr-2 h-4 w-4" /> Rejeitar
         </Button>
-        <Button size="sm" variant="default" className="bg-primary hover:bg-primary/90 rounded-xl h-10 font-ui text-[11px] font-bold uppercase tracking-widest literary-shadow">
+        <Button size="sm" variant="default" onClick={onApprove} className="bg-primary hover:bg-primary/90 rounded-xl h-10 font-ui text-[11px] font-bold uppercase tracking-widest literary-shadow">
           <Check className="mr-2 h-4 w-4" /> Aprovar
         </Button>
       </div>

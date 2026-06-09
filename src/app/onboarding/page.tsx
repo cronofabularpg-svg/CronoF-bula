@@ -33,11 +33,19 @@ export default function OnboardingPage() {
   const [role, setRole] = React.useState<'master' | 'player' | null>(null);
   const [loading, setLoading] = React.useState(false)
 
+  const [campaignId, setCampaignId] = React.useState<string>("");
   const [campaignData, setCampaignData] = React.useState({
     name: "",
     system: "dnd5e",
     tone: "dark",
     aiEnabled: true
+  })
+
+  const [characterData, setCharacterData] = React.useState({
+    name: "",
+    race: "human",
+    class: "fighter",
+    level: 1
   })
 
   const nextStep = () => setStep(s => s + 1);
@@ -47,9 +55,9 @@ export default function OnboardingPage() {
     if (!db || !user) return
     setLoading(true)
     try {
-      const campaignId = doc(collection(db, 'campaigns')).id
-      await setDoc(doc(db, 'campaigns', campaignId), {
-        id: campaignId,
+      const newCampaignId = doc(collection(db, 'campaigns')).id
+      await setDoc(doc(db, 'campaigns', newCampaignId), {
+        id: newCampaignId,
         masterId: user.uid,
         name: campaignData.name,
         system: campaignData.system,
@@ -58,10 +66,41 @@ export default function OnboardingPage() {
         status: "active",
         createdAt: serverTimestamp()
       })
+      setCampaignId(newCampaignId)
       toast({ title: "Campanha Criada!", description: `${campaignData.name} aguarda seus jogadores.` })
       nextStep()
     } catch (error: any) {
       toast({ variant: "destructive", title: "Erro ao criar lenda", description: error.message })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleCreateCharacter() {
+    if (!db || !user) return
+    setLoading(true)
+    try {
+      // Se não houver campaignId (ex: personagem sem campanha), salvamos em uma coleção global ou tratamos
+      // Para o MVP, focaremos em personagens vinculados.
+      const targetCampaignId = campaignId || "global"; 
+      const charId = doc(collection(db, 'campaigns', targetCampaignId, 'characters')).id
+      
+      await setDoc(doc(db, 'campaigns', targetCampaignId, 'characters', charId), {
+        id: charId,
+        campaignId: targetCampaignId,
+        ownerId: user.uid,
+        name: characterData.name,
+        race: characterData.race,
+        class: characterData.class,
+        level: characterData.level,
+        status: role === 'master' ? 'active' : 'pending', // Mestre aprova automaticamente seu próprio char de teste
+        createdAt: serverTimestamp()
+      })
+
+      toast({ title: "Personagem Criado!", description: `${characterData.name} está pronto para a aventura.` })
+      nextStep()
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro ao criar herói", description: error.message })
     } finally {
       setLoading(false)
     }
@@ -190,10 +229,23 @@ export default function OnboardingPage() {
                     <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">Código de Convite</Label>
                     <div className="relative">
                       <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input placeholder="CRONO-1234-ABCD" className="pl-10" />
+                      <Input 
+                        placeholder="CRONO-1234-ABCD" 
+                        className="pl-10" 
+                        value={campaignId}
+                        onChange={e => setCampaignId(e.target.value)}
+                      />
                     </div>
                   </div>
-                  <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground rounded-full h-12">Validar Convite</Button>
+                  <Button 
+                    className="w-full bg-accent hover:bg-accent/90 text-accent-foreground rounded-full h-12 font-bold"
+                    onClick={() => {
+                      if(campaignId.length > 5) nextStep();
+                      else toast({ variant: "destructive", title: "Código Inválido", description: "O código inserido parece muito curto." });
+                    }}
+                  >
+                    Validar Convite
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -219,30 +271,38 @@ export default function OnboardingPage() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">Nome do Personagem</Label>
-                      <Input placeholder="Ex: Eldric, o Audaz" />
+                      <Input 
+                        placeholder="Ex: Eldric, o Audaz" 
+                        value={characterData.name}
+                        onChange={e => setCharacterData({...characterData, name: e.target.value})}
+                      />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">Raça</Label>
-                        <Select defaultValue="human">
+                        <Select value={characterData.race} onValueChange={v => setCharacterData({...characterData, race: v})}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="human">Humano</SelectItem>
                             <SelectItem value="elf">Elfo</SelectItem>
+                            <SelectItem value="dwarf">Anão</SelectItem>
+                            <SelectItem value="goblin">Goblin</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
                         <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">Classe</Label>
-                        <Select defaultValue="fighter">
+                        <Select value={characterData.class} onValueChange={v => setCharacterData({...characterData, class: v})}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="fighter">Guerreiro</SelectItem>
                             <SelectItem value="wizard">Mago</SelectItem>
+                            <SelectItem value="rogue">Ladino</SelectItem>
+                            <SelectItem value="cleric">Clérigo</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -259,7 +319,13 @@ export default function OnboardingPage() {
             
             <div className="flex justify-between">
               <Button variant="ghost" onClick={prevStep}><ChevronLeft className="mr-2 h-4 w-4" /> Voltar</Button>
-              <Button onClick={nextStep} className="bg-primary hover:bg-primary/90 rounded-full px-10">Concluir <ChevronRight className="ml-2 h-4 w-4" /></Button>
+              <Button 
+                disabled={loading || !characterData.name} 
+                onClick={handleCreateCharacter} 
+                className="bg-primary hover:bg-primary/90 rounded-full px-10"
+              >
+                {loading ? "Invocando Herói..." : "Concluir"} <ChevronRight className="ml-2 h-4 w-4" />
+              </Button>
             </div>
           </div>
         )}
