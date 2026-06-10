@@ -46,6 +46,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUser, useFirestore, useCollection, useDoc } from "@/firebase"
 import { collection, query, where, orderBy, addDoc, serverTimestamp, limit, doc } from "firebase/firestore"
+import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
 import { aiNarratorAndNpcDialogue } from "@/ai/flows/narrator-npc-dialogue"
@@ -89,12 +90,52 @@ export default function MesaViva() {
   }, [db, campaignId])
   const { data: npcs } = useCollection(npcsQuery)
 
-  const charactersQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "characters"), where("status", "==", "active"))
-  }, [db, campaignId])
-  const { data: characters } = useCollection(charactersQuery)
-  const myCharacter = characters?.find(c => c.ownerId === user?.uid) as any;
+  // Campanha e personagens ativos agora vivem no Supabase Postgres.
+  const [campaign, setCampaign] = React.useState<{
+    id: string
+    name: string
+    tone: string | null
+    system_key: string | null
+    owner_id: string
+  } | null>(null)
+  const [characters, setCharacters] = React.useState<{
+    id: string
+    name: string
+    race: string | null
+    class: string | null
+    owner_user_id: string
+    avatar_url: string | null
+  }[]>([])
+
+  React.useEffect(() => {
+    if (!campaignId) return
+    let active = true
+    const supabase = createClient()
+
+    supabase
+      .from('campaigns')
+      .select('id, name, tone, system_key, owner_id')
+      .eq('id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setCampaign(data)
+      })
+
+    supabase
+      .from('characters')
+      .select('id, name, race, class, owner_user_id, avatar_url')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'active')
+      .then(({ data }) => {
+        if (active) setCharacters(data || [])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [campaignId])
+
+  const myCharacter = characters.find(c => c.owner_user_id === user?.uid)
 
   const messagesQuery = React.useMemo(() => {
     if (!db || !campaignId || !session) return null
@@ -105,13 +146,7 @@ export default function MesaViva() {
   }, [db, campaignId, session])
   const { data: messages, loading: loadingMessages } = useCollection(messagesQuery)
 
-  const campaignQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns"), where("id", "==", campaignId))
-  }, [db, campaignId])
-  const { data: campaignData } = useCollection(campaignQuery)
-  const campaign = campaignData?.[0]
-  const isMaster = campaign?.masterId === user?.uid;
+  const isMaster = campaign?.owner_id === user?.uid;
 
   const handleSend = async (text?: string, type?: string, rollData?: any) => {
     const finalContent = text || inputValue
@@ -122,7 +157,7 @@ export default function MesaViva() {
       sessionId: session.id,
       senderId: user.uid,
       senderName: isMaster ? "Mestre Arcano" : (myCharacter?.name || user.displayName || "Aventureiro"),
-      senderPhotoURL: isMaster ? "" : (myCharacter?.photoURL || ""),
+      senderPhotoURL: isMaster ? "" : (myCharacter?.avatar_url || ""),
       text: finalContent,
       type: finalType,
       rollData: rollData || null,
@@ -144,7 +179,7 @@ export default function MesaViva() {
     try {
       const input = {
         mode: 'narrator' as const,
-        campaign: { id: campaign.id, name: campaign.name, tone: campaign.tone || "fantasia sombria", rule_system: campaign.system || "dnd_srd" },
+        campaign: { id: campaign.id, name: campaign.name, tone: campaign.tone || "fantasia sombria", rule_system: campaign.system_key || "dnd_srd" },
         session: { id: session.id, title: session.title, status: "active" },
         scene: { id: "current-scene", title: "Cena em Andamento", visibility: "public", location: "Desconhecida" },
         active_character: { id: myCharacter.id, name: myCharacter.name, race: myCharacter.race, class: myCharacter.class, known_information: ["Está explorando uma área nova."] },
@@ -229,7 +264,7 @@ export default function MesaViva() {
 
         <section className="space-y-6">
           <div className="space-y-6">
-             <ParticipantItem name={user?.displayName || "Você"} photo={myCharacter?.photoURL} role={isMaster ? "Mestre Arcano" : (myCharacter?.class || "Aventureiro")} status="Ativo" />
+             <ParticipantItem name={user?.displayName || "Você"} photo={myCharacter?.avatar_url ?? undefined} role={isMaster ? "Mestre Arcano" : (myCharacter?.class || "Aventureiro")} status="Ativo" />
              {isSoloMode && <ParticipantItem name="O Oráculo" role="Narrador IA" status={isAiThinking ? "Tecendo Destino..." : "Observando"} isAI />}
              {npcs?.map(npc => (
                <ParticipantItem key={npc.id} name={npc.name} photo={npc.imageURL} role={npc.role} status="Presente" isNPC />

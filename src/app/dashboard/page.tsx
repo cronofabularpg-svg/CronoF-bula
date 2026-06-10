@@ -20,10 +20,19 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
-import { useUser, useCollection, useFirestore } from '@/firebase';
-import { collection, query, where, orderBy, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
+import { useUser, useFirestore } from '@/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from "@/hooks/use-toast";
 import { createClient } from "@/lib/supabase/client";
+
+type Campaign = {
+  id: string
+  owner_id: string
+  name: string
+  system_key: string | null
+  tone: string | null
+  status: string
+}
 
 export default function Dashboard() {
   const { user } = useUser();
@@ -31,20 +40,35 @@ export default function Dashboard() {
   const router = useRouter();
   const { toast } = useToast();
 
+  const [campaigns, setCampaigns] = React.useState<Campaign[]>([]);
+  const [campaignsLoading, setCampaignsLoading] = React.useState(true);
   const [isStartingSolo, setIsStartingSolo] = React.useState(false);
 
-  const campaignsQuery = React.useMemo(() => {
-    if (!db || !user) return null;
-    return query(
-      collection(db, 'campaigns'),
-      where('masterId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-  }, [db, user]);
+  React.useEffect(() => {
+    if (!user) return;
 
-  const { data: firebaseCampaigns, loading: campaignsLoading } = useCollection(campaignsQuery);
+    let active = true;
+    const supabase = createClient();
 
-  const displayCampaigns = firebaseCampaigns || [];
+    supabase
+      .from('campaigns')
+      .select('id, owner_id, name, system_key, tone, status')
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar", description: error.message });
+        }
+        setCampaigns((data as Campaign[]) || []);
+        setCampaignsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user, toast]);
+
+  const displayCampaigns = campaigns;
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -54,35 +78,38 @@ export default function Dashboard() {
   }
 
   async function handleStartSoloAdventure() {
-    if (!db || !user) return;
+    if (!user) return;
     setIsStartingSolo(true);
 
     try {
-      const newId = doc(collection(db, 'campaigns')).id;
-      const soloCamp = {
-        id: newId,
-        name: "Jornada do Destino Único",
-        masterId: user.uid,
-        status: "active",
-        isSoloJourneyEnabled: true,
-        isAiNarratorEnabled: true,
-        system: "D&D 5e",
-        tone: "epic",
-        createdAt: serverTimestamp()
-      };
-      
-      await setDoc(doc(db, 'campaigns', newId), soloCamp);
-      
-      // Criar também uma sessão ativa para que a Mesa Viva funcione
-      await addDoc(collection(db, "campaigns", newId, "sessions"), {
-        campaignId: newId,
-        title: "Abertura da Crônica",
-        status: "active",
-        diceMode: "flexible",
-        createdAt: serverTimestamp()
-      });
+      const supabase = createClient();
+      const { data: campaign, error } = await supabase
+        .from('campaigns')
+        .insert({
+          owner_id: user.uid,
+          name: "Jornada do Destino Único",
+          system_key: "dnd_srd",
+          tone: "epic",
+          solo_enabled: true,
+          ai_enabled: true,
+        })
+        .select('id')
+        .single();
 
-      router.push(`/campaign/${newId}/mesa-viva`);
+      if (error || !campaign) throw error || new Error("Falha ao criar campanha.");
+
+      // Sessão da Mesa Viva ainda vive no Firestore (Fase 4 migra esta camada).
+      if (db) {
+        await addDoc(collection(db, "campaigns", campaign.id, "sessions"), {
+          campaignId: campaign.id,
+          title: "Abertura da Crônica",
+          status: "active",
+          diceMode: "flexible",
+          createdAt: serverTimestamp()
+        });
+      }
+
+      router.push(`/campaign/${campaign.id}/mesa-viva`);
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro ao Iniciar", description: "O portal solo não pôde ser aberto." });
     } finally {
@@ -123,13 +150,13 @@ export default function Dashboard() {
             {campaignsLoading ? (
               <div className="col-span-2 p-20 text-center text-muted-foreground italic font-heading text-2xl opacity-40">Consultando pergaminhos...</div>
             ) : displayCampaigns.length > 0 ? (
-              displayCampaigns.map((campaign: any) => (
+              displayCampaigns.map((campaign) => (
                 <Card key={campaign.id} className="grimoire-card group">
                   <div className="relative h-64 w-full bg-muted overflow-hidden">
-                    <Image 
-                      src={campaign.bannerImage || `https://picsum.photos/seed/${campaign.id}/800/400`} 
-                      alt={campaign.name} 
-                      fill 
+                    <Image
+                      src={`https://picsum.photos/seed/${campaign.id}/800/400`}
+                      alt={campaign.name}
+                      fill
                       className="object-cover opacity-40 group-hover:opacity-70 group-hover:scale-110 transition-all duration-1000"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#050711] via-transparent to-transparent" />
@@ -137,7 +164,7 @@ export default function Dashboard() {
                       <Badge className="bg-primary text-black font-display text-[9px] px-3 py-1 uppercase tracking-widest shadow-lg">
                         {campaign.status}
                       </Badge>
-                      {campaign.masterId === user?.uid && (
+                      {campaign.owner_id === user?.uid && (
                         <Badge className="bg-[#3A1F5D] text-primary border border-primary/30 font-display text-[9px] px-3 py-1 uppercase tracking-widest shadow-lg">
                           <Crown className="mr-1.5 h-3 w-3" /> Mestre
                         </Badge>
@@ -147,13 +174,13 @@ export default function Dashboard() {
                   <CardHeader className="p-8 pb-4">
                     <CardTitle className="text-4xl font-display tracking-tight group-hover:text-primary transition-colors">{campaign.name}</CardTitle>
                     <CardDescription className="font-heading italic text-xl mt-2 opacity-60">
-                      Mestre: {campaign.masterId === user?.uid ? 'Você' : campaign.masterName || 'Outro Arcano'}
+                      Mestre: {campaign.owner_id === user?.uid ? 'Você' : 'Outro Arcano'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="px-8 pb-10 space-y-6">
                     <div className="flex justify-between items-center text-sm font-display uppercase tracking-widest border-b border-white/5 pb-3">
                       <span className="text-muted-foreground opacity-40">Sistema Arcano</span>
-                      <span className="text-primary font-bold">{campaign.system || 'D&D 5e'}</span>
+                      <span className="text-primary font-bold">{campaign.system_key || 'D&D 5e'}</span>
                     </div>
                   </CardContent>
                   <CardFooter className="grid grid-cols-2 gap-6 p-8 pt-0">
@@ -162,7 +189,7 @@ export default function Dashboard() {
                         <Play className="mr-2 h-4 w-4" /> Entrar
                       </Link>
                     </Button>
-                    {campaign.masterId === user?.uid ? (
+                    {campaign.owner_id === user?.uid ? (
                       <Button asChild variant="ghost" className="w-full h-14 border border-white/5 hover:bg-primary/5 text-xs font-display tracking-widest">
                         <Link href={`/campaign/${campaign.id}/master`}>
                           <ShieldCheck className="mr-2 h-4 w-4" /> Gestão

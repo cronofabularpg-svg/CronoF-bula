@@ -30,16 +30,31 @@ import {
   ScrollText,
   Loader2
 } from "lucide-react"
-import { useFirestore, useCollection, useUser } from "@/firebase"
-import { collection, query, where, doc, updateDoc, addDoc, serverTimestamp, orderBy, getDocs, limit } from "firebase/firestore"
+import { useFirestore, useCollection } from "@/firebase"
+import { collection, query, doc, updateDoc, addDoc, serverTimestamp, orderBy, getDocs } from "firebase/firestore"
+import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { summarizeSession } from "@/ai/flows/session-summarizer"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 
+type PendingCharacter = {
+  id: string
+  name: string
+  race: string | null
+  class: string | null
+  level: number
+}
+
+type CampaignSummary = {
+  id: string
+  name: string
+  tone: string | null
+  owner_id: string
+}
+
 export default function MasterPanel() {
   const { id: campaignId } = useParams() as { id: string }
-  const { user } = useUser()
   const db = useFirestore()
   const { toast } = useToast()
 
@@ -52,18 +67,40 @@ export default function MasterPanel() {
   const [summaryResult, setSummaryResult] = React.useState<any>(null)
   const [isSummaryOpen, setIsSummaryOpen] = React.useState(false)
 
-  const campaignQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns"), where("id", "==", campaignId), limit(1))
-  }, [db, campaignId])
-  const { data: campaigns } = useCollection(campaignQuery)
-  const campaign = campaigns?.[0]
+  const [campaign, setCampaign] = React.useState<CampaignSummary | null>(null)
+  const [pendingCharacters, setPendingCharacters] = React.useState<PendingCharacter[]>([])
 
-  const pendingCharsQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "characters"), where("status", "==", "pending"))
-  }, [db, campaignId])
-  const { data: pendingCharacters } = useCollection(pendingCharsQuery)
+  React.useEffect(() => {
+    if (!campaignId) return
+    let active = true
+    const supabase = createClient()
+
+    supabase
+      .from('campaigns')
+      .select('id, name, tone, owner_id')
+      .eq('id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setCampaign(data as CampaignSummary | null)
+      })
+
+    supabase
+      .from('characters')
+      .select('id, name, race, class, level')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'pending_approval')
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Pendências", description: error.message })
+        }
+        setPendingCharacters((data as PendingCharacter[]) || [])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [campaignId, toast])
 
   const sessionsQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
@@ -72,9 +109,19 @@ export default function MasterPanel() {
   const { data: sessions, loading: loadingSessions } = useCollection(sessionsQuery)
 
   async function handleApproveCharacter(charId: string) {
-    if (!db || !campaignId) return
-    updateDoc(doc(db, "campaigns", campaignId, "characters", charId), { status: "active" })
-      .then(() => toast({ title: "Aprovado!", description: "O personagem agora faz parte da crônica." }))
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('characters')
+      .update({ status: 'active', approved_by_master: true })
+      .eq('id', charId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Aprovar", description: error.message })
+      return
+    }
+
+    setPendingCharacters((prev) => prev.filter((c) => c.id !== charId))
+    toast({ title: "Aprovado!", description: "O personagem agora faz parte da crônica." })
   }
 
   async function handleStartSession() {

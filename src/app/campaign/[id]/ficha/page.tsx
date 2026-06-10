@@ -3,20 +3,20 @@
 
 import * as React from "react"
 import { useParams } from "next/navigation"
-import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where, doc, updateDoc } from "firebase/firestore"
+import { useUser } from "@/firebase"
+import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { 
-  Shield, 
-  Sword, 
-  Heart, 
-  Zap, 
-  Star, 
+import {
+  Shield,
+  Sword,
+  Heart,
+  Zap,
+  Star,
   Sparkles,
   Info,
   Camera,
@@ -32,25 +32,75 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast"
 import { Slider } from "@/components/ui/slider"
 
+type CharacterStats = {
+  strength: number
+  dexterity: number
+  constitution: number
+  intelligence: number
+  wisdom: number
+  charisma: number
+  saving_throws: string[] | null
+  sheet_state: {
+    hasInspiration?: boolean
+    exhaustion?: number
+    xp?: number
+    gold?: number
+    mana?: number
+    maxMana?: number
+    conditions?: string[]
+  } | null
+}
+
+type Character = {
+  id: string
+  name: string
+  race: string | null
+  class: string | null
+  level: number
+  status: string
+  current_hp: number | null
+  max_hp: number | null
+  armor_class: number | null
+  avatar_url: string | null
+  character_stats: CharacterStats | null
+}
+
 export default function FichaPersonagem() {
   const { id: campaignId } = useParams() as { id: string }
   const { user } = useUser()
-  const db = useFirestore()
   const { toast } = useToast()
+
+  const [character, setCharacter] = React.useState<Character | null>(null)
+  const [loading, setLoading] = React.useState(true)
 
   const [isEditingPhoto, setIsEditingPhoto] = React.useState(false)
   const [photoUrlInput, setPhotoUrlUrlInput] = React.useState("")
 
-  const charactersQuery = React.useMemo(() => {
-    if (!db || !user || !campaignId) return null
-    return query(
-      collection(db, "campaigns", campaignId, "characters"),
-      where("ownerId", "==", user.uid)
-    )
-  }, [db, user, campaignId])
+  React.useEffect(() => {
+    if (!user || !campaignId) return
 
-  const { data: characters, loading } = useCollection(charactersQuery)
-  const character = characters?.[0] as any
+    let active = true
+    const supabase = createClient()
+
+    supabase
+      .from('characters')
+      .select('id, name, race, class, level, status, current_hp, max_hp, armor_class, avatar_url, character_stats(*)')
+      .eq('campaign_id', campaignId)
+      .eq('owner_user_id', user.uid)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Ficha", description: error.message })
+        }
+        setCharacter((data as unknown as Character) || null)
+        setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [user, campaignId, toast])
 
   if (loading) return <div className="p-20 text-center italic font-heading text-2xl opacity-40">Consultando os anais...</div>
   if (!character) return <div className="p-20 text-center text-muted-foreground italic font-heading text-2xl opacity-40">Nenhum herói encontrado nesta campanha.</div>
@@ -60,36 +110,67 @@ export default function FichaPersonagem() {
     return mod >= 0 ? `+${mod}` : mod.toString();
   };
 
-  const stats = character.stats || { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
+  const charStats = character.character_stats
+  const stats = {
+    str: charStats?.strength ?? 10,
+    dex: charStats?.dexterity ?? 10,
+    con: charStats?.constitution ?? 10,
+    int: charStats?.intelligence ?? 10,
+    wis: charStats?.wisdom ?? 10,
+    cha: charStats?.charisma ?? 10,
+  };
+  const savingThrows = charStats?.saving_throws ?? [];
+  const sheetState = charStats?.sheet_state ?? {};
   const proficiency = Math.floor((character.level - 1) / 4) + 2;
 
-  const charPhoto = character.photoURL || `https://picsum.photos/seed/${character.id}/500/500`;
+  const charPhoto = character.avatar_url || `https://picsum.photos/seed/${character.id}/500/500`;
 
   async function handleUpdatePhoto() {
-    if (!db || !campaignId || !character) return
-    try {
-      await updateDoc(doc(db, "campaigns", campaignId, "characters", character.id), {
-        photoURL: photoUrlInput
-      })
-      toast({ title: "Retrato Atualizado", description: "Sua nova aparência foi gravada nos anais." })
-      setIsEditingPhoto(false)
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Erro na Invocação", description: e.message })
+    if (!character) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('characters')
+      .update({ avatar_url: photoUrlInput })
+      .eq('id', character.id)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro na Invocação", description: error.message })
+      return
     }
+
+    setCharacter({ ...character, avatar_url: photoUrlInput })
+    toast({ title: "Retrato Atualizado", description: "Sua nova aparência foi gravada nos anais." })
+    setIsEditingPhoto(false)
+  }
+
+  async function updateSheetState(patch: Record<string, unknown>) {
+    if (!character) return
+    const nextState = { ...sheetState, ...patch }
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('character_stats')
+      .update({ sheet_state: nextState })
+      .eq('character_id', character.id)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Salvar", description: error.message })
+      return
+    }
+
+    setCharacter({
+      ...character,
+      character_stats: character.character_stats
+        ? { ...character.character_stats, sheet_state: nextState }
+        : character.character_stats,
+    })
   }
 
   async function toggleInspiration() {
-    if (!db || !campaignId || !character) return
-    updateDoc(doc(db, "campaigns", campaignId, "characters", character.id), {
-      hasInspiration: !character.hasInspiration
-    })
+    await updateSheetState({ hasInspiration: !sheetState.hasInspiration })
   }
 
   async function updateExhaustion(val: number[]) {
-    if (!db || !campaignId || !character) return
-    updateDoc(doc(db, "campaigns", campaignId, "characters", character.id), {
-      exhaustion: val[0]
-    })
+    await updateSheetState({ exhaustion: val[0] })
   }
 
   return (
@@ -99,16 +180,16 @@ export default function FichaPersonagem() {
           <div className="relative group">
             <Dialog>
               <DialogTrigger asChild>
-                <div className={`relative h-44 w-44 rounded-2xl overflow-hidden border-2 shadow-arcane cursor-zoom-in group transition-all ${character.hasInspiration ? 'border-primary ring-4 ring-primary/20' : 'border-white/10'}`}>
-                  <img 
-                    src={charPhoto} 
-                    alt={character.name} 
+                <div className={`relative h-44 w-44 rounded-2xl overflow-hidden border-2 shadow-arcane cursor-zoom-in group transition-all ${sheetState.hasInspiration ? 'border-primary ring-4 ring-primary/20' : 'border-white/10'}`}>
+                  <img
+                    src={charPhoto}
+                    alt={character.name}
                     className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-110"
                   />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Maximize2 className="h-8 w-8 text-white animate-pulse" />
                   </div>
-                  {character.hasInspiration && (
+                  {sheetState.hasInspiration && (
                     <div className="absolute top-2 right-2 p-1.5 bg-primary rounded-full shadow-gold animate-bounce">
                       <Star className="h-4 w-4 text-black" />
                     </div>
@@ -137,10 +218,10 @@ export default function FichaPersonagem() {
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
                     <Label className="text-[10px] uppercase font-bold tracking-widest">Link da Imagem</Label>
-                    <Input 
-                      placeholder="https://..." 
-                      value={photoUrlInput} 
-                      onChange={e => setPhotoUrlUrlInput(e.target.value)} 
+                    <Input
+                      placeholder="https://..."
+                      value={photoUrlInput}
+                      onChange={e => setPhotoUrlUrlInput(e.target.value)}
                     />
                   </div>
                   <p className="text-[10px] text-muted-foreground italic">Use um link público de imagem (Unsplash, Pinterest, etc).</p>
@@ -152,37 +233,37 @@ export default function FichaPersonagem() {
               </DialogContent>
             </Dialog>
           </div>
-          
+
           <div>
             <div className="flex items-center gap-4">
               <h1 className="text-6xl font-display font-black tracking-tighter text-primary">{character.name}</h1>
               <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-primary/30 text-primary bg-primary/5 px-4 h-6">
                 Nvl {character.level}
               </Badge>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={toggleInspiration}
-                className={`rounded-full border px-4 transition-all ${character.hasInspiration ? 'border-primary bg-primary/20 text-primary' : 'border-white/5 opacity-30 hover:opacity-100'}`}
+                className={`rounded-full border px-4 transition-all ${sheetState.hasInspiration ? 'border-primary bg-primary/20 text-primary' : 'border-white/5 opacity-30 hover:opacity-100'}`}
               >
-                <Star className={`mr-2 h-4 w-4 ${character.hasInspiration ? 'fill-current' : ''}`} /> Inspiração
+                <Star className={`mr-2 h-4 w-4 ${sheetState.hasInspiration ? 'fill-current' : ''}`} /> Inspiração
               </Button>
             </div>
             <p className="text-2xl font-heading italic text-muted-foreground mt-2 capitalize opacity-70">
-              {character.race} {character.class} • Status: {character.status === 'pending' ? 'Aguardando Aprovação' : 'Ativo'}
+              {character.race} {character.class} • Status: {character.status === 'pending_approval' ? 'Aguardando Aprovação' : 'Ativo'}
             </p>
           </div>
         </div>
         <div className="flex gap-10">
           <div className="text-right">
              <span className="text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground block mb-1">Riqueza</span>
-             <span className="text-3xl font-code font-bold text-primary">{character.gold || 0} <span className="text-xs opacity-50 uppercase">po</span></span>
+             <span className="text-3xl font-code font-bold text-primary">{sheetState.gold || 0} <span className="text-xs opacity-50 uppercase">po</span></span>
           </div>
           <div className="text-right">
             <span className="text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground block mb-1">Experiência (XP)</span>
             <div className="flex items-center gap-4">
-              <Progress value={((character.xp || 0) % 1000) / 10} className="w-40 h-2" />
-              <span className="text-xs font-code font-bold text-primary">{character.xp || 0}</span>
+              <Progress value={((sheetState.xp || 0) % 1000) / 10} className="w-40 h-2" />
+              <span className="text-xs font-code font-bold text-primary">{sheetState.xp || 0}</span>
             </div>
           </div>
         </div>
@@ -196,7 +277,7 @@ export default function FichaPersonagem() {
               <Star className="mr-2 h-4 w-4 text-primary" /> Atributos Principais
             </h3>
             <div className="grid grid-cols-1 gap-4">
-              {Object.entries(stats).map(([key, val]: [string, any]) => (
+              {Object.entries(stats).map(([key, val]) => (
                 <StatCard key={key} label={key.toUpperCase()} value={val} mod={calculateModifier(val)} />
               ))}
             </div>
@@ -208,7 +289,7 @@ export default function FichaPersonagem() {
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {Object.keys(stats).map(s => {
-                const isProficient = character.savingThrows?.includes(s);
+                const isProficient = savingThrows?.includes(s);
                 const modVal = Number(calculateModifier(stats[s as keyof typeof stats]));
                 const finalSave = isProficient ? modVal + proficiency : modVal;
                 return (
@@ -236,12 +317,12 @@ export default function FichaPersonagem() {
                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Vitalidade</h4>
                   </div>
                   <div className="text-right">
-                    <span className="text-4xl font-display font-bold text-destructive">{character.hp || 0} / {character.maxHp || 0}</span>
+                    <span className="text-4xl font-display font-bold text-destructive">{character.current_hp || 0} / {character.max_hp || 0}</span>
                   </div>
                 </div>
-                <Progress value={((character.hp || 0) / (character.maxHp || 1)) * 100} className="h-2 bg-destructive/10" />
-                
-                {character.hp <= 0 && (
+                <Progress value={((character.current_hp || 0) / (character.max_hp || 1)) * 100} className="h-2 bg-destructive/10" />
+
+                {(character.current_hp ?? 0) <= 0 && (
                    <div className="pt-4 space-y-3">
                       <p className="text-[9px] uppercase font-black text-center tracking-widest text-destructive">Testes contra Morte</p>
                       <div className="flex justify-center gap-4">
@@ -265,10 +346,10 @@ export default function FichaPersonagem() {
                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Energia Arcana</h4>
                   </div>
                   <div className="text-right">
-                    <span className="text-4xl font-display font-bold text-accent">{character.mana ?? 0} / {character.maxMana ?? 0}</span>
+                    <span className="text-4xl font-display font-bold text-accent">{sheetState.mana ?? 0} / {sheetState.maxMana ?? 0}</span>
                   </div>
                 </div>
-                <Progress value={((character.mana || 0) / (character.maxMana || 1)) * 100} className="h-2 bg-accent/10" />
+                <Progress value={((sheetState.mana || 0) / (sheetState.maxMana || 1)) * 100} className="h-2 bg-accent/10" />
               </CardContent>
             </Card>
           </div>
@@ -277,12 +358,12 @@ export default function FichaPersonagem() {
              <div className="p-8 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
                 <Shield className="h-10 w-10 text-primary mb-4" />
                 <span className="text-[10px] uppercase font-black tracking-widest opacity-40">Defesa (CA)</span>
-                <span className="text-6xl font-display font-black text-primary">{character.ac || 10}</span>
+                <span className="text-6xl font-display font-black text-primary">{character.armor_class || 10}</span>
              </div>
              <div className="p-8 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
                 <Zap className="h-10 w-10 text-accent mb-4" />
                 <span className="text-[10px] uppercase font-black tracking-widest opacity-40">Iniciativa</span>
-                <span className="text-6xl font-display font-black text-accent">{character.initiative >= 0 ? `+${character.initiative}` : character.initiative}</span>
+                <span className="text-6xl font-display font-black text-accent">{Number(calculateModifier(stats.dex)) >= 0 ? `+${calculateModifier(stats.dex)}` : calculateModifier(stats.dex)}</span>
              </div>
           </div>
 
@@ -291,23 +372,23 @@ export default function FichaPersonagem() {
                 <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
                   <Wind className="mr-2 h-4 w-4 text-primary" /> Nível de Exaustão
                 </h3>
-                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">{character.exhaustion || 0} / 6</Badge>
+                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">{sheetState.exhaustion || 0} / 6</Badge>
              </div>
-             <Slider 
-              value={[character.exhaustion || 0]} 
-              max={6} 
-              step={1} 
+             <Slider
+              value={[sheetState.exhaustion || 0]}
+              max={6}
+              step={1}
               onValueChange={updateExhaustion}
               className="py-4"
              />
              <p className="text-xs italic text-muted-foreground leading-relaxed">
-               {character.exhaustion === 1 && "Desvantagem em Testes de Atributo."}
-               {character.exhaustion === 2 && "Deslocamento reduzido à metade."}
-               {character.exhaustion === 3 && "Desvantagem em Jogadas de Ataque e Resistência."}
-               {character.exhaustion === 4 && "Pontos de vida máximo reduzidos à metade."}
-               {character.exhaustion === 5 && "Deslocamento reduzido a 0."}
-               {character.exhaustion === 6 && "Morte imediata."}
-               {!character.exhaustion && "O herói está plenamente revigorado."}
+               {sheetState.exhaustion === 1 && "Desvantagem em Testes de Atributo."}
+               {sheetState.exhaustion === 2 && "Deslocamento reduzido à metade."}
+               {sheetState.exhaustion === 3 && "Desvantagem em Jogadas de Ataque e Resistência."}
+               {sheetState.exhaustion === 4 && "Pontos de vida máximo reduzidos à metade."}
+               {sheetState.exhaustion === 5 && "Deslocamento reduzido a 0."}
+               {sheetState.exhaustion === 6 && "Morte imediata."}
+               {!sheetState.exhaustion && "O herói está plenamente revigorado."}
              </p>
           </section>
 
@@ -341,7 +422,7 @@ export default function FichaPersonagem() {
               <Ghost className="mr-2 h-4 w-4 text-primary" /> Condições Ativas
             </h3>
             <div className="flex flex-col gap-3">
-              {character.conditions?.length > 0 ? character.conditions.map((cond: string, i: number) => (
+              {sheetState.conditions && sheetState.conditions.length > 0 ? sheetState.conditions.map((cond: string, i: number) => (
                 <ConditionBadge key={i} condition={cond} />
               )) : (
                 <div className="p-6 border border-dashed border-white/5 rounded-2xl text-center opacity-30 italic text-xs">Sem enfermidades</div>
@@ -390,7 +471,7 @@ function ActionCard({ name, detail }: { name: string, detail: string }) {
         <h5 className="text-sm font-bold group-hover:text-primary transition-colors">{name}</h5>
         <p className="text-[10px] text-muted-foreground font-heading italic uppercase tracking-tighter mt-1">{detail}</p>
       </div>
-      <Badge variant="ghost" className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary/10 text-primary text-[8px] uppercase font-black">
+      <Badge variant="outline" className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary/10 text-primary text-[8px] uppercase font-black">
         Rolar
       </Badge>
     </div>

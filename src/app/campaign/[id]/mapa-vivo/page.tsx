@@ -5,6 +5,7 @@ import * as React from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useUser, useFirestore, useCollection } from "@/firebase"
 import { collection, query, where, orderBy, doc, updateDoc, addDoc, serverTimestamp, limit } from "firebase/firestore"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -30,14 +31,29 @@ export default function MapaVivo() {
     targetLocationName: string
   } | null>(null)
   
-  // Busca campanha para verificar se o usuário atual é o mestre
-  const campaignQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns"), where("id", "==", campaignId))
-  }, [db, campaignId])
-  const { data: campaignData } = useCollection(campaignQuery)
-  const campaign = campaignData?.[0] as any
-  const isMaster = campaign?.masterId === user?.uid
+  // Busca campanha (Supabase) para verificar se o usuário atual é o mestre
+  const [campaign, setCampaign] = React.useState<{ id: string; owner_id: string } | null>(null)
+
+  React.useEffect(() => {
+    if (!campaignId) return
+    let active = true
+    const supabase = createClient()
+
+    supabase
+      .from('campaigns')
+      .select('id, owner_id')
+      .eq('id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setCampaign(data)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [campaignId])
+
+  const isMaster = campaign?.owner_id === user?.uid
 
   // Busca sessão ativa para registrar a rolagem
   const sessionQuery = React.useMemo(() => {

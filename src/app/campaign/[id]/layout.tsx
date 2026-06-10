@@ -34,8 +34,8 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useParams } from "next/navigation"
-import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where } from "firebase/firestore"
+import { useUser } from "@/firebase"
+import { createClient } from "@/lib/supabase/client"
 import { getCharacterTheme } from "@/lib/themes"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
@@ -44,26 +44,42 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
   const { id: campaignId } = useParams() as { id: string };
   const { user } = useUser();
-  const db = useFirestore();
 
-  // Get active character to apply theme
-  const charactersQuery = React.useMemo(() => {
-    if (!db || !user || !campaignId) return null;
-    return query(
-      collection(db, "campaigns", campaignId, "characters"),
-      where("ownerId", "==", user.uid)
-    );
-  }, [db, user, campaignId]);
+  // Personagem ativo (para tema visual e rodapé)
+  const [activeChar, setActiveChar] = React.useState<{
+    id: string
+    name: string
+    race: string | null
+    class: string | null
+    avatar_url: string | null
+  } | null>(null);
 
-  const { data: chars } = useCollection(charactersQuery);
-  const activeChar = chars?.[0] as any;
+  React.useEffect(() => {
+    if (!user || !campaignId) return;
+    let active = true;
+    const supabase = createClient();
+
+    supabase
+      .from('characters')
+      .select('id, name, race, class, avatar_url')
+      .eq('campaign_id', campaignId)
+      .eq('owner_user_id', user.uid)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setActiveChar(data);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user, campaignId]);
 
   const theme = React.useMemo(() => {
     if (!activeChar) return 'institutional';
-    return getCharacterTheme(activeChar.class, activeChar.race);
+    return getCharacterTheme(activeChar.class ?? undefined, activeChar.race ?? undefined);
   }, [activeChar]);
 
-  const charPhoto = activeChar?.photoURL || `https://picsum.photos/seed/${activeChar?.id || 'default'}/300/300`;
+  const charPhoto = activeChar?.avatar_url || `https://picsum.photos/seed/${activeChar?.id || 'default'}/300/300`;
 
   const playerItems = [
     { icon: MessageSquare, label: "Mesa Viva", href: `/campaign/${campaignId}/mesa-viva` },

@@ -20,8 +20,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { useUser, useFirestore } from "@/firebase"
-import { doc, setDoc, collection, serverTimestamp } from "firebase/firestore"
+import { useUser } from "@/firebase"
+import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 
 const DND_RACES = [
@@ -54,7 +54,6 @@ const DND_CLASSES = [
 
 export default function OnboardingPage() {
   const { user } = useUser()
-  const db = useFirestore()
   const router = useRouter()
   const { toast } = useToast()
 
@@ -82,21 +81,25 @@ export default function OnboardingPage() {
   const prevStep = () => setStep(s => s - 1);
 
   async function handleCreateCampaign() {
-    if (!db || !user) return
+    if (!user) return
     setLoading(true)
     try {
-      const newCampaignId = doc(collection(db, 'campaigns')).id
-      await setDoc(doc(db, 'campaigns', newCampaignId), {
-        id: newCampaignId,
-        masterId: user.uid,
-        name: campaignData.name,
-        system: campaignData.system,
-        tone: campaignData.tone,
-        isAiNarratorEnabled: campaignData.aiEnabled,
-        status: "active",
-        createdAt: serverTimestamp()
-      })
-      setCampaignId(newCampaignId)
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('campaigns')
+        .insert({
+          owner_id: user.uid,
+          name: campaignData.name,
+          system_key: campaignData.system,
+          tone: campaignData.tone,
+          ai_enabled: campaignData.aiEnabled,
+        })
+        .select('id')
+        .single()
+
+      if (error || !data) throw error || new Error("Falha ao criar a campanha.")
+
+      setCampaignId(data.id)
       toast({ title: "Campanha Criada!", description: `${campaignData.name} aguarda seus jogadores.` })
       nextStep()
     } catch (error: any) {
@@ -107,30 +110,23 @@ export default function OnboardingPage() {
   }
 
   async function handleCreateCharacter() {
-    if (!db || !user) return
+    if (!user) return
     setLoading(true)
     try {
-      const targetCampaignId = campaignId || "global"; 
-      const charId = doc(collection(db, 'campaigns', targetCampaignId, 'characters')).id
-      
-      await setDoc(doc(db, 'campaigns', targetCampaignId, 'characters', charId), {
-        id: charId,
-        campaignId: targetCampaignId,
-        ownerId: user.uid,
-        name: characterData.name,
-        race: characterData.race,
-        class: characterData.class,
-        level: characterData.level,
-        photoURL: characterData.photoURL,
-        status: role === 'master' ? 'active' : 'pending',
-        createdAt: serverTimestamp(),
-        xp: 0,
-        hp: 10,
-        maxHp: 10,
-        ac: 10,
-        initiative: 0,
-        stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
-      })
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('characters')
+        .insert({
+          campaign_id: campaignId || null,
+          owner_user_id: user.uid,
+          name: characterData.name,
+          race: characterData.race,
+          class: characterData.class,
+          level: characterData.level,
+          avatar_url: characterData.photoURL || null,
+        })
+
+      if (error) throw error
 
       toast({ title: "Personagem Criado!", description: `${characterData.name} está pronto para a aventura.` })
       nextStep()
