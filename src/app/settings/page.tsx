@@ -18,12 +18,7 @@ export default function GlobalSettings() {
   const db = useFirestore()
   const { toast } = useToast()
 
-  const [isDemo, setIsDemo] = React.useState(false)
   const [dicePref, setDicePref] = React.useState<string>("ask")
-
-  React.useEffect(() => {
-    setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true')
-  }, [])
 
   const userRef = React.useMemo(() => {
     if (!db || !user) return null
@@ -40,11 +35,6 @@ export default function GlobalSettings() {
 
   function handleSave() {
     if (!user || !db) return
-
-    if (isDemo) {
-      toast({ title: "Preferências Salvas (Simulado)", description: "Seu modo de jogo foi atualizado no portal de teste." })
-      return
-    }
 
     const docRef = doc(db, "users", user.uid)
     const data = { dicePreference: dicePref }
@@ -65,7 +55,7 @@ export default function GlobalSettings() {
       })
   }
 
-  if (loading && !isDemo) return <div className="p-20 text-center italic">Lendo pergaminhos de configuração...</div>
+  if (loading) return <div className="p-20 text-center italic">Lendo pergaminhos de configuração...</div>
 
   return (
     <div className="p-10 max-w-4xl mx-auto space-y-12 animate-in fade-in duration-700">

@@ -35,13 +35,8 @@ export default function Diario() {
   const db = useFirestore()
   const { toast } = useToast()
 
-  const [isDemo, setIsDemo] = React.useState(false)
   const [isAdding, setIsAdding] = React.useState(false)
   const [newEntry, setNewEntry] = React.useState({ title: '', content: '', type: 'fact' })
-
-  React.useEffect(() => {
-    setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true')
-  }, [])
 
   const charQuery = React.useMemo(() => {
     if (!db || !user || !campaignId) return null
@@ -57,13 +52,12 @@ export default function Diario() {
   const { data: items } = useCollection(itemsQuery)
 
   const hasDiary = React.useMemo(() => {
-    if (isDemo) return true;
     if (!items) return false;
-    return items.some(item => 
-      item.name.toLowerCase().includes('diário') && 
+    return items.some(item =>
+      item.name.toLowerCase().includes('diário') &&
       item.status === 'carried'
     );
-  }, [items, isDemo]);
+  }, [items]);
 
   const diaryQuery = React.useMemo(() => {
     if (!db || !myChar || !campaignId || !hasDiary) return null
@@ -71,10 +65,7 @@ export default function Diario() {
   }, [db, myChar, campaignId, hasDiary])
   const { data: entries, loading } = useCollection(diaryQuery)
 
-  const displayEntries = (entries && entries.length > 0) ? entries : (isDemo ? [
-    { id: 'e1', title: 'O Estranho no Cais', content: 'Vi um homem de capa roxa falando com as gaivotas. Loucura ou magia? O cheiro de salitre era forte demais para ser apenas um delírio.', type: 'fact', createdAt: new Date().toISOString() },
-    { id: 'e2', title: 'Pista: Chave de Ferro', content: 'O taberneiro, após três canecas de hidromel, jurou que o capitão escondeu a chave sob uma tábua solta na Taverna do Cervo Torto.', type: 'clue', createdAt: new Date().toISOString() },
-  ] : [])
+  const displayEntries = entries || []
 
   async function handleAddEntry() {
     if (!db || !myChar || !campaignId || !newEntry.content) return

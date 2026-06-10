@@ -9,17 +9,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { useAuth, useFirestore } from "@/firebase"
-import { createUserWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from "firebase/auth"
-import { doc, setDoc, serverTimestamp } from "firebase/firestore"
+import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 
 export default function SignupPage() {
-  const { auth } = useAuth()
-  const db = useFirestore()
   const router = useRouter()
   const { toast } = useToast()
-  
+
   const [loading, setLoading] = React.useState(false)
   const [formData, setFormData] = React.useState({
     name: "",
@@ -30,7 +26,6 @@ export default function SignupPage() {
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
-    if (!auth || !db) return
 
     if (formData.password !== formData.confirmPassword) {
       toast({
@@ -43,17 +38,15 @@ export default function SignupPage() {
 
     setLoading(true)
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password)
-      const user = userCredential.user
-
-      await updateProfile(user, { displayName: formData.name })
-
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        email: user.email,
-        displayName: formData.name,
-        createdAt: serverTimestamp()
+      const supabase = createClient()
+      const { error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: { display_name: formData.name }
+        }
       })
+      if (error) throw error
 
       router.push("/onboarding")
     } catch (error: any) {
@@ -68,21 +61,15 @@ export default function SignupPage() {
   }
 
   async function handleGoogleSignIn() {
-    if (!auth || !db) return
-    const provider = new GoogleAuthProvider()
     try {
-      const result = await signInWithPopup(auth, provider)
-      const user = result.user
-
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        createdAt: serverTimestamp()
-      }, { merge: true })
-
-      router.push("/dashboard")
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`
+        }
+      })
+      if (error) throw error
     } catch (error: any) {
       toast({
         variant: "destructive",

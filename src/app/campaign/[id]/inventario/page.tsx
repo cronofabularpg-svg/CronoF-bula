@@ -19,12 +19,7 @@ export default function Inventario() {
   const db = useFirestore()
   const { toast } = useToast()
 
-  const [isDemo, setIsDemo] = React.useState(false)
   const [selectedItem, setSelectedItem] = React.useState<any>(null)
-
-  React.useEffect(() => {
-    setIsDemo(localStorage.getItem('cronofabula_demo_mode') === 'true')
-  }, [])
 
   const charQuery = React.useMemo(() => {
     if (!db || !user || !campaignId) return null
@@ -40,12 +35,7 @@ export default function Inventario() {
 
   const { data: items, loading } = useCollection(itemsQuery)
 
-  const displayItems = (items && items.length > 0) ? items : (isDemo ? [
-    { id: 'i1', name: 'Adaga de Prata', type: 'weapon', weight: 1, appearance: 'Uma lâmina curva com runas gravadas.', status: 'carried', knownProperties: ['Dano Mágico', 'Leve'] },
-    { id: 'i2', name: 'Grimório de Couro de Dragão', type: 'magic', weight: 5, appearance: 'Capa escamosa e quente ao toque.', status: 'carried', knownProperties: ['Contém magias de fogo'] },
-    { id: 'i4', name: 'Diário de Arvand', type: 'magic', weight: 2, appearance: 'Um livro de capa dura com o símbolo do Cronofábula.', status: 'carried', knownProperties: ['Registros de Jornada'] },
-    { id: 'i3', name: 'Poção de Cura (Menor)', type: 'misc', weight: 0.5, appearance: 'Líquido vermelho efervescente.', status: 'carried', knownProperties: ['Cura 2d4+2 PV'] },
-  ] : [])
+  const displayItems = items || []
 
   const totalWeight = React.useMemo(() => {
     return displayItems.reduce((acc, it) => acc + (it.weight || 0), 0)

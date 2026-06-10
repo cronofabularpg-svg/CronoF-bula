@@ -30,8 +30,14 @@ export default function MapaVivo() {
     targetLocationName: string
   } | null>(null)
   
-  const isDemo = localStorage.getItem('cronofabula_demo_mode') === 'true'
-  const isMaster = localStorage.getItem('cronofabula_demo_role') === 'master'
+  // Busca campanha para verificar se o usuário atual é o mestre
+  const campaignQuery = React.useMemo(() => {
+    if (!db || !campaignId) return null
+    return query(collection(db, "campaigns"), where("id", "==", campaignId))
+  }, [db, campaignId])
+  const { data: campaignData } = useCollection(campaignQuery)
+  const campaign = campaignData?.[0] as any
+  const isMaster = campaign?.masterId === user?.uid
 
   // Busca sessão ativa para registrar a rolagem
   const sessionQuery = React.useMemo(() => {
@@ -47,12 +53,8 @@ export default function MapaVivo() {
   }, [db, campaignId])
 
   const { data: locations, loading } = useCollection(locationsQuery)
-  
-  const displayLocations = (locations && locations.length > 0) ? locations : (isDemo ? [
-    { id: '1', name: 'Taverna do Cervo Torto', status: 'known', type: 'city', coords: { x: 400, y: 300 }, description: 'Um lugar quente e barulhento.' },
-    { id: '2', name: 'Docas Nebulosas', status: 'active', type: 'danger', coords: { x: 600, y: 500 }, description: 'O cheiro de peixe e crime é forte.' },
-    { id: '3', name: 'Beco dos Fundos', status: 'active', type: 'mystery', coords: { x: 350, y: 450 }, description: 'Onde as sombras ganham vida.' },
-  ] : [])
+
+  const displayLocations = locations || []
 
   async function handleMoveGroup(locationId: string, locationName: string) {
     setIsTraveling(true)

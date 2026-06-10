@@ -20,6 +20,7 @@ import {
   Crown,
   Zap,
   Shield,
+  ShieldCheck,
   Eye,
   MessageSquare,
   Lock,
@@ -110,7 +111,7 @@ export default function MesaViva() {
   }, [db, campaignId])
   const { data: campaignData } = useCollection(campaignQuery)
   const campaign = campaignData?.[0]
-  const isMaster = campaign?.masterId === user?.uid || localStorage.getItem('cronofabula_demo_role') === 'master';
+  const isMaster = campaign?.masterId === user?.uid;
 
   const handleSend = async (text?: string, type?: string, rollData?: any) => {
     const finalContent = text || inputValue

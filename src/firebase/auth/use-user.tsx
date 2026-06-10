@@ -1,55 +1,60 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { User, onAuthStateChanged } from 'firebase/auth';
-import { useAuth } from '../provider';
+import { createClient } from '@/lib/supabase/client';
 
-// Usuários fictícios para testes
-const MOCK_MASTER = {
-  uid: 'demo-master-id',
-  displayName: 'Mestre Arcano (Teste)',
-  email: 'mestre@cronofabula.com',
-  photoURL: 'https://picsum.photos/seed/mestre/100/100',
-} as unknown as User;
-
-const MOCK_PLAYER = {
-  uid: 'demo-player-id',
-  displayName: 'Aventureiro Gob (Teste)',
-  email: 'gob@cronofabula.com',
-  photoURL: 'https://picsum.photos/seed/goblin/100/100',
-} as unknown as User;
+export interface AppUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+}
 
 export function useUser() {
-  const auth = useAuth();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkDemoMode = () => {
-      if (typeof window === 'undefined') return false;
-      const demoMode = localStorage.getItem('cronofabula_demo_mode');
-      const demoRole = localStorage.getItem('cronofabula_demo_role');
+    const supabase = createClient();
+    let active = true;
 
-      if (demoMode === 'true') {
-        setUser(demoRole === 'player' ? MOCK_PLAYER : MOCK_MASTER);
-        setLoading(false);
-        return true;
+    async function loadUser(authUser: { id: string; email?: string | null } | null) {
+      if (!authUser) {
+        if (active) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
       }
-      return false;
-    };
 
-    if (checkDemoMode()) return;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('display_name, avatar_url')
+        .eq('id', authUser.id)
+        .maybeSingle();
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        if (checkDemoMode()) return;
-      }
-      setUser(user);
+      if (!active) return;
+
+      setUser({
+        uid: authUser.id,
+        email: authUser.email ?? null,
+        displayName: profile?.display_name ?? null,
+        photoURL: profile?.avatar_url ?? null,
+      });
       setLoading(false);
+    }
+
+    supabase.auth.getUser().then(({ data }) => loadUser(data.user));
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      loadUser(session?.user ?? null);
     });
 
-    return () => unsubscribe();
-  }, [auth]);
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
 
   return { user, loading };
 }
