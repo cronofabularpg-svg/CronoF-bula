@@ -30,8 +30,8 @@ import {
   ScrollText,
   Loader2
 } from "lucide-react"
-import { useFirestore, useCollection } from "@/firebase"
-import { collection, query, doc, updateDoc, addDoc, serverTimestamp, orderBy, getDocs } from "firebase/firestore"
+import { useUser, useFirestore } from "@/firebase"
+import { collection, addDoc, serverTimestamp } from "firebase/firestore"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { summarizeSession } from "@/ai/flows/session-summarizer"
@@ -53,8 +53,18 @@ type CampaignSummary = {
   owner_id: string
 }
 
+type SessionRow = {
+  id: string
+  title: string
+  status: string
+  started_at: string | null
+  ended_at: string | null
+  created_at: string
+}
+
 export default function MasterPanel() {
   const { id: campaignId } = useParams() as { id: string }
+  const { user } = useUser()
   const db = useFirestore()
   const { toast } = useToast()
 
@@ -69,6 +79,8 @@ export default function MasterPanel() {
 
   const [campaign, setCampaign] = React.useState<CampaignSummary | null>(null)
   const [pendingCharacters, setPendingCharacters] = React.useState<PendingCharacter[]>([])
+  const [sessions, setSessions] = React.useState<SessionRow[]>([])
+  const [loadingSessions, setLoadingSessions] = React.useState(true)
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -97,16 +109,24 @@ export default function MasterPanel() {
         setPendingCharacters((data as PendingCharacter[]) || [])
       })
 
+    supabase
+      .from('sessions')
+      .select('id, title, status, started_at, ended_at, created_at')
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Sessões", description: error.message })
+        }
+        setSessions((data as SessionRow[]) || [])
+        setLoadingSessions(false)
+      })
+
     return () => {
       active = false
     }
   }, [campaignId, toast])
-
-  const sessionsQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "sessions"), orderBy("createdAt", "desc"))
-  }, [db, campaignId])
-  const { data: sessions, loading: loadingSessions } = useCollection(sessionsQuery)
 
   async function handleApproveCharacter(charId: string) {
     const supabase = createClient()
@@ -125,28 +145,80 @@ export default function MasterPanel() {
   }
 
   async function handleStartSession() {
-    if (!db || !campaignId || !newSessionTitle.trim()) return
+    if (!campaignId || !newSessionTitle.trim() || !user) return
     setIsStartingSession(true)
-    addDoc(collection(db, "campaigns", campaignId, "sessions"), {
-      campaignId,
-      title: newSessionTitle,
-      status: "active",
-      diceMode: diceMode,
-      createdAt: serverTimestamp()
-    }).then(() => {
-      setNewSessionTitle("")
+    const supabase = createClient()
+
+    const { error: settingsError } = await supabase
+      .from('campaign_settings')
+      .update({
+        allow_virtual_dice: true,
+        allow_physical_dice: diceMode === 'flexible'
+      })
+      .eq('campaign_id', campaignId)
+
+    if (settingsError) {
+      toast({ variant: "destructive", title: "Erro ao Salvar Política de Dados", description: settingsError.message })
       setIsStartingSession(false)
-      toast({ title: "Sessão Iniciada!" })
-    })
+      return
+    }
+
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .insert({
+        campaign_id: campaignId,
+        title: newSessionTitle,
+        status: 'active',
+        started_at: new Date().toISOString(),
+        created_by: user.uid
+      })
+      .select('id, title, status, started_at, ended_at, created_at')
+      .single()
+
+    if (sessionError || !session) {
+      toast({ variant: "destructive", title: "Erro ao Iniciar Sessão", description: sessionError?.message })
+      setIsStartingSession(false)
+      return
+    }
+
+    const { error: sceneError } = await supabase
+      .from('scenes')
+      .insert({
+        campaign_id: campaignId,
+        session_id: session.id,
+        title: 'Cena Inicial',
+        status: 'active',
+        created_by: user.uid
+      })
+
+    if (sceneError) {
+      toast({ variant: "destructive", title: "Erro ao Criar Cena Inicial", description: sceneError.message })
+    }
+
+    setSessions((prev) => [session as SessionRow, ...prev])
+    setNewSessionTitle("")
+    setIsStartingSession(false)
+    toast({ title: "Sessão Iniciada!" })
   }
 
-  async function handleEndSession(session: any) {
-    if (!db || !campaignId || !campaign) return
+  async function handleEndSession(session: SessionRow) {
+    if (!campaignId || !campaign) return
     setIsSummarizing(true)
     try {
-      // Busca logs da sessão
-      const logsSnap = await getDocs(query(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), orderBy("createdAt", "asc")))
-      const sessionLog = logsSnap.docs.map(d => `${d.data().senderName}: ${d.data().text}`)
+      const supabase = createClient()
+
+      const { data: messagesData, error } = await supabase
+        .from('scene_messages')
+        .select('content, message_type, characters(name)')
+        .eq('session_id', session.id)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+
+      const sessionLog = (messagesData || []).map((m: any) => {
+        const sender = m.characters?.name || (m.message_type === 'narration' ? 'Mestre Arcano' : 'Sistema')
+        return `${sender}: ${m.content}`
+      })
 
       if (sessionLog.length === 0) {
         toast({ variant: "destructive", title: "Sessão Vazia", description: "Não há registros suficientes para resumir." })
@@ -172,17 +244,25 @@ export default function MasterPanel() {
   async function handlePublishChronicle() {
     if (!db || !campaignId || !summaryResult) return
     try {
-      // 1. Criar Crônica
+      // 1. Criar Crônica (Crônicas seguem no Firestore nesta fase)
       await addDoc(collection(db, "campaigns", campaignId, "chronicles"), {
         campaignId,
         sessionId: summaryResult.sessionId,
         ...summaryResult,
         createdAt: serverTimestamp()
       })
-      // 2. Encerrar Sessão
-      await updateDoc(doc(db, "campaigns", campaignId, "sessions", summaryResult.sessionId), {
-        status: "completed"
-      })
+
+      // 2. Encerrar Sessão (Supabase)
+      const supabase = createClient()
+      const endedAt = new Date().toISOString()
+      const { error } = await supabase
+        .from('sessions')
+        .update({ status: 'completed', ended_at: endedAt })
+        .eq('id', summaryResult.sessionId)
+
+      if (error) throw error
+
+      setSessions((prev) => prev.map((s) => s.id === summaryResult.sessionId ? { ...s, status: 'completed', ended_at: endedAt } : s))
       setIsSummaryOpen(false)
       toast({ title: "Crônica Eternizada", description: "A história foi gravada nos anais do tempo." })
     } catch (e: any) {
@@ -300,7 +380,12 @@ export default function MasterPanel() {
                 <h3 className="font-display font-bold text-2xl">Histórico de Sessões</h3>
               </div>
               <div className="space-y-4">
-                {sessions?.map((session: any) => (
+                {loadingSessions && sessions.length === 0 && (
+                  <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
+                    Consultando os anais...
+                  </div>
+                )}
+                {sessions.map((session) => (
                   <div key={session.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center">
                     <div>
                       <h5 className="font-bold">{session.title}</h5>
@@ -326,6 +411,11 @@ export default function MasterPanel() {
                     </div>
                   </div>
                 ))}
+                {!loadingSessions && sessions.length === 0 && (
+                  <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
+                    Nenhuma sessão registrada ainda.
+                  </div>
+                )}
               </div>
             </Card>
           </div>

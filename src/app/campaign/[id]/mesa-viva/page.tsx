@@ -44,8 +44,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useUser, useFirestore, useCollection, useDoc } from "@/firebase"
-import { collection, query, where, orderBy, addDoc, serverTimestamp, limit, doc } from "firebase/firestore"
+import { useUser, useFirestore, useCollection } from "@/firebase"
+import { collection, query, where } from "firebase/firestore"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
@@ -67,22 +67,6 @@ export default function MesaViva() {
   const [physicalResult, setPhysicalResult] = React.useState('')
   const [isDiceDialogOpen, setIsDiceDialogOpen] = React.useState(false)
   const [activeDiceTab, setActiveDiceTab] = React.useState<string>("virtual")
-
-  const userRef = React.useMemo(() => user ? doc(db, "users", user.uid) : null, [db, user])
-  const { data: profile } = useDoc<any>(userRef)
-
-  const activeSessionQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(
-      collection(db, "campaigns", campaignId, "sessions"),
-      where("status", "==", "active"),
-      orderBy("createdAt", "desc"),
-      limit(1)
-    )
-  }, [db, campaignId])
-
-  const { data: activeSessions, loading: loadingSession } = useCollection(activeSessionQuery)
-  const session = activeSessions?.[0]
 
   const npcsQuery = React.useMemo(() => {
     if (!db || !campaignId) return null
@@ -130,6 +114,15 @@ export default function MesaViva() {
         if (active) setCharacters(data || [])
       })
 
+    supabase
+      .from('campaign_settings')
+      .select('allow_physical_dice, allow_virtual_dice, require_roll_reason')
+      .eq('campaign_id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setDiceSettings(data)
+      })
+
     return () => {
       active = false
     }
@@ -137,72 +130,215 @@ export default function MesaViva() {
 
   const myCharacter = characters.find(c => c.owner_user_id === user?.uid)
 
-  const messagesQuery = React.useMemo(() => {
-    if (!db || !campaignId || !session) return null
-    return query(
-      collection(db, "campaigns", campaignId, "sessions", session.id, "messages"),
-      orderBy("createdAt", "asc")
-    )
-  }, [db, campaignId, session])
-  const { data: messages, loading: loadingMessages } = useCollection(messagesQuery)
+  // Sessão e cena ativas (Supabase Postgres)
+  const [activeSession, setActiveSession] = React.useState<{
+    id: string
+    title: string
+    status: string
+  } | null>(null)
+  const [activeScene, setActiveScene] = React.useState<{
+    id: string
+    session_id: string
+    title: string
+    location_name: string | null
+    visibility: string
+    status: string
+  } | null>(null)
+  const [diceSettings, setDiceSettings] = React.useState<{
+    allow_physical_dice: boolean
+    allow_virtual_dice: boolean
+    require_roll_reason: boolean
+  } | null>(null)
+  const [loadingSession, setLoadingSession] = React.useState(true)
+
+  React.useEffect(() => {
+    if (!campaignId) return
+    let active = true
+    const supabase = createClient()
+
+    async function loadSessionAndScene() {
+      const { data: sessionData } = await supabase
+        .from('sessions')
+        .select('id, title, status')
+        .eq('campaign_id', campaignId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!active) return
+      setActiveSession(sessionData)
+
+      if (sessionData) {
+        const { data: sceneData } = await supabase
+          .from('scenes')
+          .select('id, session_id, title, location_name, visibility, status')
+          .eq('session_id', sessionData.id)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (active) setActiveScene(sceneData)
+      } else {
+        setActiveScene(null)
+      }
+
+      if (active) setLoadingSession(false)
+    }
+
+    loadSessionAndScene()
+
+    return () => {
+      active = false
+    }
+  }, [campaignId])
+
+  // Mensagens da cena ativa (Supabase Realtime)
+  const [messages, setMessages] = React.useState<any[]>([])
+  const [loadingMessages, setLoadingMessages] = React.useState(true)
+
+  React.useEffect(() => {
+    if (!activeScene) {
+      setMessages([])
+      setLoadingMessages(false)
+      return
+    }
+
+    let active = true
+    setLoadingMessages(true)
+    const supabase = createClient()
+
+    supabase
+      .from('scene_messages')
+      .select('id, sender_user_id, character_id, message_type, visibility, content, metadata, created_at')
+      .eq('scene_id', activeScene.id)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => {
+        if (!active) return
+        setMessages(data || [])
+        setLoadingMessages(false)
+      })
+
+    const channel = supabase
+      .channel(`scene_messages_${activeScene.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'scene_messages', filter: `scene_id=eq.${activeScene.id}` },
+        (payload) => {
+          setMessages((prev) => [...prev, payload.new])
+        }
+      )
+      .subscribe()
+
+    return () => {
+      active = false
+      supabase.removeChannel(channel)
+    }
+  }, [activeScene])
+
+  // Participantes da cena ativa (Supabase Postgres)
+  const [sceneParticipants, setSceneParticipants] = React.useState<{
+    id: string
+    name: string
+    race: string | null
+    class: string | null
+    avatar_url: string | null
+  }[]>([])
+
+  React.useEffect(() => {
+    if (!activeScene) {
+      setSceneParticipants([])
+      return
+    }
+
+    let active = true
+    const supabase = createClient()
+
+    supabase
+      .from('scene_participants')
+      .select('character_id, characters(id, name, race, class, avatar_url)')
+      .eq('scene_id', activeScene.id)
+      .eq('status', 'active')
+      .then(({ data }) => {
+        if (!active) return
+        const list = (data || [])
+          .map((row: any) => row.characters)
+          .filter((c: any): c is NonNullable<typeof c> => !!c)
+        setSceneParticipants(list)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [activeScene])
 
   const isMaster = campaign?.owner_id === user?.uid;
 
   const handleSend = async (text?: string, type?: string, rollData?: any) => {
     const finalContent = text || inputValue
     const finalType = type || (isMaster && messageType === 'narration' ? 'narration' : messageType)
-    if (!finalContent.trim() || !session || !user) return
+    if (!finalContent.trim() || !activeSession || !activeScene || !user) return
 
-    const messageData = {
-      sessionId: session.id,
-      senderId: user.uid,
-      senderName: isMaster ? "Mestre Arcano" : (myCharacter?.name || user.displayName || "Aventureiro"),
-      senderPhotoURL: isMaster ? "" : (myCharacter?.avatar_url || ""),
-      text: finalContent,
-      type: finalType,
-      rollData: rollData || null,
-      createdAt: serverTimestamp()
+    const supabase = createClient()
+    const { error } = await supabase.from('scene_messages').insert({
+      campaign_id: campaignId,
+      session_id: activeSession.id,
+      scene_id: activeScene.id,
+      sender_user_id: user.uid,
+      character_id: myCharacter?.id ?? null,
+      message_type: finalType,
+      visibility: 'scene',
+      content: finalContent,
+      metadata: rollData ? { rollData } : {}
+    })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Enviar", description: error.message })
+      return
     }
 
-    try {
-      await addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), messageData)
-      if (!text) setInputValue('')
-      if (isSoloMode && !isMaster && (finalType === 'action' || finalType === 'speech')) {
-        handleAiMasterResponse(finalContent, finalType)
-      }
-    } catch (e) { console.error(e) }
+    if (!text) setInputValue('')
+    if (isSoloMode && !isMaster && (finalType === 'action' || finalType === 'speech')) {
+      handleAiMasterResponse(finalContent, finalType)
+    }
   }
 
   const handleAiMasterResponse = async (playerInput: string, type: 'action' | 'speech') => {
-    if (!session || !campaign || !myCharacter) return
+    if (!activeSession || !activeScene || !campaign || !myCharacter || !user) return
     setIsAiThinking(true)
     try {
       const input = {
         mode: 'narrator' as const,
         campaign: { id: campaign.id, name: campaign.name, tone: campaign.tone || "fantasia sombria", rule_system: campaign.system_key || "dnd_srd" },
-        session: { id: session.id, title: session.title, status: "active" },
-        scene: { id: "current-scene", title: "Cena em Andamento", visibility: "public", location: "Desconhecida" },
+        session: { id: activeSession.id, title: activeSession.title, status: "active" },
+        scene: { id: activeScene.id, title: activeScene.title, visibility: activeScene.visibility, location: activeScene.location_name || "Desconhecida" },
         active_character: { id: myCharacter.id, name: myCharacter.name, race: myCharacter.race, class: myCharacter.class, known_information: ["Está explorando uma área nova."] },
         player_action: playerInput,
         visible_objects: ["Uma névoa persistente"],
         present_npcs: npcs?.map(n => ({ name: n.name })) || []
       }
       const aiResponse = await aiNarratorAndNpcDialogue(input as any)
-      await addDoc(collection(db, "campaigns", campaignId, "sessions", session.id, "messages"), {
-        sessionId: session.id,
-        senderId: 'ai-narrator',
-        senderName: 'Oráculo Arcano',
-        text: aiResponse,
-        type: 'narration',
-        createdAt: serverTimestamp()
+
+      const supabase = createClient()
+      await supabase.from('scene_messages').insert({
+        campaign_id: campaignId,
+        session_id: activeSession.id,
+        scene_id: activeScene.id,
+        sender_user_id: user.uid,
+        character_id: null,
+        message_type: 'narration',
+        visibility: 'scene',
+        content: aiResponse,
+        metadata: { source: 'ai-narrator' }
       })
     } catch (e) {
       toast({ variant: "destructive", title: "Erro do Oráculo", description: "A IA encontrou uma bruma mental." })
     } finally { setIsAiThinking(false) }
   }
 
-  const handleRollDice = (isPhysical: boolean = false) => {
-    if (!session || !user) return
+  const handleRollDice = async (isPhysical: boolean = false) => {
+    if (!activeSession || !activeScene || !user) return
     let result = 0
     let formula = diceFormula
     if (isPhysical) {
@@ -231,12 +367,39 @@ export default function MesaViva() {
         return
       }
     }
+
     const rollMsg = `Rolou ${formula}${rollReason ? ` para ${rollReason}` : ''}: **${result}**`
-    handleRollDice(isPhysical); // Actually handles the send inside logic
+
+    const supabase = createClient()
+    const { error: rollError } = await supabase.from('dice_rolls').insert({
+      campaign_id: campaignId,
+      session_id: activeSession.id,
+      scene_id: activeScene.id,
+      character_id: myCharacter?.id ?? null,
+      user_id: user.uid,
+      roll_type: isPhysical ? 'physical' : 'virtual',
+      formula,
+      raw_result: result,
+      modifier: 0,
+      total: result,
+      reason: rollReason || null,
+      visibility: 'scene'
+    })
+
+    if (rollError) {
+      toast({ variant: "destructive", title: "Erro ao Registrar Rolagem", description: rollError.message })
+      return
+    }
+
+    await handleSend(rollMsg, 'dice', { formula, result, isPhysical, reason: rollReason })
+
+    setIsDiceDialogOpen(false)
+    setPhysicalResult('')
+    setRollReason('')
   }
 
   if (loadingSession) return <div className="h-screen flex items-center justify-center font-heading italic text-3xl opacity-40">Sincronizando com o Arcano...</div>
-  if (!session) return (
+  if (!activeSession || !activeScene) return (
     <div className="h-screen flex flex-col items-center justify-center space-y-10 text-center p-10 bg-[#050711]">
       <div className="p-8 rounded-full bg-primary/5 border border-primary/10 text-primary opacity-30"><MessageSquareDashed className="h-24 w-24" /></div>
       <div className="space-y-4">
@@ -265,6 +428,9 @@ export default function MesaViva() {
         <section className="space-y-6">
           <div className="space-y-6">
              <ParticipantItem name={user?.displayName || "Você"} photo={myCharacter?.avatar_url ?? undefined} role={isMaster ? "Mestre Arcano" : (myCharacter?.class || "Aventureiro")} status="Ativo" />
+             {sceneParticipants.filter(c => c.id !== myCharacter?.id).map(c => (
+               <ParticipantItem key={c.id} name={c.name} photo={c.avatar_url ?? undefined} role={c.class || "Aventureiro"} status="Em cena" />
+             ))}
              {isSoloMode && <ParticipantItem name="O Oráculo" role="Narrador IA" status={isAiThinking ? "Tecendo Destino..." : "Observando"} isAI />}
              {npcs?.map(npc => (
                <ParticipantItem key={npc.id} name={npc.name} photo={npc.imageURL} role={npc.role} status="Presente" isNPC />
@@ -282,8 +448,8 @@ export default function MesaViva() {
                 <p className="text-xs font-display font-bold uppercase tracking-widest text-primary">Política de Dados</p>
              </div>
              <p className="text-[11px] font-heading italic text-muted-foreground leading-relaxed opacity-70">
-               {session.diceMode === 'virtual' ? "Apenas dados virtuais permitidos." : 
-                session.diceMode === 'physical' ? "Apenas resultados físicos permitidos." : 
+               {diceSettings && !diceSettings.allow_physical_dice ? "Apenas dados virtuais permitidos." :
+                diceSettings && !diceSettings.allow_virtual_dice ? "Apenas resultados físicos permitidos." :
                 "Política flexível: física ou virtual."}
              </p>
           </div>
@@ -312,7 +478,7 @@ export default function MesaViva() {
             <div className="flex flex-col">
               <h2 className="text-3xl font-display font-black text-primary flex items-center gap-3 tracking-tighter">
                 {isMaster && <ShieldCheck className="h-6 w-6 text-primary" />}
-                {session.title}
+                {activeSession.title}
               </h2>
               <div className="flex items-center gap-4 mt-2">
                  <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] font-display tracking-widest px-3 py-0.5">Sessão Ativa</Badge>
@@ -334,10 +500,10 @@ export default function MesaViva() {
                 
                 <Tabs value={activeDiceTab} onValueChange={setActiveDiceTab} className="w-full mt-8">
                   <TabsList className="grid w-full grid-cols-2 bg-black/40 h-14 p-1.5 rounded-2xl">
-                    <TabsTrigger value="virtual" disabled={session.diceMode === 'physical'} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-xl h-full transition-all">
+                    <TabsTrigger value="virtual" disabled={diceSettings ? !diceSettings.allow_virtual_dice : false} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-xl h-full transition-all">
                       <Zap className="h-4 w-4" /> Virtual
                     </TabsTrigger>
-                    <TabsTrigger value="physical" disabled={session.diceMode === 'virtual'} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-xl h-full transition-all">
+                    <TabsTrigger value="physical" disabled={diceSettings ? !diceSettings.allow_physical_dice : false} className="text-[10px] font-display uppercase tracking-widest flex gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-xl h-full transition-all">
                       <Hash className="h-4 w-4" /> Físico
                     </TabsTrigger>
                   </TabsList>
@@ -380,7 +546,7 @@ export default function MesaViva() {
               </div>
             ) : messages && messages.length > 0 ? (
               messages.map((msg: any) => (
-                <OracleMessage key={msg.id} msg={msg} currentUserId={user?.uid} />
+                <OracleMessage key={msg.id} msg={toDisplayMessage(msg, characters)} currentUserId={user?.uid} />
               ))
             ) : (
               <div className="text-center py-40 space-y-8 opacity-40">
@@ -434,8 +600,23 @@ export default function MesaViva() {
   );
 }
 
+function toDisplayMessage(msg: any, characters: { id: string, name: string, avatar_url: string | null }[]) {
+  const character = characters.find((c) => c.id === msg.character_id)
+  const isAiNarration = msg.message_type === 'narration' && msg.metadata?.source === 'ai-narrator'
+
+  return {
+    id: msg.id,
+    type: msg.message_type,
+    text: msg.content,
+    senderId: msg.sender_user_id,
+    senderName: character?.name || (msg.message_type === 'narration' ? (isAiNarration ? 'Oráculo Arcano' : 'Mestre Arcano') : 'Mestre Arcano'),
+    senderPhotoURL: character?.avatar_url || '',
+    rollData: msg.metadata?.rollData || null,
+  }
+}
+
 function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: string }) {
-  const isNarrator = msg.type === 'narration' || msg.senderId === 'ai-narrator';
+  const isNarrator = msg.type === 'narration';
   const isMine = msg.senderId === currentUserId;
   const isAction = msg.type === 'action';
   const isDice = msg.type === 'dice';

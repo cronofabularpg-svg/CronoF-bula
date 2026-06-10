@@ -20,8 +20,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
-import { useUser, useFirestore } from '@/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useUser } from '@/firebase';
 import { useToast } from "@/hooks/use-toast";
 import { createClient } from "@/lib/supabase/client";
 
@@ -36,7 +35,6 @@ type Campaign = {
 
 export default function Dashboard() {
   const { user } = useUser();
-  const db = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -98,16 +96,31 @@ export default function Dashboard() {
 
       if (error || !campaign) throw error || new Error("Falha ao criar campanha.");
 
-      // Sessão da Mesa Viva ainda vive no Firestore (Fase 4 migra esta camada).
-      if (db) {
-        await addDoc(collection(db, "campaigns", campaign.id, "sessions"), {
-          campaignId: campaign.id,
+      const { data: session, error: sessionError } = await supabase
+        .from('sessions')
+        .insert({
+          campaign_id: campaign.id,
           title: "Abertura da Crônica",
           status: "active",
-          diceMode: "flexible",
-          createdAt: serverTimestamp()
+          started_at: new Date().toISOString(),
+          created_by: user.uid,
+        })
+        .select('id')
+        .single();
+
+      if (sessionError || !session) throw sessionError || new Error("Falha ao iniciar sessão.");
+
+      const { error: sceneError } = await supabase
+        .from('scenes')
+        .insert({
+          campaign_id: campaign.id,
+          session_id: session.id,
+          title: "Cena Inicial",
+          status: "active",
+          created_by: user.uid,
         });
-      }
+
+      if (sceneError) throw sceneError;
 
       router.push(`/campaign/${campaign.id}/mesa-viva`);
     } catch (e: any) {
