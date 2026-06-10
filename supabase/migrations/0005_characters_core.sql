@@ -51,12 +51,12 @@ create index characters_owner_user_id_idx on characters (owner_user_id);
 
 -- Helper de permissão
 
-create or replace function owns_character(character uuid)
+create or replace function owns_character(target_character_id uuid)
 returns boolean as $$
   select exists (
     select 1
     from characters
-    where id = character
+    where id = target_character_id
       and owner_user_id = auth.uid()
   );
 $$ language sql security definer;
