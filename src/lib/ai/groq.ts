@@ -1,6 +1,8 @@
 // Cliente Groq server-side. NUNCA importar este arquivo em componentes
 // "use client" — GROQ_API_KEY só pode existir no servidor.
 
+import { serverEnv } from '@/lib/server/env'
+
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -29,7 +31,7 @@ export async function callGroq(
   messages: GroqChatMessage[],
   options: GroqCallOptions = {}
 ): Promise<string> {
-  const apiKey = process.env.GROQ_API_KEY
+  const apiKey = serverEnv.groqApiKey
   if (!apiKey) {
     throw new GroqError('GROQ_API_KEY não configurada no servidor.')
   }

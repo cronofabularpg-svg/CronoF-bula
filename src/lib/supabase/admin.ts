@@ -1,4 +1,6 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { publicEnv } from '@/lib/env';
+import { serverEnv } from '@/lib/server/env';
 
 // ATENÇÃO: este arquivo não pode ser importado por componentes client.
 // Usa a service role key, que ignora RLS. Uso restrito a Route Handlers,
@@ -11,8 +13,8 @@ export function createAdminClient() {
   }
 
   return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    publicEnv.supabaseUrl,
+    serverEnv.supabaseServiceRoleKey,
     {
       auth: {
         autoRefreshToken: false,
