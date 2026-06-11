@@ -20,6 +20,7 @@ import {
   Hourglass,
   Quote,
   Lock,
+  BookOpen,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -50,6 +51,7 @@ import {
   type PlayerActionMode,
   type MasterActionMode,
 } from "./_components/mesa-viva-ui"
+import { JournalEntryDialog } from "@/components/journal/journal-entry-dialog"
 
 export default function MesaViva() {
   const { id: campaignId } = useParams() as { id: string }
@@ -131,6 +133,40 @@ export default function MesaViva() {
   }, [campaignId])
 
   const myCharacter = characters.find(c => c.owner_user_id === user?.uid)
+
+  // Diário: presente apenas se o personagem possuir o item Diário no Inventário.
+  const [hasJournalItem, setHasJournalItem] = React.useState(false)
+  const [isJournalDialogOpen, setIsJournalDialogOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!myCharacter) {
+      setHasJournalItem(false)
+      return
+    }
+
+    let active = true
+    const supabase = createClient()
+
+    supabase
+      .from('character_items')
+      .select('items(name, item_type)')
+      .eq('character_id', myCharacter.id)
+      .then(({ data }) => {
+        if (!active) return
+        const found = (data || []).some((row: any) => {
+          const item = Array.isArray(row.items) ? row.items[0] : row.items
+          if (!item) return false
+          const type = (item.item_type || '').toLowerCase()
+          const name = (item.name || '').toLowerCase()
+          return type === 'journal' || /di[áa]rio/.test(name)
+        })
+        setHasJournalItem(found)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [myCharacter?.id])
 
   // Sessão e cena ativas (Supabase Postgres)
   const [activeSession, setActiveSession] = React.useState<{
@@ -895,6 +931,19 @@ export default function MesaViva() {
               aiDisabledReason={aiDisabledReason}
             />
 
+            {hasJournalItem && myCharacter && (
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsJournalDialogOpen(true)}
+                  className="gap-2 text-[10px] font-display uppercase tracking-widest text-muted-foreground hover:text-primary"
+                >
+                  <BookOpen className="h-3.5 w-3.5" /> Registrar no Diário
+                </Button>
+              </div>
+            )}
+
             {isMaster && (
               <MasterActionPanel
                 actionMode={actionMode}
@@ -969,6 +1018,18 @@ export default function MesaViva() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Registrar no Diário: entrada privada por padrão, vinculada à sessão/cena ativa */}
+      {myCharacter && (
+        <JournalEntryDialog
+          open={isJournalDialogOpen}
+          onOpenChange={setIsJournalDialogOpen}
+          campaignId={campaignId}
+          characterId={myCharacter.id}
+          sessionId={activeSession?.id}
+          sceneId={activeScene?.id}
+        />
+      )}
     </div>
   );
 }
