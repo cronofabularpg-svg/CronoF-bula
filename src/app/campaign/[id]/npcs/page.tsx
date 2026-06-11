@@ -3,8 +3,8 @@
 
 import * as React from "react"
 import { useParams } from "next/navigation"
-import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, orderBy, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from "firebase/firestore"
+import { useUser } from "@/firebase"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -15,12 +15,7 @@ import {
   Users, 
   UserPlus, 
   Search, 
-  Trash2, 
   Edit2, 
-  Sparkles, 
-  MessageSquare,
-  Eye,
-  EyeOff,
   Skull
 } from "lucide-react"
 import { 
@@ -36,12 +31,14 @@ import { useToast } from "@/hooks/use-toast"
 export default function NPCManager() {
   const { id: campaignId } = useParams() as { id: string }
   const { user } = useUser()
-  const db = useFirestore()
   const { toast } = useToast()
 
   const [searchTerm, setSearchTerm] = React.useState("")
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
+  const [loadingNpcs, setLoadingNpcs] = React.useState(true)
+  const [npcs, setNpcs] = React.useState<any[]>([])
+  const [isMaster, setIsMaster] = React.useState(false)
 
   const [npcData, setNpcData] = React.useState({
     name: "",
@@ -49,36 +46,80 @@ export default function NPCManager() {
     personality: "",
     goals: "",
     knows: "",
+    secrets: "",
+    visibility: "master_only",
     status: "alive" as "alive" | "dead" | "missing"
   })
 
-  const npcsQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "npcs"), orderBy("name", "asc"))
-  }, [db, campaignId])
+  React.useEffect(() => {
+    if (!campaignId || !user) return
+    let active = true
+    const userId = user.uid
+    const supabase = createClient()
 
-  const { data: npcs, loading: loadingNpcs } = useCollection(npcsQuery)
+    async function load() {
+      setLoadingNpcs(true)
 
-  const filteredNpcs = npcs?.filter(npc => 
-    npc.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    npc.role.toLowerCase().includes(searchTerm.toLowerCase())
+      const [{ data: member }, { data, error }] = await Promise.all([
+        supabase
+          .from('campaign_members')
+          .select('role')
+          .eq('campaign_id', campaignId)
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .maybeSingle(),
+        supabase
+          .rpc('get_campaign_npcs', { target_campaign_id: campaignId })
+      ])
+
+      if (!active) return
+      setIsMaster(['owner', 'master', 'assistant_master'].includes(member?.role || ''))
+      if (error) {
+        toast({ variant: "destructive", title: "Erro ao Carregar NPCs", description: error.message })
+      }
+      setNpcs(data || [])
+      setLoadingNpcs(false)
+    }
+
+    load()
+
+    return () => {
+      active = false
+    }
+  }, [campaignId, user, toast])
+
+  const filteredNpcs = npcs.filter(npc => 
+    (npc.name || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (npc.role || "").toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const isMaster = true; // No MVP por papel simulado ou verificação real
-
   async function handleCreateNPC() {
-    if (!db || !campaignId || !npcData.name) return
+    if (!campaignId || !user || !npcData.name) return
     setLoading(true)
     try {
-      await addDoc(collection(db, "campaigns", campaignId, "npcs"), {
-        ...npcData,
-        campaignId,
-        knows: npcData.knows.split(",").map(k => k.trim()),
-        createdAt: serverTimestamp()
-      })
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('npcs')
+        .insert({
+          campaign_id: campaignId,
+          name: npcData.name,
+          role: npcData.role || null,
+          personality: npcData.personality || null,
+          goals: npcData.goals || null,
+          secrets: npcData.secrets || null,
+          knowledge: npcData.knows.split(",").map(k => k.trim()).filter(Boolean),
+          visibility: npcData.visibility,
+          status: npcData.status,
+          created_by: user.uid
+        })
+        .select('id, name, role, description, personality, goals, knowledge, relationship_status, current_location_id, current_scene_id, visibility, status')
+        .single()
+
+      if (error) throw error
       toast({ title: "NPC Criado", description: `${npcData.name} agora habita Arvand.` })
+      setNpcs((prev) => [...prev, { ...data, secrets: isMaster ? npcData.secrets : null }].sort((a, b) => a.name.localeCompare(b.name)))
       setIsCreateOpen(false)
-      setNpcData({ name: "", role: "", personality: "", goals: "", knows: "", status: "alive" })
+      setNpcData({ name: "", role: "", personality: "", goals: "", knows: "", secrets: "", visibility: "master_only", status: "alive" })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro ao criar", description: e.message })
     } finally {
@@ -87,10 +128,20 @@ export default function NPCManager() {
   }
 
   async function handleKillNPC(npcId: string, npcName: string) {
-    if (!db || !campaignId) return
-    const npcRef = doc(db, "campaigns", campaignId, "npcs", npcId)
-    updateDoc(npcRef, { status: "dead" })
-      .then(() => toast({ title: "Fábula Sombria", description: `${npcName} encontrou seu fim.` }))
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('npcs')
+      .update({ status: "dead" })
+      .eq('id', npcId)
+      .eq('campaign_id', campaignId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Atualizar NPC", description: error.message })
+      return
+    }
+
+    setNpcs((prev) => prev.map((npc) => npc.id === npcId ? { ...npc, status: "dead" } : npc))
+    toast({ title: "Fábula Sombria", description: `${npcName} encontrou seu fim.` })
   }
 
   return (
@@ -147,6 +198,18 @@ export default function NPCManager() {
                       <Label className="uppercase text-[10px] font-bold tracking-widest">Conhecimentos (separados por vírgula)</Label>
                       <Input value={npcData.knows} onChange={e => setNpcData({...npcData, knows: e.target.value})} placeholder="Ex: Local do Templo, Senha da Torre" />
                     </div>
+                    <div className="space-y-2">
+                      <Label className="uppercase text-[10px] font-bold tracking-widest">Segredos do Mestre</Label>
+                      <Textarea value={npcData.secrets} onChange={e => setNpcData({...npcData, secrets: e.target.value})} placeholder="Não aparece para jogadores." />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="uppercase text-[10px] font-bold tracking-widest">Visibilidade</Label>
+                      <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm" value={npcData.visibility} onChange={e => setNpcData({...npcData, visibility: e.target.value})}>
+                        <option value="master_only">Apenas Mestre</option>
+                        <option value="visible">Visível aos Jogadores</option>
+                        <option value="scene">Presente em Cena</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
                 <DialogFooter>
@@ -164,7 +227,7 @@ export default function NPCManager() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {loadingNpcs ? (
           <div className="col-span-full p-20 text-center italic opacity-50">Consultando o oráculo populacional...</div>
-        ) : filteredNpcs && filteredNpcs.length > 0 ? (
+        ) : filteredNpcs.length > 0 ? (
           filteredNpcs.map((npc: any) => (
             <Card key={npc.id} className={`bg-card/30 border-white/5 hover:border-accent/30 transition-all group overflow-hidden ${npc.status === 'dead' ? 'grayscale opacity-60' : ''}`}>
               <div className="relative h-48 bg-muted">
@@ -196,10 +259,16 @@ export default function NPCManager() {
                   <p className="text-xs line-clamp-2">{npc.goals}</p>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                   {npc.knows.map((k: string, i: number) => (
+                   {(npc.knowledge || []).map((k: string, i: number) => (
                      <Badge key={i} variant="secondary" className="text-[8px] opacity-70">{k}</Badge>
                    ))}
                 </div>
+                {isMaster && npc.secrets && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-primary tracking-widest">Segredos</span>
+                    <p className="text-xs line-clamp-2 text-primary/80">{npc.secrets}</p>
+                  </div>
+                )}
               </CardContent>
               <CardFooter className="grid grid-cols-2 gap-4 border-t border-white/5 pt-6 p-6">
                 <Button variant="ghost" size="sm" className="w-full hover:bg-white/5">

@@ -30,11 +30,9 @@ import {
   ScrollText,
   Loader2
 } from "lucide-react"
-import { useUser, useFirestore } from "@/firebase"
-import { collection, addDoc, serverTimestamp } from "firebase/firestore"
+import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
-import { summarizeSession } from "@/ai/flows/session-summarizer"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -62,10 +60,80 @@ type SessionRow = {
   created_at: string
 }
 
+type ApprovalRequest = {
+  id: string
+  request_type: string
+  status: string
+  title: string
+  description: string | null
+  requested_by: string | null
+  created_at: string
+  payload: Record<string, any> | null
+}
+
+type SessionMessageRow = {
+  id: string
+  scene_id: string | null
+  message_type: string
+  content: string
+  characters: { name: string }[] | { name: string } | null
+}
+
+type ChronicleDraft = {
+  id: string
+  sessionId: string
+  title: string
+  summary: string
+  public_content: string
+  master_notes: string
+  npcsEncountered: string[]
+  highlights: string[]
+  itemsGained: string[]
+  visibility: "party" | "public"
+  status: "draft" | "pending" | "approved"
+  sceneId: string | null
+}
+
+function buildChronicleDraft(session: SessionRow, messages: SessionMessageRow[], campaign: CampaignSummary): ChronicleDraft {
+  const speakerNames = Array.from(new Set(
+    messages.map((m) => Array.isArray(m.characters) ? m.characters[0]?.name : m.characters?.name).filter(Boolean) as string[]
+  ))
+  const notableLines = messages
+    .filter((m) => m.content.trim().length > 0)
+    .slice(0, 5)
+    .map((m) => m.content.trim())
+
+  const summaryBase = notableLines.length > 0
+    ? notableLines.join(" ")
+    : `A sessão ${session.title} transcorreu sem registros suficientes para um resumo detalhado.`
+
+  const title = `${session.title} - ${campaign.name}`
+  const publicContent = summaryBase
+  const masterNotes = `Rascunho local gerado a partir de ${messages.length} mensagens.`
+  const highlightWords = messages
+    .flatMap((m) => m.content.split(/\s+/))
+    .filter((word) => /item|rel[ií]quia|segredo|portal|mapa/i.test(word))
+    .slice(0, 6)
+
+  return {
+    id: "",
+    sessionId: session.id,
+    title,
+    summary: summaryBase,
+    public_content: publicContent,
+    master_notes: masterNotes,
+    npcsEncountered: speakerNames,
+    highlights: notableLines,
+    itemsGained: highlightWords,
+    visibility: "party",
+    status: "draft",
+    sceneId: messages[0]?.scene_id ?? null,
+  }
+}
+
 export default function MasterPanel() {
   const { id: campaignId } = useParams() as { id: string }
   const { user } = useUser()
-  const db = useFirestore()
   const { toast } = useToast()
 
   const [newSessionTitle, setNewSessionTitle] = React.useState("")
@@ -74,13 +142,16 @@ export default function MasterPanel() {
 
   // Estados para o Resumo
   const [isSummarizing, setIsSummarizing] = React.useState(false)
+  const [isSummarizingAI, setIsSummarizingAI] = React.useState(false)
   const [summaryResult, setSummaryResult] = React.useState<any>(null)
   const [isSummaryOpen, setIsSummaryOpen] = React.useState(false)
 
   const [campaign, setCampaign] = React.useState<CampaignSummary | null>(null)
   const [pendingCharacters, setPendingCharacters] = React.useState<PendingCharacter[]>([])
+  const [approvalRequests, setApprovalRequests] = React.useState<ApprovalRequest[]>([])
   const [sessions, setSessions] = React.useState<SessionRow[]>([])
   const [loadingSessions, setLoadingSessions] = React.useState(true)
+  const [draftChronicleId, setDraftChronicleId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -107,6 +178,20 @@ export default function MasterPanel() {
           toast({ variant: "destructive", title: "Erro ao Carregar Pendências", description: error.message })
         }
         setPendingCharacters((data as PendingCharacter[]) || [])
+      })
+
+    supabase
+      .from('approval_requests')
+      .select('id, request_type, status, title, description, requested_by, created_at, payload')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Solicitações", description: error.message })
+        }
+        setApprovalRequests((data as ApprovalRequest[]) || [])
       })
 
     supabase
@@ -142,6 +227,29 @@ export default function MasterPanel() {
 
     setPendingCharacters((prev) => prev.filter((c) => c.id !== charId))
     toast({ title: "Aprovado!", description: "O personagem agora faz parte da crônica." })
+  }
+
+  async function handleResolveApproval(requestId: string, status: 'approved' | 'rejected') {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('approval_requests')
+      .update({
+        status,
+        resolution_note: status === 'approved' ? 'Aprovado pelo mestre.' : 'Rejeitado pelo mestre.'
+      })
+      .eq('id', requestId)
+      .eq('campaign_id', campaignId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Resolver Solicitação", description: error.message })
+      return
+    }
+
+    setApprovalRequests((prev) => prev.filter((request) => request.id !== requestId))
+    toast({
+      title: status === 'approved' ? "Solicitação Aprovada" : "Solicitação Rejeitada",
+      description: "A decisão foi registrada no cânone da campanha."
+    })
   }
 
   async function handleStartSession() {
@@ -209,52 +317,143 @@ export default function MasterPanel() {
 
       const { data: messagesData, error } = await supabase
         .from('scene_messages')
-        .select('content, message_type, characters(name)')
+        .select('id, scene_id, content, message_type, characters(name)')
         .eq('session_id', session.id)
         .order('created_at', { ascending: true })
 
       if (error) throw error
 
-      const sessionLog = (messagesData || []).map((m: any) => {
-        const sender = m.characters?.name || (m.message_type === 'narration' ? 'Mestre Arcano' : 'Sistema')
-        return `${sender}: ${m.content}`
-      })
-
-      if (sessionLog.length === 0) {
+      if (!messagesData || messagesData.length === 0) {
         toast({ variant: "destructive", title: "Sessão Vazia", description: "Não há registros suficientes para resumir." })
         setIsSummarizing(false)
         return
       }
 
-      const summary = await summarizeSession({
-        campaign: { name: campaign.name, tone: campaign.tone || "fantasia sombria" },
-        sessionTitle: session.title,
-        sessionLog
-      })
+      const draft = buildChronicleDraft(session, messagesData as SessionMessageRow[], campaign)
+      const { data: chronicle, error: chronicleError } = await supabase
+        .from('chronicles')
+        .insert({
+          campaign_id: campaignId,
+          session_id: session.id,
+          title: draft.title,
+          summary: draft.summary,
+          public_content: draft.public_content,
+          master_notes: draft.master_notes,
+          status: 'draft',
+          visibility: draft.visibility,
+          created_by: user?.uid
+        })
+        .select('id')
+        .single()
 
-      setSummaryResult({ ...summary, sessionId: session.id })
+      if (chronicleError || !chronicle) throw chronicleError || new Error("Falha ao criar rascunho da crônica.")
+
+      setDraftChronicleId(chronicle.id)
+      setSummaryResult({
+        ...draft,
+        id: chronicle.id,
+        sessionId: session.id,
+        title: draft.title,
+        summary: draft.summary,
+        public_content: draft.public_content,
+        master_notes: draft.master_notes,
+      })
       setIsSummaryOpen(true)
     } catch (e: any) {
-      toast({ variant: "destructive", title: "Erro na IA", description: e.message })
+      toast({ variant: "destructive", title: "Erro ao Gerar Rascunho", description: e.message })
     } finally {
       setIsSummarizing(false)
     }
   }
 
-  async function handlePublishChronicle() {
-    if (!db || !campaignId || !summaryResult) return
+  async function handleEndSessionWithAI(session: SessionRow) {
+    if (!campaignId) return
+    setIsSummarizingAI(true)
     try {
-      // 1. Criar Crônica (Crônicas seguem no Firestore nesta fase)
-      await addDoc(collection(db, "campaigns", campaignId, "chronicles"), {
-        campaignId,
-        sessionId: summaryResult.sessionId,
-        ...summaryResult,
-        createdAt: serverTimestamp()
+      const response = await fetch('/api/ai/session-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId, sessionId: session.id })
       })
 
-      // 2. Encerrar Sessão (Supabase)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Falha ao gerar resumo com IA.')
+
+      setDraftChronicleId(data.draft.id)
+      setSummaryResult(data.draft)
+      setIsSummaryOpen(true)
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro do Cronista (IA)", description: e.message })
+    } finally {
+      setIsSummarizingAI(false)
+    }
+  }
+
+  async function handlePublishChronicle() {
+    if (!campaignId || !summaryResult || !user) return
+    try {
       const supabase = createClient()
       const endedAt = new Date().toISOString()
+
+      const chronicleId = draftChronicleId || summaryResult.id
+      const { error: chronicleError } = await supabase
+        .from('chronicles')
+        .update({
+          title: summaryResult.title,
+          summary: summaryResult.summary,
+          public_content: summaryResult.public_content,
+          master_notes: summaryResult.master_notes,
+          status: 'approved',
+          visibility: summaryResult.visibility || 'party',
+          approved_by: user.uid,
+          approved_at: endedAt,
+        })
+        .eq('id', chronicleId)
+        .eq('campaign_id', campaignId)
+
+      if (chronicleError) throw chronicleError
+
+      const { data: canonEvent, error: canonEventError } = await supabase
+        .from('canon_events')
+        .insert({
+          campaign_id: campaignId,
+          session_id: summaryResult.sessionId,
+          chronicle_id: chronicleId,
+          scene_id: summaryResult.sceneId ?? null,
+          event_type: 'session_chronicle',
+          title: summaryResult.title,
+          content: summaryResult.public_content,
+          visibility: summaryResult.visibility || 'party',
+          importance: 'normal',
+          created_by: user.uid,
+          approved_by: user.uid,
+          approved_at: endedAt
+        })
+        .select('id')
+        .single()
+
+      if (canonEventError || !canonEvent) throw canonEventError || new Error("Falha ao criar evento canônico.")
+
+      const { error: memoryError } = await supabase
+        .from('campaign_memory')
+        .insert({
+          campaign_id: campaignId,
+          source_type: 'canon_event',
+          source_id: canonEvent.id,
+          memory_type: 'chronicle_memory',
+          title: summaryResult.title,
+          content: summaryResult.public_content,
+          visibility: summaryResult.visibility || 'party',
+          importance: 'normal',
+          related_entity_type: 'chronicle',
+          related_entity_id: chronicleId,
+          created_by: user.uid,
+          approved_by: user.uid,
+          approved_at: endedAt
+        })
+
+      if (memoryError) throw memoryError
+
       const { error } = await supabase
         .from('sessions')
         .update({ status: 'completed', ended_at: endedAt })
@@ -264,6 +463,7 @@ export default function MasterPanel() {
 
       setSessions((prev) => prev.map((s) => s.id === summaryResult.sessionId ? { ...s, status: 'completed', ended_at: endedAt } : s))
       setIsSummaryOpen(false)
+      setDraftChronicleId(null)
       toast({ title: "Crônica Eternizada", description: "A história foi gravada nos anais do tempo." })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro ao Publicar", description: e.message })
@@ -309,9 +509,21 @@ export default function MasterPanel() {
                     onApprove={() => handleApproveCharacter(char.id)}
                   />
                 ))}
-                {pendingCharacters?.length === 0 && (
+                {approvalRequests.map((request) => (
+                  <ApprovalCard
+                    key={request.id}
+                    icon={<Sparkles className="h-4 w-4" />}
+                    type={request.request_type}
+                    title={request.title}
+                    desc={request.description || "Solicitação canônica aguardando decisão do mestre."}
+                    time="Pendente"
+                    onApprove={() => handleResolveApproval(request.id, 'approved')}
+                    onReject={() => handleResolveApproval(request.id, 'rejected')}
+                  />
+                ))}
+                {pendingCharacters?.length === 0 && approvalRequests.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
-                    Nenhum herói aguardando no portão.
+                    Nenhuma solicitação aguardando no portão.
                   </div>
                 )}
               </div>
@@ -395,15 +607,26 @@ export default function MasterPanel() {
                     </div>
                     <div className="flex gap-2">
                       {session.status === 'active' && (
-                        <Button 
-                          onClick={() => handleEndSession(session)} 
-                          disabled={isSummarizing}
-                          variant="outline" 
-                          size="sm" 
-                          className="border-accent/30 text-accent hover:bg-accent/10"
-                        >
-                          {isSummarizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ScrollText className="mr-2 h-4 w-4" /> Finalizar & Crônica</>}
-                        </Button>
+                        <>
+                          <Button
+                            onClick={() => handleEndSessionWithAI(session)}
+                            disabled={isSummarizingAI || isSummarizing}
+                            variant="outline"
+                            size="sm"
+                            className="border-secondary/30 text-secondary hover:bg-secondary/10"
+                          >
+                            {isSummarizingAI ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Sparkles className="mr-2 h-4 w-4" /> Resumo com IA</>}
+                          </Button>
+                          <Button
+                            onClick={() => handleEndSession(session)}
+                            disabled={isSummarizing || isSummarizingAI}
+                            variant="outline"
+                            size="sm"
+                            className="border-accent/30 text-accent hover:bg-accent/10"
+                          >
+                            {isSummarizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ScrollText className="mr-2 h-4 w-4" /> Finalizar & Crônica</>}
+                          </Button>
+                        </>
                       )}
                       <Badge className={session.status === 'active' ? 'bg-primary' : 'bg-muted'}>
                         {session.status === 'active' ? 'Em curso' : 'Eternizada'}
@@ -446,11 +669,20 @@ export default function MasterPanel() {
               </div>
 
               <div className="space-y-2">
-                <Label className="uppercase text-[10px] font-black tracking-widest text-primary">A Crônica (Sumário)</Label>
+                <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Resumo Público</Label>
                 <Textarea 
-                  value={summaryResult.summary} 
-                  onChange={e => setSummaryResult({...summaryResult, summary: e.target.value})}
+                value={summaryResult.summary} 
+                  onChange={e => setSummaryResult({...summaryResult, summary: e.target.value, public_content: e.target.value})}
                   className="min-h-[200px] bg-background/50 font-heading text-lg italic leading-relaxed"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Conteúdo Público</Label>
+                <Textarea 
+                  value={summaryResult.public_content} 
+                  onChange={e => setSummaryResult({...summaryResult, public_content: e.target.value})}
+                  className="min-h-[160px] bg-background/50 font-heading text-base leading-relaxed"
                 />
               </div>
 
@@ -458,15 +690,15 @@ export default function MasterPanel() {
                  <div className="space-y-2">
                     <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Figuras & NPCs</Label>
                     <div className="flex flex-wrap gap-2">
-                      {summaryResult.npcsEncountered.map((n: string, i: number) => (
+                      {summaryResult.npcsEncountered?.map((n: string, i: number) => (
                         <Badge key={i} variant="secondary">{n}</Badge>
                       ))}
                     </div>
                  </div>
                  <div className="space-y-2">
-                    <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Itens Relevantes</Label>
+                    <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Marcos da Sessão</Label>
                     <div className="flex flex-wrap gap-2">
-                      {summaryResult.itemsGained.map((it: string, i: number) => (
+                      {summaryResult.highlights?.map((it: string, i: number) => (
                         <Badge key={i} variant="outline" className="border-accent/30 text-accent">{it}</Badge>
                       ))}
                     </div>
@@ -474,10 +706,10 @@ export default function MasterPanel() {
               </div>
 
               <div className="space-y-2">
-                <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Segredos do Mestre (Não visível aos jogadores)</Label>
+                <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Notas do Mestre (Não visível aos jogadores)</Label>
                 <Textarea 
-                  value={summaryResult.masterSecrets} 
-                  onChange={e => setSummaryResult({...summaryResult, masterSecrets: e.target.value})}
+                  value={summaryResult.master_notes} 
+                  onChange={e => setSummaryResult({...summaryResult, master_notes: e.target.value})}
                   className="bg-primary/5 border-primary/20 text-sm"
                 />
               </div>
@@ -496,7 +728,7 @@ export default function MasterPanel() {
   );
 }
 
-function ApprovalCard({ icon, type, title, desc, onApprove }: { icon: React.ReactNode, type: string, title: string, desc: string, time: string, onApprove?: () => void }) {
+function ApprovalCard({ icon, type, title, desc, onApprove, onReject }: { icon: React.ReactNode, type: string, title: string, desc: string, time: string, onApprove?: () => void, onReject?: () => void }) {
   return (
     <Card className="bg-card/40 border-white/5 transition-all">
       <CardHeader className="p-6 pb-2">
@@ -510,9 +742,16 @@ function ApprovalCard({ icon, type, title, desc, onApprove }: { icon: React.Reac
         <p className="text-sm text-muted-foreground font-ui">{desc}</p>
       </CardContent>
       <div className="p-6 pt-0">
-        <Button onClick={onApprove} className="w-full bg-primary hover:bg-primary/90 h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
-          <Check className="mr-2 h-4 w-4" /> Aprovar Entrada
-        </Button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Button onClick={onApprove} className="w-full bg-primary hover:bg-primary/90 h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
+            <Check className="mr-2 h-4 w-4" /> Aprovar
+          </Button>
+          {onReject && (
+            <Button onClick={onReject} variant="outline" className="w-full border-destructive/30 text-destructive hover:bg-destructive/10 h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
+              <X className="mr-2 h-4 w-4" /> Rejeitar
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );

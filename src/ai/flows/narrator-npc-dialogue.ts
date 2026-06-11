@@ -173,11 +173,11 @@ const aiNarratorAndNpcDialogueFlow = ai.defineFlow(
     switch (input.mode) {
       case 'narrator':
         const narratorResult = await narratorPrompt(input);
-        output = narratorResult.output;
+        output = narratorResult.output ?? undefined;
         break;
       case 'npc_dialogue':
         const npcDialogueResult = await npcDialoguePrompt(input);
-        output = npcDialogueResult.output;
+        output = npcDialogueResult.output ?? undefined;
         break;
       default:
         throw new Error(`Unsupported mode: ${input}`);

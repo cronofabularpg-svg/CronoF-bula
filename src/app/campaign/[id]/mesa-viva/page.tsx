@@ -44,23 +44,22 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where } from "firebase/firestore"
+import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
-import { aiNarratorAndNpcDialogue } from "@/ai/flows/narrator-npc-dialogue"
+import { buildAIContext } from "@/lib/ai-context"
 
 export default function MesaViva() {
   const { id: campaignId } = useParams() as { id: string }
   const { user } = useUser()
-  const db = useFirestore()
   const { toast } = useToast()
 
   const [inputValue, setInputValue] = React.useState('')
   const [messageType, setMessageType] = React.useState<'speech' | 'action' | 'narration'>('speech')
   const [isSoloMode, setIsSoloMode] = React.useState(false)
   const [isAiThinking, setIsAiThinking] = React.useState(false)
+  const [aiSuggestion, setAiSuggestion] = React.useState<string | null>(null)
   
   const [diceFormula, setDiceFormula] = React.useState('1d20')
   const [rollReason, setRollReason] = React.useState('')
@@ -68,11 +67,7 @@ export default function MesaViva() {
   const [isDiceDialogOpen, setIsDiceDialogOpen] = React.useState(false)
   const [activeDiceTab, setActiveDiceTab] = React.useState<string>("virtual")
 
-  const npcsQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "npcs"), where("status", "==", "alive"))
-  }, [db, campaignId])
-  const { data: npcs } = useCollection(npcsQuery)
+  const [npcs, setNpcs] = React.useState<any[]>([])
 
   // Campanha e personagens ativos agora vivem no Supabase Postgres.
   const [campaign, setCampaign] = React.useState<{
@@ -249,6 +244,7 @@ export default function MesaViva() {
   React.useEffect(() => {
     if (!activeScene) {
       setSceneParticipants([])
+      setNpcs([])
       return
     }
 
@@ -272,6 +268,28 @@ export default function MesaViva() {
       active = false
     }
   }, [activeScene])
+
+  React.useEffect(() => {
+    if (!campaignId || !activeScene) {
+      setNpcs([])
+      return
+    }
+
+    let active = true
+    buildAIContext({ campaignId, sceneId: activeScene.id })
+      .then(({ presentNpcs }) => {
+        if (!active) return
+        setNpcs(presentNpcs)
+      })
+      .catch((error) => {
+        if (!active) return
+        toast({ variant: "destructive", title: "Erro ao Carregar NPCs da Cena", description: error.message })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [campaignId, activeScene, toast])
 
   const isMaster = campaign?.owner_id === user?.uid;
 
@@ -300,40 +318,34 @@ export default function MesaViva() {
 
     if (!text) setInputValue('')
     if (isSoloMode && !isMaster && (finalType === 'action' || finalType === 'speech')) {
-      handleAiMasterResponse(finalContent, finalType)
+      handleAiMasterResponse(finalContent)
     }
   }
 
-  const handleAiMasterResponse = async (playerInput: string, type: 'action' | 'speech') => {
-    if (!activeSession || !activeScene || !campaign || !myCharacter || !user) return
+  const handleAiMasterResponse = async (playerAction: string) => {
+    if (!activeSession || !activeScene || !myCharacter || !user) return
     setIsAiThinking(true)
+    setAiSuggestion(null)
     try {
-      const input = {
-        mode: 'narrator' as const,
-        campaign: { id: campaign.id, name: campaign.name, tone: campaign.tone || "fantasia sombria", rule_system: campaign.system_key || "dnd_srd" },
-        session: { id: activeSession.id, title: activeSession.title, status: "active" },
-        scene: { id: activeScene.id, title: activeScene.title, visibility: activeScene.visibility, location: activeScene.location_name || "Desconhecida" },
-        active_character: { id: myCharacter.id, name: myCharacter.name, race: myCharacter.race, class: myCharacter.class, known_information: ["Está explorando uma área nova."] },
-        player_action: playerInput,
-        visible_objects: ["Uma névoa persistente"],
-        present_npcs: npcs?.map(n => ({ name: n.name })) || []
-      }
-      const aiResponse = await aiNarratorAndNpcDialogue(input as any)
-
-      const supabase = createClient()
-      await supabase.from('scene_messages').insert({
-        campaign_id: campaignId,
-        session_id: activeSession.id,
-        scene_id: activeScene.id,
-        sender_user_id: user.uid,
-        character_id: null,
-        message_type: 'narration',
-        visibility: 'scene',
-        content: aiResponse,
-        metadata: { source: 'ai-narrator' }
+      const response = await fetch('/api/ai/narrator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignId,
+          sessionId: activeSession.id,
+          sceneId: activeScene.id,
+          characterId: myCharacter.id,
+          playerAction,
+        })
       })
-    } catch (e) {
-      toast({ variant: "destructive", title: "Erro do Oráculo", description: "A IA encontrou uma bruma mental." })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Falha ao consultar o Oráculo.')
+
+      // Resposta do Oráculo é apenas uma sugestão: não vira cânone automaticamente.
+      setAiSuggestion(data.output)
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro do Oráculo", description: e.message || "A IA encontrou uma bruma mental." })
     } finally { setIsAiThinking(false) }
   }
 
@@ -432,7 +444,7 @@ export default function MesaViva() {
                <ParticipantItem key={c.id} name={c.name} photo={c.avatar_url ?? undefined} role={c.class || "Aventureiro"} status="Em cena" />
              ))}
              {isSoloMode && <ParticipantItem name="O Oráculo" role="Narrador IA" status={isAiThinking ? "Tecendo Destino..." : "Observando"} isAI />}
-             {npcs?.map(npc => (
+             {npcs.map(npc => (
                <ParticipantItem key={npc.id} name={npc.name} photo={npc.imageURL} role={npc.role} status="Presente" isNPC />
              ))}
           </div>
@@ -562,6 +574,28 @@ export default function MesaViva() {
                 <div className="space-y-4 py-2">
                   <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.3em]">Tecendo o destino...</p>
                   <div className="h-5 w-[30rem] bg-secondary/10 rounded-full" />
+                </div>
+              </div>
+            )}
+            {aiSuggestion && (
+              <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
+                <div className="h-16 w-16 rounded-[1.5rem] bg-secondary/10 p-4 shrink-0 border border-secondary/40 flex items-center justify-center oracle-glow">
+                  <Sparkles className="h-7 w-7 text-secondary" />
+                </div>
+                <div className="space-y-4 pt-1">
+                  <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.4em] flex items-center gap-3">
+                    O Oráculo Arcano
+                    <Badge variant="outline" className="border-secondary/40 text-secondary text-[8px] px-2 h-4 uppercase font-black">Sugestão • não registrada</Badge>
+                  </p>
+                  <div className="text-xl leading-relaxed text-foreground/80 font-heading italic">
+                    {aiSuggestion}
+                  </div>
+                  <button
+                    onClick={() => setAiSuggestion(null)}
+                    className="text-[10px] font-display uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Descartar sugestão
+                  </button>
                 </div>
               </div>
             )}

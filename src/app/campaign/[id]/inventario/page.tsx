@@ -177,7 +177,7 @@ function ItemCard({ item, isActive, onClick }: { item: any, isActive: boolean, o
           {icon}
         </div>
         <div className="flex flex-col items-end gap-2">
-           <Badge variant="ghost" className="text-[8px] uppercase font-black tracking-widest opacity-40">{item.status}</Badge>
+           <Badge variant="outline" className="text-[8px] uppercase font-black tracking-widest opacity-40">{item.status}</Badge>
            <span className="text-[9px] font-code opacity-30">{item.weight || 0}kg</span>
         </div>
       </div>

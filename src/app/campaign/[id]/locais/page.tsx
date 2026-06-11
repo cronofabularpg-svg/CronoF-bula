@@ -3,15 +3,15 @@
 
 import * as React from "react"
 import { useParams } from "next/navigation"
-import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, orderBy, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore"
+import { useUser } from "@/firebase"
+import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { MapPin, Plus, Search, Eye, EyeOff, Lock, Compass, Sparkles, Navigation } from "lucide-react"
+import { Plus, Eye, EyeOff, Compass, Navigation } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -19,41 +19,86 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 export default function LocalManager() {
   const { id: campaignId } = useParams() as { id: string }
   const { user } = useUser()
-  const db = useFirestore()
   const { toast } = useToast()
 
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
+  const [loadingLocs, setLoadingLocs] = React.useState(true)
+  const [locations, setLocations] = React.useState<any[]>([])
+  const [isMaster, setIsMaster] = React.useState(false)
   const [localData, setLocalData] = React.useState({
     name: "",
     type: "city",
     description: "",
     status: "known" as any,
-    isSecret: false,
+    visibility: "visible",
     x: 500,
     y: 400
   })
 
-  const locationsQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "locations"), orderBy("name", "asc"))
-  }, [db, campaignId])
+  React.useEffect(() => {
+    if (!campaignId || !user) return
+    let active = true
+    const userId = user.uid
+    const supabase = createClient()
 
-  const { data: locations, loading: loadingLocs } = useCollection(locationsQuery)
+    async function load() {
+      setLoadingLocs(true)
+      const [{ data: member }, { data, error }] = await Promise.all([
+        supabase
+          .from('campaign_members')
+          .select('role')
+          .eq('campaign_id', campaignId)
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .maybeSingle(),
+        supabase
+          .from('locations')
+          .select('id, name, type, description, region, image_url, visibility, discovery_condition, status')
+          .eq('campaign_id', campaignId)
+          .order('name', { ascending: true })
+      ])
+
+      if (!active) return
+      setIsMaster(['owner', 'master', 'assistant_master'].includes(member?.role || ''))
+      if (error) {
+        toast({ variant: "destructive", title: "Erro ao Carregar Locais", description: error.message })
+      }
+      setLocations(data || [])
+      setLoadingLocs(false)
+    }
+
+    load()
+
+    return () => {
+      active = false
+    }
+  }, [campaignId, user, toast])
 
   async function handleCreateLocal() {
-    if (!db || !campaignId || !localData.name) return
+    if (!campaignId || !user || !localData.name) return
     setLoading(true)
     try {
-      await addDoc(collection(db, "campaigns", campaignId, "locations"), {
-        ...localData,
-        campaignId,
-        coords: { x: Number(localData.x), y: Number(localData.y) },
-        createdAt: serverTimestamp()
-      })
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('locations')
+        .insert({
+          campaign_id: campaignId,
+          name: localData.name,
+          type: localData.type,
+          description: localData.description || null,
+          visibility: localData.visibility,
+          status: localData.status === "known" ? "active" : localData.status,
+          created_by: user.uid
+        })
+        .select('id, name, type, description, region, image_url, visibility, discovery_condition, status')
+        .single()
+
+      if (error) throw error
       toast({ title: "Local Fundado", description: `${localData.name} agora existe no mundo.` })
+      setLocations((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
       setIsCreateOpen(false)
-      setLocalData({ name: "", type: "city", description: "", status: "known", isSecret: false, x: 500, y: 400 })
+      setLocalData({ name: "", type: "city", description: "", status: "known", visibility: "visible", x: 500, y: 400 })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro na Cartografia", description: e.message })
     } finally {
@@ -61,9 +106,22 @@ export default function LocalManager() {
     }
   }
 
-  async function toggleSecret(localId: string, current: boolean) {
-    if (!db || !campaignId) return
-    updateDoc(doc(db, "campaigns", campaignId, "locations", localId), { isSecret: !current })
+  async function toggleSecret(localId: string, currentVisibility: string) {
+    if (!campaignId) return
+    const nextVisibility = ['secret', 'master_only', 'hidden'].includes(currentVisibility) ? 'visible' : 'secret'
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('locations')
+      .update({ visibility: nextVisibility })
+      .eq('id', localId)
+      .eq('campaign_id', campaignId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Atualizar Local", description: error.message })
+      return
+    }
+
+    setLocations((prev) => prev.map((loc) => loc.id === localId ? { ...loc, visibility: nextVisibility } : loc))
   }
 
   return (
@@ -75,7 +133,7 @@ export default function LocalManager() {
           </h1>
           <p className="text-muted-foreground mt-3 font-heading text-xl italic">Geografia, política e perigos dos reinos explorados.</p>
         </div>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        {isMaster && <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button className="bg-primary hover:bg-primary/90 literary-shadow rounded-full px-8">
               <Plus className="mr-2 h-4 w-4" /> Novo Local
@@ -117,6 +175,18 @@ export default function LocalManager() {
                     <Label className="uppercase text-[10px] font-bold tracking-widest">Descrição Narrativa</Label>
                     <Textarea value={localData.description} onChange={e => setLocalData({...localData, description: e.target.value})} placeholder="O que se vê ao chegar..." />
                   </div>
+                  <div className="space-y-2">
+                    <Label className="uppercase text-[10px] font-bold tracking-widest">Visibilidade</Label>
+                    <Select value={localData.visibility} onValueChange={v => setLocalData({...localData, visibility: v})}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="visible">Visível aos Jogadores</SelectItem>
+                        <SelectItem value="hidden">Oculto</SelectItem>
+                        <SelectItem value="secret">Secreto</SelectItem>
+                        <SelectItem value="master_only">Apenas Mestre</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                </div>
             </div>
             <DialogFooter>
@@ -125,18 +195,21 @@ export default function LocalManager() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {locations?.map((loc: any) => (
+        {loadingLocs && (
+          <div className="col-span-full p-20 text-center italic opacity-50">Consultando as cartas do atlas...</div>
+        )}
+        {!loadingLocs && locations.map((loc: any) => (
           <Card key={loc.id} className="bg-card/30 border-white/5 hover:border-primary/30 transition-all group overflow-hidden">
              <div className="relative h-40 bg-muted">
                 <img src={`https://picsum.photos/seed/${loc.id}/400/200`} className="object-cover w-full h-full opacity-40" />
                 <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
                 <div className="absolute top-4 left-4 flex gap-2">
                    <Badge className="bg-primary/20 text-primary border-primary/30 text-[8px] uppercase font-black">{loc.type}</Badge>
-                   {loc.isSecret && <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[8px] uppercase font-black">Secreto</Badge>}
+                   {['secret', 'master_only', 'hidden'].includes(loc.visibility) && <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[8px] uppercase font-black">Secreto</Badge>}
                 </div>
              </div>
              <CardHeader>
@@ -147,15 +220,22 @@ export default function LocalManager() {
                 <CardDescription className="font-heading italic line-clamp-2">{loc.description}</CardDescription>
              </CardHeader>
              <CardFooter className="pt-0 p-6 flex gap-3">
-                <Button variant="ghost" size="sm" className="flex-1 bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black" onClick={() => toggleSecret(loc.id, loc.isSecret)}>
-                   {loc.isSecret ? <><Eye className="mr-2 h-3 w-3" /> Revelar</> : <><EyeOff className="mr-2 h-3 w-3" /> Ocultar</>}
-                </Button>
+                {isMaster && (
+                  <Button variant="ghost" size="sm" className="flex-1 bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black" onClick={() => toggleSecret(loc.id, loc.visibility)}>
+                     {['secret', 'master_only', 'hidden'].includes(loc.visibility) ? <><Eye className="mr-2 h-3 w-3" /> Revelar</> : <><EyeOff className="mr-2 h-3 w-3" /> Ocultar</>}
+                  </Button>
+                )}
                 <Button variant="ghost" size="sm" className="bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black">
                    <Navigation className="mr-2 h-3 w-3" /> Ver no Mapa
                 </Button>
              </CardFooter>
           </Card>
         ))}
+        {!loadingLocs && locations.length === 0 && (
+          <div className="col-span-full p-20 border-2 border-dashed border-white/5 rounded-3xl text-center space-y-6">
+            <p className="text-muted-foreground font-heading italic text-lg">Nenhum local foi traçado no atlas desta crônica.</p>
+          </div>
+        )}
       </div>
     </div>
   )

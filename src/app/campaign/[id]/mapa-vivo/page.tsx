@@ -3,8 +3,7 @@
 
 import * as React from "react"
 import { useParams, useRouter } from "next/navigation"
-import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, where, orderBy, doc, updateDoc, addDoc, serverTimestamp, limit } from "firebase/firestore"
+import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,7 +16,6 @@ export default function MapaVivo() {
   const { id: campaignId } = useParams() as { id: string }
   const router = useRouter()
   const { user } = useUser()
-  const db = useFirestore()
   const { toast } = useToast()
 
   const [activeNode, setActiveNode] = React.useState<any>(null)
@@ -33,6 +31,10 @@ export default function MapaVivo() {
   
   // Busca campanha (Supabase) para verificar se o usuário atual é o mestre
   const [campaign, setCampaign] = React.useState<{ id: string; owner_id: string } | null>(null)
+  const [activeSession, setActiveSession] = React.useState<{ id: string; title: string } | null>(null)
+  const [activeScene, setActiveScene] = React.useState<{ id: string; title: string } | null>(null)
+  const [locations, setLocations] = React.useState<any[]>([])
+  const [loading, setLoading] = React.useState(true)
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -55,22 +57,67 @@ export default function MapaVivo() {
 
   const isMaster = campaign?.owner_id === user?.uid
 
-  // Busca sessão ativa para registrar a rolagem
-  const sessionQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "sessions"), where("status", "==", "active"), limit(1))
-  }, [db, campaignId])
-  const { data: sessions } = useCollection(sessionQuery)
-  const activeSession = sessions?.[0]
+  React.useEffect(() => {
+    if (!campaignId) return
+    let active = true
+    const supabase = createClient()
 
-  const locationsQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "locations"), orderBy("createdAt", "desc"))
-  }, [db, campaignId])
+    async function loadMapData() {
+      setLoading(true)
 
-  const { data: locations, loading } = useCollection(locationsQuery)
+      const { data: locationData, error: locationError } = await supabase
+        .from('locations')
+        .select('id, name, type, description, visibility, status')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
 
-  const displayLocations = locations || []
+      if (locationError && active) {
+        toast({ variant: "destructive", title: "Erro ao Carregar Mapa", description: locationError.message })
+      }
+
+      const { data: sessionData } = await supabase
+        .from('sessions')
+        .select('id, title')
+        .eq('campaign_id', campaignId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      let sceneData = null
+      if (sessionData) {
+        const { data } = await supabase
+          .from('scenes')
+          .select('id, title')
+          .eq('session_id', sessionData.id)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        sceneData = data
+      }
+
+      if (!active) return
+      setLocations(locationData || [])
+      setActiveSession(sessionData)
+      setActiveScene(sceneData)
+      setLoading(false)
+    }
+
+    loadMapData()
+
+    return () => {
+      active = false
+    }
+  }, [campaignId, toast])
+
+  const displayLocations = locations.map((location, index) => ({
+    ...location,
+    coords: {
+      x: 180 + ((index * 227) % 760),
+      y: 140 + ((index * 173) % 420)
+    }
+  }))
 
   async function handleMoveGroup(locationId: string, locationName: string) {
     setIsTraveling(true)
@@ -79,15 +126,36 @@ export default function MapaVivo() {
     const roll = Math.floor(Math.random() * 20) + 1
     
     // Registro da rolagem no banco (Fase 5/8)
-    if (db && activeSession && user) {
-      await addDoc(collection(db, "campaigns", campaignId, "sessions", activeSession.id, "messages"), {
-        senderId: user.uid,
-        senderName: user.displayName || "Sistema",
-        text: `Rolou 1d20 para Viagem para ${locationName}: **${roll}**`,
-        type: 'dice',
-        rollData: { formula: '1d20', result: roll, reason: `Viagem para ${locationName}` },
-        createdAt: serverTimestamp()
+    if (activeSession && user) {
+      const supabase = createClient()
+      await supabase.from('dice_rolls').insert({
+        campaign_id: campaignId,
+        session_id: activeSession.id,
+        scene_id: activeScene?.id ?? null,
+        character_id: null,
+        user_id: user.uid,
+        roll_type: 'virtual',
+        formula: '1d20',
+        raw_result: roll,
+        modifier: 0,
+        total: roll,
+        reason: `Viagem para ${locationName}`,
+        visibility: activeScene ? 'scene' : 'public'
       })
+
+      if (activeScene && isMaster) {
+        await supabase.from('scene_messages').insert({
+          campaign_id: campaignId,
+          session_id: activeSession.id,
+          scene_id: activeScene.id,
+          sender_user_id: user.uid,
+          character_id: null,
+          message_type: 'dice',
+          visibility: 'scene',
+          content: `Rolou 1d20 para Viagem para ${locationName}: **${roll}**`,
+          metadata: { rollData: { formula: '1d20', result: roll, reason: `Viagem para ${locationName}` } }
+        })
+      }
     }
 
     setTimeout(() => {
@@ -112,23 +180,30 @@ export default function MapaVivo() {
     if (approved && travelEvent) {
       // No MVP, a mudança de posição é imediata após aprovação/conclusão
       toast({ title: "Jornada Concluída", description: `O grupo chegou a ${travelEvent.targetLocationName}.` })
-      // Aqui haveria o updateDoc da posição do grupo
     }
     setTravelEvent(null)
   }
 
   async function sendToApprovals(type: string) {
-    if (!db || !campaignId || !travelEvent) return
+    if (!campaignId || !travelEvent || !user) return
+    const supabase = createClient()
     
-    await addDoc(collection(db, "campaigns", campaignId, "approval_requests"), {
-      type,
+    const { error } = await supabase.from('approval_requests').insert({
+      campaign_id: campaignId,
+      session_id: activeSession?.id ?? null,
+      scene_id: activeScene?.id ?? null,
+      requested_by: user.uid,
+      request_type: type,
       title: `Encontro de Viagem: ${travelEvent.title}`,
       description: travelEvent.description,
       status: 'pending',
-      requesterId: user?.uid,
-      createdAt: serverTimestamp(),
-      metadata: { roll: travelEvent.roll, location: travelEvent.targetLocationName }
+      payload: { roll: travelEvent.roll, location: travelEvent.targetLocationName, target_location_id: travelEvent.targetLocationId }
     })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Enviar Solicitação", description: error.message })
+      return
+    }
 
     toast({ title: "Enviado ao Mestre", description: "O evento aguarda validação canônica." })
     setTravelEvent(null)
@@ -160,7 +235,12 @@ export default function MapaVivo() {
              style={{ backgroundImage: 'radial-gradient(circle, #C8A24A 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
         
         <div className="absolute inset-0">
-          {displayLocations.map((node: any) => (
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground font-heading italic">
+              Consultando rotas e presságios...
+            </div>
+          )}
+          {!loading && displayLocations.map((node: any) => (
             <MapNode 
               key={node.id} 
               node={node} 

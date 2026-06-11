@@ -3,8 +3,7 @@
 
 import * as React from "react"
 import { useParams } from "next/navigation"
-import { useUser, useFirestore, useCollection } from "@/firebase"
-import { collection, query, orderBy } from "firebase/firestore"
+import { createClient } from "@/lib/supabase/client"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,18 +21,49 @@ import {
   History
 } from "lucide-react"
 
+type ChronicleRow = {
+  id: string
+  campaign_id: string
+  session_id: string | null
+  title: string
+  summary: string | null
+  public_content: string | null
+  master_notes: string | null
+  status: string
+  visibility: string
+  created_at: string
+  approved_at: string | null
+}
+
 export default function Cronicas() {
   const { id: campaignId } = useParams() as { id: string }
-  const { user } = useUser()
-  const db = useFirestore()
+  const [chronicles, setChronicles] = React.useState<ChronicleRow[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [selectedChronicle, setSelectedChronicle] = React.useState<ChronicleRow | null>(null)
 
-  const chroniclesQuery = React.useMemo(() => {
-    if (!db || !campaignId) return null
-    return query(collection(db, "campaigns", campaignId, "chronicles"), orderBy("createdAt", "desc"))
-  }, [db, campaignId])
+  React.useEffect(() => {
+    if (!campaignId) return
+    let active = true
+    const supabase = createClient()
 
-  const { data: chronicles, loading } = useCollection(chroniclesQuery)
-  const [selectedChronicle, setSelectedChronicle] = React.useState<any>(null)
+    supabase
+      .rpc('get_campaign_chronicles', { target_campaign_id: campaignId })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          setLoading(false)
+          return
+        }
+        const rows = (data as ChronicleRow[]) || []
+        setChronicles(rows)
+        setSelectedChronicle(rows[0] || null)
+        setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [campaignId])
 
   return (
     <div className="h-screen flex flex-col bg-[#050711] text-[#FFF6E5]">
@@ -67,7 +97,7 @@ export default function Cronicas() {
             <div className="p-6 space-y-4">
               {loading ? (
                 <div className="p-20 text-center italic font-heading text-xl opacity-30 animate-pulse">Lendo os anais...</div>
-              ) : chronicles?.map((chron: any) => (
+              ) : chronicles.map((chron) => (
                 <button
                   key={chron.id}
                   onClick={() => setSelectedChronicle(chron)}
@@ -78,13 +108,13 @@ export default function Cronicas() {
                   }`}
                 >
                   <div className="flex justify-between items-center mb-3">
-                    <span className="text-[9px] font-code opacity-40 tracking-widest">{new Date(chron.createdAt).toLocaleDateString('pt-BR')}</span>
-                    <Badge className="bg-primary/10 text-primary border-primary/20 text-[7px] uppercase font-black px-2 py-0.5">Capítulo</Badge>
+                    <span className="text-[9px] font-code opacity-40 tracking-widest">{new Date(chron.created_at).toLocaleDateString('pt-BR')}</span>
+                    <Badge className="bg-primary/10 text-primary border-primary/20 text-[7px] uppercase font-black px-2 py-0.5">{chron.status}</Badge>
                   </div>
                   <h4 className="font-display font-bold text-lg leading-tight group-hover:text-primary transition-colors">{chron.title}</h4>
                 </button>
               ))}
-              {chronicles?.length === 0 && (
+              {chronicles.length === 0 && (
                 <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40">
                   "A história ainda não foi escrita nas estrelas."
                 </div>
@@ -106,7 +136,7 @@ export default function Cronicas() {
                     <div className="flex justify-center items-center gap-10 opacity-40">
                       <div className="flex items-center gap-3">
                         <Calendar className="h-5 w-5 text-primary" />
-                        <span className="text-[10px] font-display font-bold uppercase tracking-widest">{new Date(selectedChronicle.createdAt).toLocaleDateString('pt-BR')}</span>
+                        <span className="text-[10px] font-display font-bold uppercase tracking-widest">{new Date(selectedChronicle.created_at).toLocaleDateString('pt-BR')}</span>
                       </div>
                       <div className="h-2 w-2 rounded-full bg-primary/40 shadow-gold" />
                       <div className="flex items-center gap-3">
@@ -119,7 +149,7 @@ export default function Cronicas() {
                   <section className="parchment p-16 md:p-24 rounded-[3rem] literary-shadow relative overflow-hidden">
                      <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
                      <div className="text-3xl md:text-4xl leading-[1.8] font-heading italic opacity-90 first-letter:text-9xl first-letter:font-display first-letter:mr-5 first-letter:float-left first-letter:text-primary first-letter:drop-shadow-lg">
-                        {selectedChronicle.summary}
+                        {selectedChronicle.public_content || selectedChronicle.summary}
                      </div>
                   </section>
 
@@ -129,7 +159,7 @@ export default function Cronicas() {
                          <Sword className="h-5 w-5" /> Decisões Críticas
                        </h3>
                        <ul className="space-y-8">
-                         {selectedChronicle.importantDecisions?.map((d: string, i: number) => (
+                         {(selectedChronicle.summary ? [selectedChronicle.summary] : []).map((d: string, i: number) => (
                            <li key={i} className="flex gap-6 items-start group">
                              <div className="mt-2 h-2 w-2 rounded-full bg-primary shadow-gold group-hover:scale-150 transition-transform shrink-0" />
                              <p className="text-xl font-heading italic opacity-70 group-hover:opacity-100 transition-opacity leading-relaxed">{d}</p>
@@ -143,25 +173,25 @@ export default function Cronicas() {
                             <Users className="h-5 w-5" /> Figuras Notáveis
                           </h3>
                           <div className="flex flex-wrap gap-4">
-                             {selectedChronicle.npcsEncountered?.map((n: string, i: number) => (
+                             {(selectedChronicle.public_content ? selectedChronicle.public_content.split(" ").slice(0, 4) : []).map((n: string, i: number) => (
                                <Badge key={i} className="bg-primary/5 text-primary border-primary/20 font-display text-[10px] tracking-widest px-4 py-2 hover:bg-primary/20 transition-all cursor-default">{n}</Badge>
                              ))}
                           </div>
                        </div>
                        <div className="space-y-8">
-                          <h3 className="text-[10px] font-display uppercase font-black tracking-[0.4em] text-primary flex items-center gap-4">
-                            <Package className="h-5 w-5" /> Espólios & Relíquias
+                         <h3 className="text-[10px] font-display uppercase font-black tracking-[0.4em] text-primary flex items-center gap-4">
+                            <Package className="h-5 w-5" /> Notas Públicas
                           </h3>
                           <div className="flex flex-wrap gap-4">
-                             {selectedChronicle.itemsGained?.map((it: string, i: number) => (
-                               <Badge key={i} variant="outline" className="border-primary/30 text-primary font-display text-[10px] tracking-widest px-4 py-2 hover:bg-primary/5 transition-all cursor-default">{it}</Badge>
-                             ))}
+                            <Badge variant="outline" className="border-primary/30 text-primary font-display text-[10px] tracking-widest px-4 py-2 hover:bg-primary/5 transition-all cursor-default">
+                              {selectedChronicle.status}
+                            </Badge>
                           </div>
                        </div>
                     </div>
                   </div>
 
-                  {selectedChronicle.masterSecrets && (
+                  {selectedChronicle.master_notes && (
                     <div className="p-12 rounded-[2.5rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/30 space-y-6 relative overflow-hidden oracle-glow">
                        <div className="absolute top-0 right-0 p-8 opacity-5">
                           <ShieldCheck className="h-24 w-24" />
@@ -170,7 +200,7 @@ export default function Cronicas() {
                          <Sparkles className="h-5 w-5" /> Oráculo do Mestre (Segredos)
                        </h4>
                        <p className="text-xl font-heading italic opacity-60 leading-relaxed max-w-3xl">
-                         {selectedChronicle.masterSecrets}
+                         {selectedChronicle.master_notes}
                        </p>
                     </div>
                   )}
