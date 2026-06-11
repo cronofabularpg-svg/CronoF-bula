@@ -10,10 +10,10 @@ export const metadata: Metadata = {
   description: 'Sua campanha viva no tempo de cada jogador. Uma plataforma de RPG persistente com narração por IA.',
   icons: {
     icon: [
-      { url: '/favicon.ico' },
-      { url: '/icon.png', type: 'image/png' },
+      { url: '/favicon.ico?v=cronofabula-hourglass-2' },
+      { url: '/icon.png?v=cronofabula-hourglass-2', type: 'image/png' },
     ],
-    apple: [{ url: '/apple-icon.png', type: 'image/png' }],
+    apple: [{ url: '/apple-icon.png?v=cronofabula-hourglass-2', type: 'image/png' }],
   },
 };
 
