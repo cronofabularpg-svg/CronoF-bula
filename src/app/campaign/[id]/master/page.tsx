@@ -31,7 +31,8 @@ import {
   Loader2,
   Wand2,
   CircleCheck,
-  CircleX
+  CircleX,
+  BookMarked
 } from "lucide-react"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
@@ -114,6 +115,31 @@ type ChronicleDraft = {
   sceneId: string | null
 }
 
+type WorldVisibility = "party" | "public" | "master_only"
+
+type WorldImportProposal = {
+  world_summary: string
+  lore_entries: Array<{ title: string; content: string; visibility: WorldVisibility }>
+  locations: Array<{ name: string; type: string; description: string; region: string; visibility: WorldVisibility; image_url: string }>
+  npcs: Array<{ name: string; role: string; description: string; personality: string; goals: string; secrets: string; visibility: WorldVisibility; image_url: string }>
+  factions: Array<{ name: string; description: string; goals: string; secrets: string; relationship_status: string; visibility: WorldVisibility }>
+  items: Array<{ name: string; item_type: string; description: string; rarity: string; visibility: WorldVisibility; image_url: string }>
+  quests: Array<{ title: string; description: string; reward_notes: string; visibility: WorldVisibility }>
+  threats: Array<{ title: string; content: string; visibility: WorldVisibility }>
+  master_secrets: Array<{ title: string; content: string }>
+  opening_scene: string
+}
+
+type ManualWorldType = "lore" | "npc" | "location" | "item" | "faction" | "quest" | "threat" | "secret"
+
+function toNpcVisibility(visibility: WorldVisibility): string {
+  return visibility === 'master_only' ? 'master_only' : visibility === 'public' ? 'public' : 'visible'
+}
+
+function toLocationVisibility(visibility: WorldVisibility): string {
+  return visibility === 'master_only' ? 'master_only' : visibility === 'public' ? 'public' : 'visible'
+}
+
 function buildChronicleDraft(session: SessionRow, messages: SessionMessageRow[], campaign: CampaignSummary): ChronicleDraft {
   const speakerNames = Array.from(new Set(
     messages.map((m) => Array.isArray(m.characters) ? m.characters[0]?.name : m.characters?.name).filter(Boolean) as string[]
@@ -177,6 +203,25 @@ export default function MasterPanel() {
   const [groqConfigured, setGroqConfigured] = React.useState<boolean | null>(null)
   const [isTestingAI, setIsTestingAI] = React.useState(false)
   const [aiTestResult, setAiTestResult] = React.useState<{ ok: boolean; message: string } | null>(null)
+  const [manualType, setManualType] = React.useState<ManualWorldType>("lore")
+  const [manualForm, setManualForm] = React.useState({
+    title: "",
+    description: "",
+    secondary: "",
+    visibility: "master_only" as WorldVisibility,
+    image_url: "",
+  })
+  const [worldImportForm, setWorldImportForm] = React.useState({
+    worldName: "",
+    tone: "",
+    ruleSystem: "dnd_srd",
+    instructions: "",
+    sourceText: "",
+  })
+  const [worldProposal, setWorldProposal] = React.useState<WorldImportProposal | null>(null)
+  const [selectedImports, setSelectedImports] = React.useState<Record<string, boolean>>({})
+  const [isAnalyzingWorld, setIsAnalyzingWorld] = React.useState(false)
+  const [isImportingWorld, setIsImportingWorld] = React.useState(false)
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -376,6 +421,314 @@ export default function MasterPanel() {
       setAiTestResult({ ok: false, message: e.message || 'Falha ao testar a IA.' })
     } finally {
       setIsTestingAI(false)
+    }
+  }
+
+  async function handleManualWorldCreate() {
+    if (!campaignId || !user || !manualForm.title.trim()) return
+
+    const supabase = createClient()
+    const now = new Date().toISOString()
+
+    try {
+      if (manualType === "npc") {
+        const { error } = await supabase.from('npcs').insert({
+          campaign_id: campaignId,
+          name: manualForm.title,
+          role: manualForm.secondary || null,
+          description: manualForm.description || null,
+          visibility: toNpcVisibility(manualForm.visibility),
+          created_by: user.uid,
+        })
+        if (error) throw error
+      } else if (manualType === "location") {
+        const { error } = await supabase.from('locations').insert({
+          campaign_id: campaignId,
+          name: manualForm.title,
+          type: manualForm.secondary || null,
+          description: manualForm.description || null,
+          image_url: manualForm.image_url || null,
+          visibility: toLocationVisibility(manualForm.visibility),
+          created_by: user.uid,
+        })
+        if (error) throw error
+      } else if (manualType === "item") {
+        const { error } = await supabase.from('items').insert({
+          campaign_id: campaignId,
+          name: manualForm.title,
+          item_type: manualForm.secondary || null,
+          description: manualForm.description || null,
+          image_url: manualForm.image_url || null,
+          visibility: manualForm.visibility,
+          created_by: user.uid,
+        })
+        if (error) throw error
+      } else if (manualType === "faction") {
+        const { error } = await supabase.from('factions').insert({
+          campaign_id: campaignId,
+          name: manualForm.title,
+          description: manualForm.description || null,
+          goals: manualForm.secondary || null,
+          visibility: manualForm.visibility,
+          created_by: user.uid,
+        })
+        if (error) throw error
+      } else if (manualType === "quest") {
+        const { error } = await supabase.from('quests').insert({
+          campaign_id: campaignId,
+          title: manualForm.title,
+          description: manualForm.description || null,
+          reward_notes: manualForm.secondary || null,
+          visibility: manualForm.visibility,
+          created_by: user.uid,
+        })
+        if (error) throw error
+      } else {
+        const memoryType = manualType === "secret" ? "master_secret" : manualType === "threat" ? "threat" : "lore"
+        const { error } = await supabase.from('campaign_memory').insert({
+          campaign_id: campaignId,
+          source_type: 'world_preparation',
+          memory_type: memoryType,
+          title: manualForm.title,
+          content: manualForm.description || manualForm.secondary || "Sem descrição.",
+          visibility: manualType === "secret" ? "master_only" : manualForm.visibility,
+          importance: manualType === "secret" || manualType === "threat" ? "high" : "normal",
+          created_by: user.uid,
+          approved_by: user.uid,
+          approved_at: now,
+        })
+        if (error) throw error
+      }
+
+      toast({ title: "Preparação registrada", description: "O conteúdo foi salvo no mundo da campanha." })
+      setManualForm({ title: "", description: "", secondary: "", visibility: "master_only", image_url: "" })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro ao Salvar Preparação", description: e.message })
+    }
+  }
+
+  async function handleAnalyzeWorldImport() {
+    if (!worldImportForm.sourceText.trim()) {
+      toast({ variant: "destructive", title: "Texto obrigatório", description: "Cole o texto do mundo antes de analisar." })
+      return
+    }
+
+    setIsAnalyzingWorld(true)
+    try {
+      const response = await fetch('/api/ai/world-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId, ...worldImportForm })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Falha ao estruturar o mundo.')
+
+      const proposal = data.proposal as WorldImportProposal
+      const nextSelected: Record<string, boolean> = {
+        world_summary: Boolean(proposal.world_summary),
+        opening_scene: Boolean(proposal.opening_scene),
+      }
+      ;(['lore_entries', 'locations', 'npcs', 'factions', 'items', 'quests', 'threats', 'master_secrets'] as const).forEach((section) => {
+        proposal[section].forEach((_, index) => {
+          nextSelected[`${section}.${index}`] = true
+        })
+      })
+
+      setWorldProposal(proposal)
+      setSelectedImports(nextSelected)
+      toast({ title: "Mundo estruturado", description: "Revise a proposta antes de importar." })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro na Importação", description: e.message })
+    } finally {
+      setIsAnalyzingWorld(false)
+    }
+  }
+
+  function updateProposal(section: keyof WorldImportProposal, index: number, field: string, value: string) {
+    setWorldProposal((prev) => {
+      if (!prev) return prev
+      const current = prev[section]
+      if (!Array.isArray(current)) return prev
+      return {
+        ...prev,
+        [section]: current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item)
+      }
+    })
+  }
+
+  async function handleImportSelectedWorld() {
+    if (!campaignId || !user || !worldProposal) return
+    setIsImportingWorld(true)
+    const supabase = createClient()
+    const now = new Date().toISOString()
+
+    try {
+      const memoryEntries: any[] = []
+
+      if (selectedImports.world_summary && worldProposal.world_summary) {
+        memoryEntries.push({
+          campaign_id: campaignId,
+          source_type: 'world_import',
+          memory_type: 'world_summary',
+          title: 'Visão Geral do Mundo',
+          content: worldProposal.world_summary,
+          visibility: 'party',
+          importance: 'high',
+          created_by: user.uid,
+          approved_by: user.uid,
+          approved_at: now,
+        })
+      }
+
+      worldProposal.lore_entries.forEach((entry, index) => {
+        if (!selectedImports[`lore_entries.${index}`]) return
+        memoryEntries.push({
+          campaign_id: campaignId,
+          source_type: 'world_import',
+          memory_type: 'lore',
+          title: entry.title,
+          content: entry.content,
+          visibility: entry.visibility,
+          importance: 'normal',
+          created_by: user.uid,
+          approved_by: user.uid,
+          approved_at: now,
+        })
+      })
+
+      worldProposal.threats.forEach((threat, index) => {
+        if (!selectedImports[`threats.${index}`]) return
+        memoryEntries.push({
+          campaign_id: campaignId,
+          source_type: 'world_import',
+          memory_type: 'threat',
+          title: threat.title,
+          content: threat.content,
+          visibility: threat.visibility,
+          importance: 'high',
+          created_by: user.uid,
+          approved_by: user.uid,
+          approved_at: now,
+        })
+      })
+
+      worldProposal.master_secrets.forEach((secret, index) => {
+        if (!selectedImports[`master_secrets.${index}`]) return
+        memoryEntries.push({
+          campaign_id: campaignId,
+          source_type: 'world_import',
+          memory_type: 'master_secret',
+          title: secret.title,
+          content: secret.content,
+          visibility: 'master_only',
+          importance: 'high',
+          created_by: user.uid,
+          approved_by: user.uid,
+          approved_at: now,
+        })
+      })
+
+      if (selectedImports.opening_scene && worldProposal.opening_scene) {
+        memoryEntries.push({
+          campaign_id: campaignId,
+          source_type: 'world_import',
+          memory_type: 'opening_scene',
+          title: 'Cena Inicial Sugerida',
+          content: worldProposal.opening_scene,
+          visibility: 'master_only',
+          importance: 'normal',
+          created_by: user.uid,
+          approved_by: user.uid,
+          approved_at: now,
+        })
+      }
+
+      if (memoryEntries.length > 0) {
+        const { error } = await supabase.from('campaign_memory').insert(memoryEntries)
+        if (error) throw error
+      }
+
+      const selectedNpcs = worldProposal.npcs.filter((_, index) => selectedImports[`npcs.${index}`])
+      if (selectedNpcs.length > 0) {
+        const { error } = await supabase.from('npcs').insert(selectedNpcs.map((npc) => ({
+          campaign_id: campaignId,
+          name: npc.name,
+          role: npc.role || null,
+          description: npc.description || null,
+          personality: npc.personality || null,
+          goals: npc.goals || null,
+          secrets: npc.secrets || null,
+          visibility: toNpcVisibility(npc.visibility),
+          created_by: user.uid,
+        })))
+        if (error) throw error
+      }
+
+      const selectedLocations = worldProposal.locations.filter((_, index) => selectedImports[`locations.${index}`])
+      if (selectedLocations.length > 0) {
+        const { error } = await supabase.from('locations').insert(selectedLocations.map((location) => ({
+          campaign_id: campaignId,
+          name: location.name,
+          type: location.type || null,
+          description: location.description || null,
+          region: location.region || null,
+          image_url: location.image_url || null,
+          visibility: toLocationVisibility(location.visibility),
+          created_by: user.uid,
+        })))
+        if (error) throw error
+      }
+
+      const selectedFactions = worldProposal.factions.filter((_, index) => selectedImports[`factions.${index}`])
+      if (selectedFactions.length > 0) {
+        const { error } = await supabase.from('factions').insert(selectedFactions.map((faction) => ({
+          campaign_id: campaignId,
+          name: faction.name,
+          description: faction.description || null,
+          goals: faction.goals || null,
+          secrets: faction.secrets || null,
+          relationship_status: faction.relationship_status || null,
+          visibility: faction.visibility,
+          created_by: user.uid,
+        })))
+        if (error) throw error
+      }
+
+      const selectedItems = worldProposal.items.filter((_, index) => selectedImports[`items.${index}`])
+      if (selectedItems.length > 0) {
+        const { error } = await supabase.from('items').insert(selectedItems.map((item) => ({
+          campaign_id: campaignId,
+          name: item.name,
+          item_type: item.item_type || null,
+          description: item.description || null,
+          rarity: item.rarity || 'common',
+          image_url: item.image_url || null,
+          visibility: item.visibility,
+          created_by: user.uid,
+        })))
+        if (error) throw error
+      }
+
+      const selectedQuests = worldProposal.quests.filter((_, index) => selectedImports[`quests.${index}`])
+      if (selectedQuests.length > 0) {
+        const { error } = await supabase.from('quests').insert(selectedQuests.map((quest) => ({
+          campaign_id: campaignId,
+          title: quest.title,
+          description: quest.description || null,
+          reward_notes: quest.reward_notes || null,
+          visibility: quest.visibility,
+          created_by: user.uid,
+        })))
+        if (error) throw error
+      }
+
+      toast({ title: "Mundo importado", description: "Os itens selecionados foram salvos no Supabase." })
+      setWorldProposal(null)
+      setSelectedImports({})
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro ao Importar Mundo", description: e.message })
+    } finally {
+      setIsImportingWorld(false)
     }
   }
 
@@ -615,6 +968,7 @@ export default function MasterPanel() {
         <TabsList className="bg-card/50 border border-white/5 p-1.5 rounded-2xl h-14">
           <TabsTrigger value="approvals" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Pendências</TabsTrigger>
           <TabsTrigger value="sessions" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Sessões</TabsTrigger>
+          <TabsTrigger value="world-prep" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Preparação</TabsTrigger>
           <TabsTrigger value="ai-config" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Configurações</TabsTrigger>
         </TabsList>
 
@@ -789,6 +1143,140 @@ export default function MasterPanel() {
               </div>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="world-prep" className="space-y-8">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            <Card className="xl:col-span-1 bg-card/30 border-white/5 p-8 space-y-6">
+              <div className="space-y-2">
+                <h3 className="font-display font-bold text-2xl flex items-center gap-3">
+                  <BookMarked className="h-6 w-6 text-primary" /> Criar Manualmente
+                </h3>
+                <p className="text-sm text-muted-foreground font-heading italic">
+                  NPCs, locais, itens, facções, ameaças e lore entram no mundo somente quando o mestre salva.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {(["lore", "npc", "location", "item", "faction", "quest", "threat", "secret"] as ManualWorldType[]).map((type) => (
+                  <Button
+                    key={type}
+                    type="button"
+                    variant={manualType === type ? "default" : "outline"}
+                    className="h-10 text-[10px] uppercase tracking-widest"
+                    onClick={() => setManualType(type)}
+                  >
+                    {type === "location" ? "Local" : type === "faction" ? "Facção" : type === "quest" ? "Missão" : type === "threat" ? "Ameaça" : type === "secret" ? "Segredo" : type}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Nome / Título</Label>
+                  <Input value={manualForm.title} onChange={e => setManualForm({...manualForm, title: e.target.value})} placeholder="Ex: Ordem do Eclipse" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Tipo / Papel / Recompensa</Label>
+                  <Input value={manualForm.secondary} onChange={e => setManualForm({...manualForm, secondary: e.target.value})} placeholder="Campo auxiliar opcional" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Descrição</Label>
+                  <Textarea value={manualForm.description} onChange={e => setManualForm({...manualForm, description: e.target.value})} className="min-h-[130px]" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Image URL manual</Label>
+                  <Input value={manualForm.image_url} onChange={e => setManualForm({...manualForm, image_url: e.target.value})} placeholder="Upload de imagens será ativado na fase de mídia." />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Visibilidade</Label>
+                  <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm" value={manualForm.visibility} onChange={e => setManualForm({...manualForm, visibility: e.target.value as WorldVisibility})}>
+                    <option value="master_only">Apenas Mestre</option>
+                    <option value="party">Grupo</option>
+                    <option value="public">Público</option>
+                  </select>
+                </div>
+                <Button onClick={handleManualWorldCreate} className="w-full rounded-full h-12 bg-primary">
+                  Salvar no Mundo
+                </Button>
+              </div>
+            </Card>
+
+            <Card className="xl:col-span-2 bg-card/30 border-white/5 p-8 space-y-6">
+              <div className="flex items-start justify-between gap-6">
+                <div>
+                  <h3 className="font-display font-bold text-2xl flex items-center gap-3">
+                    <Wand2 className="h-6 w-6 text-primary" /> Importar Mundo com IA
+                  </h3>
+                  <p className="text-sm text-muted-foreground font-heading italic mt-2">
+                    A IA estrutura uma proposta. Nada é salvo como oficial antes da revisão do mestre.
+                  </p>
+                </div>
+                <Badge variant="outline" className="border-primary/30 text-primary">Sem upload/R2 nesta fase</Badge>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Input placeholder="Nome do mundo" value={worldImportForm.worldName} onChange={e => setWorldImportForm({...worldImportForm, worldName: e.target.value})} />
+                <Input placeholder="Tom" value={worldImportForm.tone} onChange={e => setWorldImportForm({...worldImportForm, tone: e.target.value})} />
+                <Input placeholder="Sistema" value={worldImportForm.ruleSystem} onChange={e => setWorldImportForm({...worldImportForm, ruleSystem: e.target.value})} />
+              </div>
+              <Input placeholder="Instrução para IA" value={worldImportForm.instructions} onChange={e => setWorldImportForm({...worldImportForm, instructions: e.target.value})} />
+              <Textarea
+                value={worldImportForm.sourceText}
+                onChange={e => setWorldImportForm({...worldImportForm, sourceText: e.target.value})}
+                placeholder="Cole aqui texto de mundo, anotações, lore, listas de NPCs, lugares, facções e missões..."
+                className="min-h-[260px] font-heading text-base"
+              />
+              <Button onClick={handleAnalyzeWorldImport} disabled={isAnalyzingWorld || !worldImportForm.sourceText.trim()} className="rounded-full h-12 bg-primary px-10">
+                {isAnalyzingWorld ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wand2 className="h-4 w-4 mr-2" />}
+                Analisar e Estruturar Mundo
+              </Button>
+            </Card>
+          </div>
+
+          {worldProposal && (
+            <Card className="bg-card/30 border-primary/20 p-8 space-y-8">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-display font-bold text-2xl text-primary">Revisar Sugestões da IA</h3>
+                  <p className="text-sm text-muted-foreground font-heading italic mt-2">
+                    Edite, desmarque ou importe apenas o que será salvo no Supabase.
+                  </p>
+                </div>
+                <Button onClick={handleImportSelectedWorld} disabled={isImportingWorld} className="rounded-full h-12 bg-primary px-10">
+                  {isImportingWorld ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+                  Importar Selecionados
+                </Button>
+              </div>
+
+              <WorldSingleReview
+                id="world_summary"
+                title="Visão Geral do Mundo"
+                value={worldProposal.world_summary}
+                selected={!!selectedImports.world_summary}
+                onSelected={(checked) => setSelectedImports({...selectedImports, world_summary: checked})}
+                onChange={(value) => setWorldProposal({...worldProposal, world_summary: value})}
+              />
+
+              <WorldReviewSection title="Lore" section="lore_entries" items={worldProposal.lore_entries} selectedImports={selectedImports} setSelectedImports={setSelectedImports} updateProposal={updateProposal} />
+              <WorldReviewSection title="Locais" section="locations" items={worldProposal.locations} selectedImports={selectedImports} setSelectedImports={setSelectedImports} updateProposal={updateProposal} />
+              <WorldReviewSection title="NPCs" section="npcs" items={worldProposal.npcs} selectedImports={selectedImports} setSelectedImports={setSelectedImports} updateProposal={updateProposal} />
+              <WorldReviewSection title="Facções" section="factions" items={worldProposal.factions} selectedImports={selectedImports} setSelectedImports={setSelectedImports} updateProposal={updateProposal} />
+              <WorldReviewSection title="Itens" section="items" items={worldProposal.items} selectedImports={selectedImports} setSelectedImports={setSelectedImports} updateProposal={updateProposal} />
+              <WorldReviewSection title="Missões iniciais" section="quests" items={worldProposal.quests} selectedImports={selectedImports} setSelectedImports={setSelectedImports} updateProposal={updateProposal} />
+              <WorldReviewSection title="Ameaças" section="threats" items={worldProposal.threats} selectedImports={selectedImports} setSelectedImports={setSelectedImports} updateProposal={updateProposal} />
+              <WorldReviewSection title="Segredos do Mestre" section="master_secrets" items={worldProposal.master_secrets.map(secret => ({ ...secret, visibility: 'master_only' as WorldVisibility }))} selectedImports={selectedImports} setSelectedImports={setSelectedImports} updateProposal={updateProposal} />
+
+              <WorldSingleReview
+                id="opening_scene"
+                title="Criar Cena Inicial"
+                value={worldProposal.opening_scene}
+                selected={!!selectedImports.opening_scene}
+                onSelected={(checked) => setSelectedImports({...selectedImports, opening_scene: checked})}
+                onChange={(value) => setWorldProposal({...worldProposal, opening_scene: value})}
+              />
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="ai-config" className="space-y-8">
@@ -985,4 +1473,90 @@ function ApprovalCard({ icon, type, title, desc, onApprove, onReject }: { icon: 
       </div>
     </Card>
   );
+}
+
+type WorldArraySection = 'lore_entries' | 'locations' | 'npcs' | 'factions' | 'items' | 'quests' | 'threats' | 'master_secrets'
+
+function WorldSingleReview({
+  id,
+  title,
+  value,
+  selected,
+  onSelected,
+  onChange,
+}: {
+  id: string
+  title: string
+  value: string
+  selected: boolean
+  onSelected: (checked: boolean) => void
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className="p-5 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <Label htmlFor={id} className="text-[10px] uppercase tracking-widest font-bold text-primary">{title}</Label>
+        <input id={id} type="checkbox" checked={selected} onChange={(event) => onSelected(event.target.checked)} />
+      </div>
+      <Textarea value={value} onChange={(event) => onChange(event.target.value)} className="min-h-[110px] bg-background/50" />
+    </div>
+  )
+}
+
+function WorldReviewSection({
+  title,
+  section,
+  items,
+  selectedImports,
+  setSelectedImports,
+  updateProposal,
+}: {
+  title: string
+  section: WorldArraySection
+  items: any[]
+  selectedImports: Record<string, boolean>
+  setSelectedImports: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
+  updateProposal: (section: keyof WorldImportProposal, index: number, field: string, value: string) => void
+}) {
+  if (items.length === 0) return null
+
+  return (
+    <section className="space-y-4">
+      <h4 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-60">{title}</h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {items.map((item, index) => {
+          const key = `${section}.${index}`
+          const primaryField = 'title' in item ? 'title' : 'name'
+          const bodyField = 'content' in item ? 'content' : 'description'
+
+          return (
+            <div key={key} className="p-5 rounded-2xl bg-white/5 border border-white/5 space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <Label htmlFor={key} className="text-[10px] uppercase tracking-widest font-bold text-primary">{title}</Label>
+                <input
+                  id={key}
+                  type="checkbox"
+                  checked={!!selectedImports[key]}
+                  onChange={(event) => setSelectedImports((prev) => ({ ...prev, [key]: event.target.checked }))}
+                />
+              </div>
+              <Input value={item[primaryField] || ''} onChange={(event) => updateProposal(section, index, primaryField, event.target.value)} />
+              <Textarea value={item[bodyField] || ''} onChange={(event) => updateProposal(section, index, bodyField, event.target.value)} className="min-h-[110px] bg-background/50" />
+              {'visibility' in item && (
+                <select
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={item.visibility || 'master_only'}
+                  onChange={(event) => updateProposal(section, index, 'visibility', event.target.value)}
+                >
+                  <option value="master_only">Apenas Mestre</option>
+                  <option value="party">Grupo</option>
+                  <option value="public">Público</option>
+                </select>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
 }

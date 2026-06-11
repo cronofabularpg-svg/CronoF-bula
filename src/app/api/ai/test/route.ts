@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     .eq('status', 'active')
     .maybeSingle()
 
-  console.log('[ai/test] campanha encontrada:', Boolean(campaignRow), '| ia ativa (ai_enabled):', Boolean(campaignRow?.ai_enabled), '| GROQ_API_KEY presente:', Boolean(serverEnv.groqApiKey))
+  console.log('[ai/test] campanha encontrada:', Boolean(campaignRow), '| ia ativa (ai_enabled):', Boolean(campaignRow?.ai_enabled), '| chave Groq presente:', Boolean(serverEnv.groqApiKey))
 
   const isMaster = ['owner', 'master', 'assistant_master'].includes(membership?.role || '')
   if (!isMaster) {

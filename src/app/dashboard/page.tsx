@@ -354,14 +354,14 @@ export default function Dashboard() {
           toast({
             variant: "destructive",
             title: "Abertura não gerada",
-            description: "A IA não respondeu. Verifique GROQ_API_KEY ou configuração da campanha.",
+            description: "A IA não respondeu. Verifique a chave da Groq no servidor ou a configuração da campanha.",
           })
         }
       } catch {
         toast({
           variant: "destructive",
           title: "Abertura não gerada",
-          description: "A IA não respondeu. Verifique GROQ_API_KEY ou configuração da campanha.",
+          description: "A IA não respondeu. Verifique a chave da Groq no servidor ou a configuração da campanha.",
         })
       }
 

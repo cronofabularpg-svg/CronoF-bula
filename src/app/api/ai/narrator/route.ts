@@ -42,7 +42,7 @@ export async function POST(request: Request) {
 
   const { snapshotId, isMaster, context } = aiContext
 
-  console.log('[ai/narrator] campanha encontrada:', campaignId, '| ia ativa (ai_can_narrate):', context.settings.aiCanNarrate, '| GROQ_API_KEY presente:', Boolean(serverEnv.groqApiKey))
+  console.log('[ai/narrator] campanha encontrada:', campaignId, '| ia ativa (ai_can_narrate):', context.settings.aiCanNarrate, '| chave Groq presente:', Boolean(serverEnv.groqApiKey))
 
   if (!context.settings.aiCanNarrate) {
     return NextResponse.json({ error: 'A narração por IA está desativada nesta campanha.' }, { status: 403 })

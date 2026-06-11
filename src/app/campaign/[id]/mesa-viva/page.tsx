@@ -364,7 +364,7 @@ export default function MesaViva() {
         setAiSuggestion(data.output)
       }
     } catch (e: any) {
-      setAiError("A IA não respondeu. Verifique GROQ_API_KEY ou configuração da campanha.")
+      setAiError("A IA não respondeu. Verifique a chave da Groq no servidor ou a configuração da campanha.")
       toast({ variant: "destructive", title: "Erro do Oráculo", description: e.message || "A IA encontrou uma bruma mental." })
     } finally { setIsAiThinking(false) }
   }

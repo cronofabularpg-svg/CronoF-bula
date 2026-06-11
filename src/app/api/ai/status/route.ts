@@ -4,7 +4,7 @@ import { getAuthenticatedUserId } from '@/lib/ai/route-helpers'
 
 export async function GET() {
   const userId = await getAuthenticatedUserId()
-  console.log('[ai/status] usuário autenticado:', Boolean(userId), '| GROQ_API_KEY presente:', Boolean(serverEnv.groqApiKey))
+  console.log('[ai/status] usuário autenticado:', Boolean(userId), '| chave Groq presente:', Boolean(serverEnv.groqApiKey))
   if (!userId) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
   }

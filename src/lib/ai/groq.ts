@@ -1,5 +1,5 @@
 // Cliente Groq server-side. NUNCA importar este arquivo em componentes
-// "use client" — GROQ_API_KEY só pode existir no servidor.
+// "use client" — a chave da Groq só pode existir no servidor.
 
 import { serverEnv } from '@/lib/server/env'
 
@@ -33,7 +33,7 @@ export async function callGroq(
 ): Promise<string> {
   const apiKey = serverEnv.groqApiKey
   if (!apiKey) {
-    throw new GroqError('GROQ_API_KEY não configurada no servidor.')
+    throw new GroqError('Chave da Groq não configurada no servidor.')
   }
 
   const controller = new AbortController()

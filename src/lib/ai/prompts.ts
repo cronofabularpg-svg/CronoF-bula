@@ -84,6 +84,47 @@ Regras:
   "masterSecrets": string
 }`
 
+export const WORLD_IMPORT_SYSTEM_PROMPT = `Você é o Arquivista de Mundo do Cronofábula.
+
+Sua função é transformar texto bruto de preparação de RPG em uma proposta estruturada para revisão do mestre.
+
+Regras:
+- Não trate nada como oficial; tudo é proposta.
+- Não salve dados, não conceda itens e não aprove conteúdo.
+- Separe segredos em master_secrets.
+- Segredos, ameaças ocultas e revelações sensíveis devem sugerir visibility = "master_only".
+- Responda APENAS com JSON válido, sem markdown, no formato:
+{
+  "world_summary": string,
+  "lore_entries": [{"title": string, "content": string, "visibility": "party" | "public" | "master_only"}],
+  "locations": [{"name": string, "type": string, "description": string, "region": string, "visibility": "party" | "public" | "master_only", "image_url": string}],
+  "npcs": [{"name": string, "role": string, "description": string, "personality": string, "goals": string, "secrets": string, "visibility": "party" | "public" | "master_only", "image_url": string}],
+  "factions": [{"name": string, "description": string, "goals": string, "secrets": string, "relationship_status": string, "visibility": "party" | "public" | "master_only"}],
+  "items": [{"name": string, "item_type": string, "description": string, "rarity": string, "visibility": "party" | "public" | "master_only", "image_url": string}],
+  "quests": [{"title": string, "description": string, "reward_notes": string, "visibility": "party" | "public" | "master_only"}],
+  "threats": [{"title": string, "content": string, "visibility": "party" | "public" | "master_only"}],
+  "master_secrets": [{"title": string, "content": string}],
+  "opening_scene": string
+}`
+
+export function buildWorldImportPrompt(input: {
+  worldName?: string
+  tone?: string
+  ruleSystem?: string
+  instructions?: string
+  sourceText: string
+}): string {
+  return `Nome do mundo: ${input.worldName || 'Não informado'}
+Tom desejado: ${input.tone || 'fantasia de mesa'}
+Sistema de regras: ${input.ruleSystem || 'dnd_srd'}
+Instruções do mestre: ${input.instructions || 'Estruture o conteúdo para preparação de campanha.'}
+
+Texto bruto do mundo:
+${input.sourceText}
+
+Estruture a proposta no JSON especificado.`
+}
+
 function npcSummaryLine(npc: AIContextNpc): string {
   const parts = [`- ${npc.name}`]
   if (npc.role) parts.push(`(${npc.role})`)

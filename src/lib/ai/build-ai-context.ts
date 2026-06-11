@@ -10,7 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 //
 // Esta função roda exclusivamente no servidor (usa a service role key).
 
-export type AIMode = 'narrator' | 'npc_dialogue' | 'rules_helper' | 'session_summary'
+export type AIMode = 'narrator' | 'npc_dialogue' | 'rules_helper' | 'session_summary' | 'world_import'
 
 export type BuildAIContextParams = {
   campaignId: string
