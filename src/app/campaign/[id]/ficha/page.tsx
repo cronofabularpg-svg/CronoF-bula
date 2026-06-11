@@ -157,7 +157,6 @@ export default function FichaPersonagem() {
   const [isSavingNotes, setIsSavingNotes] = React.useState(false)
 
   const [isLevelUpOpen, setIsLevelUpOpen] = React.useState(false)
-  const [levelUpForm, setLevelUpForm] = React.useState({ maxHp: "", notes: "" })
   const [isRequestingLevelUp, setIsRequestingLevelUp] = React.useState(false)
 
   const loadExtras = React.useCallback(async (characterId: string) => {
@@ -328,13 +327,9 @@ export default function FichaPersonagem() {
               </div>
               <div className="space-y-2">
                 <Label className="text-[10px] uppercase font-bold tracking-widest">Nível</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={newCharacter.level}
-                  onChange={e => setNewCharacter({ ...newCharacter, level: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })}
-                />
+                <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-muted-foreground">
+                  Personagens novos começam no nível 1. Evoluções são solicitadas aqui e aplicadas pelo mestre.
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-3">
@@ -487,7 +482,6 @@ export default function FichaPersonagem() {
   }
 
   function openLevelUpDialog() {
-    setLevelUpForm({ maxHp: character?.max_hp != null ? String(character.max_hp) : "", notes: "" })
     setIsLevelUpOpen(true)
   }
 
@@ -496,31 +490,8 @@ export default function FichaPersonagem() {
     setIsRequestingLevelUp(true)
 
     const toLevel = characterLevel + 1
-    const suggestedProficiency = Math.floor((toLevel - 1) / 4) + 2
-    const proposedChanges: Record<string, unknown> = { proficiency_bonus: suggestedProficiency }
-
-    const parsedMaxHp = Number(levelUpForm.maxHp)
-    if (levelUpForm.maxHp.trim() && !Number.isNaN(parsedMaxHp)) {
-      proposedChanges.max_hp = parsedMaxHp
-    }
-    if (levelUpForm.notes.trim()) {
-      proposedChanges.notes = levelUpForm.notes.trim()
-    }
-
     const supabase = createClient()
-    const { data, error } = await supabase
-      .from('character_level_ups')
-      .insert({
-        campaign_id: campaignId,
-        character_id: character.id,
-        requested_by: user.uid,
-        from_level: characterLevel,
-        to_level: toLevel,
-        status: 'pending',
-        proposed_changes: proposedChanges,
-      })
-      .select('id, from_level, to_level, status, proposed_changes, created_at')
-      .single()
+    const { data, error } = await supabase.rpc('request_character_level_up', { target_character_id: character.id })
 
     if (error) {
       toast({ variant: "destructive", title: "Erro ao Solicitar Level Up", description: error.message })
@@ -528,7 +499,7 @@ export default function FichaPersonagem() {
       return
     }
 
-    setLevelUpRequest(data as LevelUpRequest)
+    setLevelUpRequest(data as unknown as LevelUpRequest)
     toast({ title: "Pedido Enviado", description: `Solicitação para o nível ${toLevel} aguarda o mestre.` })
     setIsLevelUpOpen(false)
     setIsRequestingLevelUp(false)
@@ -996,31 +967,15 @@ export default function FichaPersonagem() {
                   <DialogHeader>
                     <DialogTitle className="font-display">Solicitar Level Up</DialogTitle>
                     <DialogDescription className="font-heading italic">
-                      Proponha sua evolução do nível {characterLevel} para o nível {characterLevel + 1}. O mestre revisará e aplicará as mudanças.
+                      Solicite sua evolução do nível {characterLevel} para o nível {characterLevel + 1}. O mestre revisará e aplicará HP, proficiência e demais ajustes.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-sm space-y-1">
                       <p>Bônus de Proficiência sugerido: <span className="font-bold text-primary">+{Math.floor(((characterLevel + 1) - 1) / 4) + 2}</span></p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">HP Máximo Sugerido (opcional)</Label>
-                      <Input
-                        type="number"
-                        value={levelUpForm.maxHp}
-                        onChange={(e) => setLevelUpForm({ ...levelUpForm, maxHp: e.target.value })}
-                        placeholder={character.max_hp != null ? String(character.max_hp) : "Ex: 24"}
-                        className="bg-black/30 border-white/10"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Mensagem para o Mestre (opcional)</Label>
-                      <Textarea
-                        value={levelUpForm.notes}
-                        onChange={(e) => setLevelUpForm({ ...levelUpForm, notes: e.target.value })}
-                        placeholder="Ex: Escolhi a magia X, peço o recurso Y..."
-                        className="bg-black/30 border-white/10"
-                      />
+                      <p className="text-muted-foreground font-heading italic">
+                        O pedido não altera sua ficha imediatamente. O mestre precisa aprovar sua evolução no Portal do Mestre.
+                      </p>
                     </div>
                   </div>
                   <DialogFooter>

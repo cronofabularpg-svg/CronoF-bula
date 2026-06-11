@@ -8,7 +8,9 @@ import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { MapPin, Search, ChevronRight, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices, ShieldCheck, XCircle } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { MapPin, Search, ChevronRight, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices, ShieldCheck, XCircle, PanelRightClose, PanelRightOpen, Route, NotebookTabs, Compass } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -42,7 +44,10 @@ export default function MapaVivo() {
   const [isCreateLocationOpen, setIsCreateLocationOpen] = React.useState(false)
   const [isCreatingLocation, setIsCreatingLocation] = React.useState(false)
   const [isInvestigateOpen, setIsInvestigateOpen] = React.useState(false)
+  const [isPanelOpen, setIsPanelOpen] = React.useState(true)
+  const [mobileMapTab, setMobileMapTab] = React.useState("mapa")
   const [newLocation, setNewLocation] = React.useState({ name: "", type: "city", description: "", visibility: "visible" })
+  const [membershipRole, setMembershipRole] = React.useState<string | null>(null)
 
   // Preparação Fase 10: item_type='map' poderá liberar anotações pessoais no Mapa Vivo.
   // Não bloqueia a visualização básica de locais já visíveis.
@@ -53,21 +58,41 @@ export default function MapaVivo() {
     let active = true
     const supabase = createClient()
 
-    supabase
-      .from('campaigns')
-      .select('id, owner_id')
-      .eq('id', campaignId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (active) setCampaign(data)
-      })
+    async function loadCampaignAccess() {
+      const { data } = await supabase
+        .from('campaigns')
+        .select('id, owner_id')
+        .eq('id', campaignId)
+        .maybeSingle()
+
+      if (active) setCampaign(data)
+
+      if (user?.uid) {
+        const { data: membership } = await supabase
+          .from('campaign_members')
+          .select('role')
+          .eq('campaign_id', campaignId)
+          .eq('user_id', user.uid)
+          .eq('status', 'active')
+          .maybeSingle()
+
+        if (active) setMembershipRole(membership?.role ?? null)
+      } else if (active) {
+        setMembershipRole(null)
+      }
+    }
+
+    loadCampaignAccess()
 
     return () => {
       active = false
     }
-  }, [campaignId])
+  }, [campaignId, user?.uid])
 
-  const isMaster = campaign?.owner_id === user?.uid
+  const isMaster = campaign?.owner_id === user?.uid || ['owner', 'master', 'assistant_master'].includes(membershipRole || '')
+  const isVisibleToPlayers = (visibility: string | null | undefined) => !['secret', 'master_only', 'hidden'].includes(visibility || '')
+  const visibleLocations = locations.filter((location) => isMaster || isVisibleToPlayers(location.visibility))
+  const secretLocations = isMaster ? locations.filter((location) => !isVisibleToPlayers(location.visibility)) : []
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -151,13 +176,160 @@ export default function MapaVivo() {
     }
   }, [campaignId, toast, user])
 
-  const displayLocations = locations.map((location, index) => ({
+  const displayLocations = visibleLocations.map((location, index) => ({
     ...location,
     coords: {
       x: 180 + ((index * 227) % 760),
       y: 140 + ((index * 173) % 420)
     }
   }))
+
+  function renderLocationRows(items: any[], emptyText: string, secret = false) {
+    if (items.length === 0) {
+      return (
+        <p className="text-sm text-muted-foreground font-heading italic py-4">
+          {emptyText}
+        </p>
+      )
+    }
+
+    return (
+      <div className="space-y-3">
+        {items.map((loc) => (
+          <button
+            key={loc.id}
+            type="button"
+            onClick={() => setActiveNode(displayLocations.find((node) => node.id === loc.id) || loc)}
+            className="w-full text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-primary/40 transition-colors"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-display font-bold text-accent">{loc.name}</p>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-widest mt-1">{loc.type || 'local'}</p>
+              </div>
+              <Badge variant="outline" className={secret ? "border-destructive/30 text-destructive" : "border-primary/30 text-primary"}>
+                {loc.visibility || 'visible'}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground font-heading italic leading-relaxed mt-3 line-clamp-3">
+              {loc.description || 'Nenhum detalhe registrado ainda.'}
+            </p>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  function renderMapSidePanel() {
+    return (
+      <div className="h-full rounded-3xl border border-white/10 bg-card/80 backdrop-blur-xl literary-shadow overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 p-5">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-bold">Cartografia</p>
+            <h2 className="font-display text-2xl text-accent">Painel do Mapa</h2>
+          </div>
+          <Button variant="ghost" size="icon" className="hidden lg:inline-flex" onClick={() => setIsPanelOpen(false)}>
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <ScrollArea className="h-[calc(100%-84px)]">
+          <Accordion type="multiple" defaultValue={["locais", "legenda"]} className="px-5 py-4">
+            <AccordionItem value="locais" className="border-white/10">
+              <AccordionTrigger className="font-ui text-xs uppercase tracking-widest">
+                <Compass className="mr-2 h-4 w-4 text-primary" /> Locais Visíveis
+              </AccordionTrigger>
+              <AccordionContent>
+                {renderLocationRows(visibleLocations, "Nenhum local visível foi registrado ainda.")}
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="conexoes" className="border-white/10">
+              <AccordionTrigger className="font-ui text-xs uppercase tracking-widest">
+                <Route className="mr-2 h-4 w-4 text-primary" /> Caminhos / Conexões
+              </AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground font-heading italic py-4">
+                  Nenhuma conexão real foi cadastrada para este mapa ainda.
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="anotacoes" className="border-white/10">
+              <AccordionTrigger className="font-ui text-xs uppercase tracking-widest">
+                <NotebookTabs className="mr-2 h-4 w-4 text-primary" /> Anotações
+              </AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground font-heading italic py-4">
+                  Anotações do mapa ainda não foram implementadas. {hasMapItem ? "Você possui um item Mapa para liberar esse fluxo em fase futura." : "Um item Mapa poderá liberar esse recurso em fase futura."}
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+
+            {isMaster && (
+              <AccordionItem value="segredos" className="border-white/10">
+                <AccordionTrigger className="font-ui text-xs uppercase tracking-widest">
+                  <Lock className="mr-2 h-4 w-4 text-destructive" /> Segredos do Mestre
+                </AccordionTrigger>
+                <AccordionContent>
+                  {renderLocationRows(secretLocations, "Nenhum local secreto foi registrado ainda.", true)}
+                </AccordionContent>
+              </AccordionItem>
+            )}
+
+            <AccordionItem value="legenda" className="border-white/10">
+              <AccordionTrigger className="font-ui text-xs uppercase tracking-widest">
+                <Info className="mr-2 h-4 w-4 text-primary" /> Legenda
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-3 text-sm text-muted-foreground">
+                  <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> Local disponível para a mesa.</p>
+                  <p className="flex items-center gap-2"><EyeOff className="h-4 w-4" /> Local oculto ou desconhecido.</p>
+                  <p className="flex items-center gap-2"><Dices className="h-4 w-4 text-accent" /> Viagens registram rolagem real quando há sessão ativa.</p>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </ScrollArea>
+      </div>
+    )
+  }
+
+  function renderMobilePanel() {
+    if (mobileMapTab === "locais") {
+      return (
+        <div className="rounded-3xl border border-white/10 bg-card/80 backdrop-blur-xl p-5">
+          <h2 className="font-display text-2xl text-accent mb-4">Locais Visíveis</h2>
+          <ScrollArea className="h-[54vh] pr-3">
+            {renderLocationRows(visibleLocations, "Nenhum local visível foi registrado ainda.")}
+          </ScrollArea>
+        </div>
+      )
+    }
+
+    if (mobileMapTab === "anotacoes") {
+      return (
+        <div className="rounded-3xl border border-white/10 bg-card/80 backdrop-blur-xl p-5">
+          <h2 className="font-display text-2xl text-accent mb-4">Anotações</h2>
+          <p className="text-sm text-muted-foreground font-heading italic leading-relaxed">
+            Anotações do mapa ainda não foram implementadas. {hasMapItem ? "Você possui um item Mapa para liberar esse fluxo em fase futura." : "Um item Mapa poderá liberar esse recurso em fase futura."}
+          </p>
+        </div>
+      )
+    }
+
+    return (
+      <div className="rounded-3xl border border-white/10 bg-card/80 backdrop-blur-xl p-5">
+        <h2 className="font-display text-2xl text-accent mb-4">Legenda</h2>
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> Local disponível para a mesa.</p>
+          <p className="flex items-center gap-2"><EyeOff className="h-4 w-4" /> Local oculto ou desconhecido.</p>
+          <p className="flex items-center gap-2"><Dices className="h-4 w-4 text-accent" /> Viagens registram rolagem real quando há sessão ativa.</p>
+          {isMaster && <p className="flex items-center gap-2"><Lock className="h-4 w-4 text-destructive" /> Segredos aparecem apenas para mestre/owner.</p>}
+        </div>
+      </div>
+    )
+  }
 
   async function handleMoveGroup(locationId: string, locationName: string) {
     setIsTraveling(true)
@@ -282,20 +454,28 @@ export default function MapaVivo() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      <header className="p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex justify-between items-center z-10 shrink-0">
+    <div className="min-h-screen flex flex-col bg-background">
+      <header className="p-5 lg:p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center z-10 shrink-0">
         <div>
           <h1 className="text-2xl font-display font-bold flex items-center tracking-tight">
-            <MapPin className="mr-3 h-6 w-6 text-primary animate-pulse" /> Cartografia da Crônica
+            <MapPin className="mr-3 h-6 w-6 text-primary animate-pulse" /> Mapa Vivo
           </h1>
-          <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-[0.2em] mt-1">Costa de Arvand</p>
+          <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-[0.2em] mt-1">Cartografia canônica da campanha</p>
           {hasMapItem && (
             <Badge variant="outline" className="mt-2 text-[9px] uppercase tracking-widest border-accent/30 text-accent">
               Mapa em posse — anotações pessoais em breve
             </Badge>
           )}
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <Button variant="ghost" size="sm" className="rounded-full" onClick={() => router.push(`/campaign/${campaignId}/mesa-viva`)}>
+            <ChevronRight className="mr-2 h-4 w-4 rotate-180" /> Voltar à Mesa
+          </Button>
+          {!isPanelOpen && (
+            <Button variant="outline" size="sm" className="hidden lg:inline-flex rounded-full border-primary/30 text-primary" onClick={() => setIsPanelOpen(true)}>
+              <PanelRightOpen className="mr-2 h-4 w-4" /> Painel
+            </Button>
+          )}
           {isMaster && (
             <Dialog open={isCreateLocationOpen} onOpenChange={setIsCreateLocationOpen}>
               <DialogTrigger asChild>
@@ -414,7 +594,18 @@ export default function MapaVivo() {
         </div>
       </header>
 
-      <div className="flex-1 relative overflow-hidden bg-[#0A0A0F]">
+      <div className="flex-1 bg-[#0A0A0F] p-4 lg:p-6 overflow-hidden">
+        <Tabs value={mobileMapTab} onValueChange={setMobileMapTab} className="lg:hidden mb-4">
+          <TabsList className="grid grid-cols-4 bg-card/70 border border-white/10">
+            <TabsTrigger value="mapa" className="text-[10px] uppercase tracking-widest">Mapa</TabsTrigger>
+            <TabsTrigger value="locais" className="text-[10px] uppercase tracking-widest">Locais</TabsTrigger>
+            <TabsTrigger value="anotacoes" className="text-[10px] uppercase tracking-widest">Notas</TabsTrigger>
+            <TabsTrigger value="legenda" className="text-[10px] uppercase tracking-widest">Legenda</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className={`h-[calc(100vh-184px)] min-h-[560px] grid gap-4 ${isPanelOpen ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'}`}>
+          <div className={`${mobileMapTab === "mapa" ? "block" : "hidden"} lg:block relative overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0F]`}>
         <div className="absolute inset-0 opacity-10" 
              style={{ backgroundImage: 'radial-gradient(circle, #C8A24A 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
         
@@ -528,6 +719,17 @@ export default function MapaVivo() {
             </div>
           </DialogContent>
         </Dialog>
+          </div>
+
+          <aside className={`${mobileMapTab === "mapa" ? "hidden" : "block"} lg:block ${isPanelOpen ? "" : "lg:hidden"} min-h-0 overflow-hidden`}>
+            <div className="hidden lg:block h-full">
+              {renderMapSidePanel()}
+            </div>
+            <div className="lg:hidden">
+              {renderMobilePanel()}
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
   )

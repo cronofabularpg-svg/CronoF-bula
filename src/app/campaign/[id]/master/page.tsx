@@ -20,6 +20,7 @@ import {
   MapPin,
   Package,
   Trophy,
+  TrendingUp,
   History,
   Settings,
   Database,
@@ -109,6 +110,32 @@ type PendingMember = {
   status: string
   joined_at: string
   profiles: { display_name: string; avatar_url: string | null }[] | { display_name: string; avatar_url: string | null } | null
+}
+
+type PendingLevelUp = {
+  id: string
+  campaign_id: string
+  character_id: string
+  requested_by: string
+  from_level: number
+  to_level: number
+  status: string
+  proposed_changes: Record<string, any> | null
+  created_at: string
+  characters: {
+    name: string
+    level: number
+    max_hp: number | null
+    current_hp: number | null
+    proficiency_bonus: number | null
+  }[] | {
+    name: string
+    level: number
+    max_hp: number | null
+    current_hp: number | null
+    proficiency_bonus: number | null
+  } | null
+  profiles: { display_name: string }[] | { display_name: string } | null
 }
 
 type SessionMessageRow = {
@@ -275,6 +302,7 @@ export default function MasterPanel() {
   const [campaignSettings, setCampaignSettings] = React.useState<CampaignSettingsRow | null>(null)
   const [pendingCharacters, setPendingCharacters] = React.useState<PendingCharacter[]>([])
   const [pendingMembers, setPendingMembers] = React.useState<PendingMember[]>([])
+  const [pendingLevelUps, setPendingLevelUps] = React.useState<PendingLevelUp[]>([])
   const [approvalRequests, setApprovalRequests] = React.useState<ApprovalRequest[]>([])
   const [aiSuggestions, setAiSuggestions] = React.useState<AiSuggestion[]>([])
   const [sessions, setSessions] = React.useState<SessionRow[]>([])
@@ -285,6 +313,15 @@ export default function MasterPanel() {
   const [aiTestResult, setAiTestResult] = React.useState<{ ok: boolean; message: string } | null>(null)
   const [isRegeneratingInvite, setIsRegeneratingInvite] = React.useState(false)
   const [appOrigin, setAppOrigin] = React.useState("")
+  const [levelUpToApprove, setLevelUpToApprove] = React.useState<PendingLevelUp | null>(null)
+  const [levelUpApprovalForm, setLevelUpApprovalForm] = React.useState({
+    toLevel: "",
+    maxHp: "",
+    currentHp: "",
+    proficiencyBonus: "",
+    note: "",
+  })
+  const [isResolvingLevelUp, setIsResolvingLevelUp] = React.useState(false)
   const [manualType, setManualType] = React.useState<ManualWorldType>("lore")
   const [manualForm, setManualForm] = React.useState({
     title: "",
@@ -416,6 +453,20 @@ export default function MasterPanel() {
           toast({ variant: "destructive", title: "Erro ao Carregar Convites", description: error.message })
         }
         setPendingMembers((data as PendingMember[]) || [])
+      })
+
+    supabase
+      .from('character_level_ups')
+      .select('id, campaign_id, character_id, requested_by, from_level, to_level, status, proposed_changes, created_at, characters(name, level, max_hp, current_hp, proficiency_bonus), profiles(display_name)')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Progressão", description: error.message })
+        }
+        setPendingLevelUps((data as PendingLevelUp[]) || [])
       })
 
     supabase
@@ -789,6 +840,74 @@ export default function MasterPanel() {
       title: status === 'active' ? "Jogador Aprovado" : "Entrada Rejeitada",
       description: status === 'active' ? "O jogador agora pode acessar a campanha." : "A solicitação foi rejeitada.",
     })
+  }
+
+  function openApproveLevelUp(request: PendingLevelUp) {
+    const character = Array.isArray(request.characters) ? request.characters[0] : request.characters
+    const suggestedProficiency = request.proposed_changes?.suggested_proficiency_bonus
+      ?? Math.floor(((request.to_level - 1) / 4)) + 2
+
+    setLevelUpApprovalForm({
+      toLevel: String(request.to_level),
+      maxHp: character?.max_hp != null ? String(character.max_hp) : "",
+      currentHp: character?.current_hp != null ? String(character.current_hp) : "",
+      proficiencyBonus: String(character?.proficiency_bonus ?? suggestedProficiency),
+      note: "",
+    })
+    setLevelUpToApprove(request)
+  }
+
+  async function handleApproveLevelUp() {
+    if (!levelUpToApprove) return
+    setIsResolvingLevelUp(true)
+    try {
+      const approvedChanges: Record<string, unknown> = {}
+      const toLevel = Number(levelUpApprovalForm.toLevel)
+      const maxHp = Number(levelUpApprovalForm.maxHp)
+      const currentHp = Number(levelUpApprovalForm.currentHp)
+      const proficiencyBonus = Number(levelUpApprovalForm.proficiencyBonus)
+
+      if (!Number.isNaN(toLevel)) approvedChanges.to_level = toLevel
+      if (levelUpApprovalForm.maxHp.trim() && !Number.isNaN(maxHp)) approvedChanges.max_hp = maxHp
+      if (levelUpApprovalForm.currentHp.trim() && !Number.isNaN(currentHp)) approvedChanges.current_hp = currentHp
+      if (levelUpApprovalForm.proficiencyBonus.trim() && !Number.isNaN(proficiencyBonus)) approvedChanges.proficiency_bonus = proficiencyBonus
+      if (levelUpApprovalForm.note.trim()) approvedChanges.master_note = levelUpApprovalForm.note.trim()
+
+      const supabase = createClient()
+      const { error } = await supabase.rpc('approve_character_level_up', {
+        target_request_id: levelUpToApprove.id,
+        approved_changes: approvedChanges,
+      })
+      if (error) throw error
+
+      setPendingLevelUps((prev) => prev.filter((request) => request.id !== levelUpToApprove.id))
+      toast({ title: "Level Up Aplicado", description: "A ficha do personagem foi atualizada." })
+      setLevelUpToApprove(null)
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro ao Aprovar Level Up", description: error.message })
+    } finally {
+      setIsResolvingLevelUp(false)
+    }
+  }
+
+  async function handleRejectLevelUp(request: PendingLevelUp) {
+    const reason = window.prompt("Motivo da rejeição (opcional):") || null
+    setIsResolvingLevelUp(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.rpc('reject_character_level_up', {
+        target_request_id: request.id,
+        reason,
+      })
+      if (error) throw error
+
+      setPendingLevelUps((prev) => prev.filter((item) => item.id !== request.id))
+      toast({ title: "Level Up Rejeitado", description: "O jogador poderá enviar uma nova solicitação depois." })
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro ao Rejeitar Level Up", description: error.message })
+    } finally {
+      setIsResolvingLevelUp(false)
+    }
   }
 
   async function handleResolveAiSuggestion(suggestion: AiSuggestion, status: 'approved' | 'rejected') {
@@ -1616,7 +1735,23 @@ export default function MasterPanel() {
                     onReject={() => handleResolveApproval(request.id, 'rejected')}
                   />
                 ))}
-                {pendingMembers.length === 0 && pendingCharacters?.length === 0 && approvalRequests.length === 0 && (
+                {pendingLevelUps.map((request) => {
+                  const character = Array.isArray(request.characters) ? request.characters[0] : request.characters
+                  const profile = Array.isArray(request.profiles) ? request.profiles[0] : request.profiles
+                  return (
+                    <ApprovalCard
+                      key={request.id}
+                      icon={<TrendingUp className="h-4 w-4" />}
+                      type="Progressão"
+                      title={character?.name || "Personagem"}
+                      desc={`${profile?.display_name || "Jogador"} solicitou evolução do nível ${request.from_level} para ${request.to_level}.`}
+                      time="Pendente"
+                      onApprove={() => openApproveLevelUp(request)}
+                      onReject={() => handleRejectLevelUp(request)}
+                    />
+                  )
+                })}
+                {pendingMembers.length === 0 && pendingCharacters?.length === 0 && approvalRequests.length === 0 && pendingLevelUps.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
                     Nenhuma solicitação aguardando no portão.
                   </div>
@@ -2064,6 +2199,95 @@ export default function MasterPanel() {
             >
               {isDelivering ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Gift className="h-4 w-4 mr-2" />}
               Entregar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Aprovar Level Up */}
+      <Dialog open={Boolean(levelUpToApprove)} onOpenChange={(open) => !open && setLevelUpToApprove(null)}>
+        <DialogContent className="bg-card border-accent/30 max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-display text-accent flex items-center gap-3">
+              <TrendingUp className="h-6 w-6" /> Aprovar Level Up
+            </DialogTitle>
+            <DialogDescription className="font-heading italic">
+              Confirme os valores que serão aplicados diretamente na ficha do personagem.
+            </DialogDescription>
+          </DialogHeader>
+
+          {levelUpToApprove && (
+            <div className="space-y-5 py-2">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-bold">Personagem</p>
+                <p className="font-display text-xl text-accent mt-1">
+                  {(Array.isArray(levelUpToApprove.characters) ? levelUpToApprove.characters[0]?.name : levelUpToApprove.characters?.name) || "Personagem"}
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Nível {levelUpToApprove.from_level} para {levelUpToApprove.to_level}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Novo nível</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={levelUpApprovalForm.toLevel}
+                    onChange={(e) => setLevelUpApprovalForm((prev) => ({ ...prev, toLevel: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Proficiência</Label>
+                  <Input
+                    type="number"
+                    min={2}
+                    value={levelUpApprovalForm.proficiencyBonus}
+                    onChange={(e) => setLevelUpApprovalForm((prev) => ({ ...prev, proficiencyBonus: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">HP máximo</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={levelUpApprovalForm.maxHp}
+                    onChange={(e) => setLevelUpApprovalForm((prev) => ({ ...prev, maxHp: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">HP atual</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={levelUpApprovalForm.currentHp}
+                    onChange={(e) => setLevelUpApprovalForm((prev) => ({ ...prev, currentHp: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase font-bold tracking-widest">Observação do Mestre</Label>
+                <Textarea
+                  value={levelUpApprovalForm.note}
+                  onChange={(e) => setLevelUpApprovalForm((prev) => ({ ...prev, note: e.target.value }))}
+                  placeholder="Opcional: talento, decisão de mesa, ajuste narrativo..."
+                  className="min-h-[90px]"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setLevelUpToApprove(null)}>Cancelar</Button>
+            <Button
+              onClick={handleApproveLevelUp}
+              disabled={isResolvingLevelUp || !levelUpApprovalForm.toLevel.trim()}
+              className="bg-primary px-10 rounded-full h-12"
+            >
+              {isResolvingLevelUp ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <TrendingUp className="h-4 w-4 mr-2" />}
+              Aplicar Level Up
             </Button>
           </DialogFooter>
         </DialogContent>
