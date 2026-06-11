@@ -8,6 +8,13 @@ import { Toaster } from '@/components/ui/toaster';
 export const metadata: Metadata = {
   title: 'Cronofábula | A Fábula que atravessa o tempo',
   description: 'Sua campanha viva no tempo de cada jogador. Uma plataforma de RPG persistente com narração por IA.',
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/icon.png', type: 'image/png' },
+    ],
+    apple: [{ url: '/apple-icon.png', type: 'image/png' }],
+  },
 };
 
 export default function RootLayout({
