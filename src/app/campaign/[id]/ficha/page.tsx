@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Shield,
   Sword,
@@ -26,9 +27,17 @@ import {
   Droplets,
   Wine,
   Wind,
-  Flame
+  Flame,
+  Footprints,
+  Shirt,
+  Backpack,
+  Plus,
+  Minus,
+  TrendingUp,
+  Loader2,
+  BookMarked,
 } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Slider } from "@/components/ui/slider"
 
@@ -40,6 +49,7 @@ type CharacterStats = {
   wisdom: number
   charisma: number
   saving_throws: string[] | null
+  skills: Record<string, unknown> | null
   sheet_state: {
     hasInspiration?: boolean
     exhaustion?: number
@@ -56,13 +66,68 @@ type Character = {
   name: string
   race: string | null
   class: string | null
+  subclass: string | null
   level: number
   status: string
+  background: string | null
+  alignment: string | null
+  notes: string | null
   current_hp: number | null
   max_hp: number | null
   armor_class: number | null
+  speed: number | null
+  proficiency_bonus: number | null
   avatar_url: string | null
   character_stats: CharacterStats | null
+}
+
+type CharacterResource = {
+  id: string
+  resource_key: string
+  label: string
+  current_value: number
+  max_value: number
+  resource_type: string
+  recovery_rule: string | null
+}
+
+type CharacterCondition = {
+  id: string
+  condition_key: string
+  label: string
+  description: string | null
+  source: string | null
+  status: string
+}
+
+type ItemRow = {
+  id: string
+  name: string
+  item_type: string | null
+  rarity: string | null
+  description: string | null
+  properties: Record<string, unknown> | null
+}
+
+type EquippedItem = {
+  id: string
+  quantity: number
+  notes: string | null
+  item: ItemRow | null
+}
+
+type LevelUpRequest = {
+  id: string
+  from_level: number
+  to_level: number
+  status: "pending" | "approved" | "rejected" | "applied"
+  proposed_changes: Record<string, unknown> | null
+  created_at: string
+}
+
+function extractItem(raw: any): ItemRow | null {
+  if (!raw) return null
+  return Array.isArray(raw) ? raw[0] ?? null : raw
 }
 
 export default function FichaPersonagem() {
@@ -74,6 +139,11 @@ export default function FichaPersonagem() {
   const [character, setCharacter] = React.useState<Character | null>(null)
   const [loading, setLoading] = React.useState(true)
 
+  const [resources, setResources] = React.useState<CharacterResource[]>([])
+  const [conditions, setConditions] = React.useState<CharacterCondition[]>([])
+  const [equippedItems, setEquippedItems] = React.useState<EquippedItem[]>([])
+  const [levelUpRequest, setLevelUpRequest] = React.useState<LevelUpRequest | null>(null)
+
   const [isEditingPhoto, setIsEditingPhoto] = React.useState(false)
   const [photoUrlInput, setPhotoUrlUrlInput] = React.useState("")
 
@@ -81,13 +151,64 @@ export default function FichaPersonagem() {
   const [isCreateCharacterOpen, setIsCreateCharacterOpen] = React.useState(false)
   const [newCharacter, setNewCharacter] = React.useState({ name: "", race: "", class: "", level: 1 })
 
+  const [identityForm, setIdentityForm] = React.useState({ background: "", alignment: "" })
+  const [isSavingIdentity, setIsSavingIdentity] = React.useState(false)
+  const [notesInput, setNotesInput] = React.useState("")
+  const [isSavingNotes, setIsSavingNotes] = React.useState(false)
+
+  const [isLevelUpOpen, setIsLevelUpOpen] = React.useState(false)
+  const [levelUpForm, setLevelUpForm] = React.useState({ maxHp: "", notes: "" })
+  const [isRequestingLevelUp, setIsRequestingLevelUp] = React.useState(false)
+
+  const loadExtras = React.useCallback(async (characterId: string) => {
+    const supabase = createClient()
+
+    const [resourcesRes, conditionsRes, itemsRes, levelUpRes] = await Promise.all([
+      supabase
+        .from('character_resources')
+        .select('id, resource_key, label, current_value, max_value, resource_type, recovery_rule')
+        .eq('character_id', characterId)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('character_conditions')
+        .select('id, condition_key, label, description, source, status')
+        .eq('character_id', characterId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('character_items')
+        .select('id, quantity, notes, items(id, name, item_type, rarity, description, properties)')
+        .eq('character_id', characterId)
+        .eq('equipped', true),
+      supabase
+        .from('character_level_ups')
+        .select('id, from_level, to_level, status, proposed_changes, created_at')
+        .eq('character_id', characterId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+
+    setResources((resourcesRes.data as CharacterResource[]) || [])
+    setConditions((conditionsRes.data as CharacterCondition[]) || [])
+    setEquippedItems(
+      ((itemsRes.data as any[]) || []).map((row) => ({
+        id: row.id,
+        quantity: row.quantity,
+        notes: row.notes,
+        item: extractItem(row.items),
+      }))
+    )
+    setLevelUpRequest((levelUpRes.data as LevelUpRequest | null) || null)
+  }, [])
+
   const loadCharacter = React.useCallback(async () => {
     if (!user || !campaignId) return
     const supabase = createClient()
 
     const { data, error } = await supabase
       .from('characters')
-      .select('id, name, race, class, level, status, current_hp, max_hp, armor_class, avatar_url, character_stats(*)')
+      .select('id, name, race, class, subclass, level, status, background, alignment, notes, current_hp, max_hp, armor_class, speed, proficiency_bonus, avatar_url, character_stats(*)')
       .eq('campaign_id', campaignId)
       .eq('owner_user_id', user.uid)
       .order('created_at', { ascending: false })
@@ -99,8 +220,15 @@ export default function FichaPersonagem() {
     const rows = (data as unknown as Character[]) || []
     const chosen = rows.find((row) => row.status === 'active') ?? rows[0] ?? null
     setCharacter(chosen)
+
+    if (chosen) {
+      setIdentityForm({ background: chosen.background || "", alignment: chosen.alignment || "" })
+      setNotesInput(chosen.notes || "")
+      await loadExtras(chosen.id)
+    }
+
     setLoading(false)
-  }, [user, campaignId, toast])
+  }, [user, campaignId, toast, loadExtras])
 
   React.useEffect(() => {
     if (!user || !campaignId) return
@@ -250,7 +378,7 @@ export default function FichaPersonagem() {
     ? charStats.sheet_state
     : {};
   const characterLevel = character.level ?? 1;
-  const proficiency = Math.floor((characterLevel - 1) / 4) + 2;
+  const proficiency = character.proficiency_bonus ?? (Math.floor((characterLevel - 1) / 4) + 2);
 
   const charPhoto = character.avatar_url || `https://picsum.photos/seed/${character.id}/500/500`;
 
@@ -299,6 +427,111 @@ export default function FichaPersonagem() {
 
   async function updateExhaustion(val: number[]) {
     await updateSheetState({ exhaustion: val[0] })
+  }
+
+  async function handleSaveIdentity() {
+    if (!character) return
+    setIsSavingIdentity(true)
+    const supabase = createClient()
+    const payload = {
+      background: identityForm.background.trim() || null,
+      alignment: identityForm.alignment.trim() || null,
+    }
+    const { error } = await supabase.from('characters').update(payload).eq('id', character.id)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Salvar", description: error.message })
+      setIsSavingIdentity(false)
+      return
+    }
+
+    setCharacter({ ...character, ...payload })
+    toast({ title: "Identidade Atualizada" })
+    setIsSavingIdentity(false)
+  }
+
+  async function handleSaveNotes() {
+    if (!character) return
+    setIsSavingNotes(true)
+    const supabase = createClient()
+    const payload = { notes: notesInput.trim() || null }
+    const { error } = await supabase.from('characters').update(payload).eq('id', character.id)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Salvar", description: error.message })
+      setIsSavingNotes(false)
+      return
+    }
+
+    setCharacter({ ...character, ...payload })
+    toast({ title: "Anotações Salvas" })
+    setIsSavingNotes(false)
+  }
+
+  async function handleAdjustResource(resource: CharacterResource, delta: number) {
+    const next = Math.max(0, Math.min(resource.max_value, resource.current_value + delta))
+    if (next === resource.current_value) return
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('character_resources')
+      .update({ current_value: next })
+      .eq('id', resource.id)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Atualizar Recurso", description: error.message })
+      return
+    }
+
+    setResources((prev) => prev.map((r) => (r.id === resource.id ? { ...r, current_value: next } : r)))
+  }
+
+  function openLevelUpDialog() {
+    setLevelUpForm({ maxHp: character?.max_hp != null ? String(character.max_hp) : "", notes: "" })
+    setIsLevelUpOpen(true)
+  }
+
+  async function handleRequestLevelUp() {
+    if (!character || !user) return
+    setIsRequestingLevelUp(true)
+
+    const toLevel = characterLevel + 1
+    const suggestedProficiency = Math.floor((toLevel - 1) / 4) + 2
+    const proposedChanges: Record<string, unknown> = { proficiency_bonus: suggestedProficiency }
+
+    const parsedMaxHp = Number(levelUpForm.maxHp)
+    if (levelUpForm.maxHp.trim() && !Number.isNaN(parsedMaxHp)) {
+      proposedChanges.max_hp = parsedMaxHp
+    }
+    if (levelUpForm.notes.trim()) {
+      proposedChanges.notes = levelUpForm.notes.trim()
+    }
+
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('character_level_ups')
+      .insert({
+        campaign_id: campaignId,
+        character_id: character.id,
+        requested_by: user.uid,
+        from_level: characterLevel,
+        to_level: toLevel,
+        status: 'pending',
+        proposed_changes: proposedChanges,
+      })
+      .select('id, from_level, to_level, status, proposed_changes, created_at')
+      .single()
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Solicitar Level Up", description: error.message })
+      setIsRequestingLevelUp(false)
+      return
+    }
+
+    setLevelUpRequest(data as LevelUpRequest)
+    toast({ title: "Pedido Enviado", description: `Solicitação para o nível ${toLevel} aguarda o mestre.` })
+    setIsLevelUpOpen(false)
+    setIsRequestingLevelUp(false)
   }
 
   return (
@@ -397,8 +630,66 @@ export default function FichaPersonagem() {
         </div>
       </header>
 
+      {/* Bloco: Identidade */}
+      <section className="space-y-6">
+        <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+          <Info className="mr-2 h-4 w-4 text-primary" /> Identidade
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+          <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+            <span className="text-[9px] uppercase font-black tracking-widest text-muted-foreground block mb-1">Raça</span>
+            <span className="font-heading italic">{character.race || "—"}</span>
+          </div>
+          <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+            <span className="text-[9px] uppercase font-black tracking-widest text-muted-foreground block mb-1">Classe</span>
+            <span className="font-heading italic">{character.class || "—"}{character.subclass ? ` (${character.subclass})` : ""}</span>
+          </div>
+          <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+            <span className="text-[9px] uppercase font-black tracking-widest text-muted-foreground block mb-1">Nível</span>
+            <span className="font-heading italic">{characterLevel}</span>
+          </div>
+          <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+            <span className="text-[9px] uppercase font-black tracking-widest text-muted-foreground block mb-1">Status</span>
+            <span className="font-heading italic">{character.status === 'pending_approval' ? 'Aguardando Aprovação' : 'Ativo'}</span>
+          </div>
+        </div>
+
+        {!charStats && (
+          <p className="text-[11px] text-muted-foreground/70 italic">
+            Este personagem ainda não possui atributos registrados — exibindo valores padrão (10).
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Antecedente</Label>
+            <Input
+              value={identityForm.background}
+              onChange={(e) => setIdentityForm({ ...identityForm, background: e.target.value })}
+              placeholder="Ex: Eremita, Soldado, Charlatão..."
+              className="bg-black/30 border-white/10"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Tendência</Label>
+            <Input
+              value={identityForm.alignment}
+              onChange={(e) => setIdentityForm({ ...identityForm, alignment: e.target.value })}
+              placeholder="Ex: Neutro e Bom"
+              className="bg-black/30 border-white/10"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button onClick={handleSaveIdentity} disabled={isSavingIdentity} variant="outline" className="rounded-full border-primary/30 hover:bg-primary/5 text-[10px] uppercase tracking-widest font-display">
+            {isSavingIdentity ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : null}
+            Salvar Identidade
+          </Button>
+        </div>
+      </section>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* Coluna 1: Atributos e Resistências */}
+        {/* Bloco: Atributos */}
         <div className="lg:col-span-3 space-y-10">
           <section className="space-y-4">
             <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
@@ -431,8 +722,12 @@ export default function FichaPersonagem() {
           </section>
         </div>
 
-        {/* Coluna 2: Status Vital e Combate */}
+        {/* Bloco: Combate básico */}
         <div className="lg:col-span-6 space-y-10">
+          <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+            <Sword className="mr-2 h-4 w-4 text-primary" /> Combate Básico
+          </h3>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card className="bg-[#2B1218]/20 border-destructive/20 literary-shadow overflow-hidden group">
               <div className="h-1 bg-destructive/30" />
@@ -445,10 +740,10 @@ export default function FichaPersonagem() {
                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Vitalidade</h4>
                   </div>
                   <div className="text-right">
-                    <span className="text-4xl font-display font-bold text-destructive">{character.current_hp || 0} / {character.max_hp || 0}</span>
+                    <span className="text-4xl font-display font-bold text-destructive">{character.current_hp ?? 0} / {character.max_hp ?? 0}</span>
                   </div>
                 </div>
-                <Progress value={((character.current_hp || 0) / (character.max_hp || 1)) * 100} className="h-2 bg-destructive/10" />
+                <Progress value={((character.current_hp ?? 0) / (character.max_hp || 1)) * 100} className="h-2 bg-destructive/10" />
 
                 {(character.current_hp ?? 0) <= 0 && (
                    <div className="pt-4 space-y-3">
@@ -482,16 +777,26 @@ export default function FichaPersonagem() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-2 gap-6">
-             <div className="p-8 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                <Shield className="h-10 w-10 text-primary mb-4" />
-                <span className="text-[10px] uppercase font-black tracking-widest opacity-40">Defesa (CA)</span>
-                <span className="text-6xl font-display font-black text-primary">{character.armor_class || 10}</span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                <Shield className="h-8 w-8 text-primary mb-3" />
+                <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Defesa (CA)</span>
+                <span className="text-4xl font-display font-black text-primary">{character.armor_class ?? 10}</span>
              </div>
-             <div className="p-8 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                <Zap className="h-10 w-10 text-accent mb-4" />
-                <span className="text-[10px] uppercase font-black tracking-widest opacity-40">Iniciativa</span>
-                <span className="text-6xl font-display font-black text-accent">{Number(calculateModifier(stats.dex)) >= 0 ? `+${calculateModifier(stats.dex)}` : calculateModifier(stats.dex)}</span>
+             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                <Zap className="h-8 w-8 text-accent mb-3" />
+                <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Iniciativa</span>
+                <span className="text-4xl font-display font-black text-accent">{Number(calculateModifier(stats.dex)) >= 0 ? `+${calculateModifier(stats.dex)}` : calculateModifier(stats.dex)}</span>
+             </div>
+             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                <Footprints className="h-8 w-8 text-secondary mb-3" />
+                <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Deslocamento</span>
+                <span className="text-4xl font-display font-black text-secondary">{character.speed ?? "—"}</span>
+             </div>
+             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                <Star className="h-8 w-8 text-primary mb-3" />
+                <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Proficiência</span>
+                <span className="text-4xl font-display font-black text-primary">+{proficiency}</span>
              </div>
           </div>
 
@@ -543,19 +848,39 @@ export default function FichaPersonagem() {
           </div>
         </div>
 
-        {/* Coluna 3: Condições e Informações */}
+        {/* Bloco: Condições e Itens Equipados */}
         <div className="lg:col-span-3 space-y-10">
           <section className="space-y-6">
             <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
               <Ghost className="mr-2 h-4 w-4 text-primary" /> Condições Ativas
             </h3>
             <div className="flex flex-col gap-3">
-              {sheetState.conditions && sheetState.conditions.length > 0 ? sheetState.conditions.map((cond: string, i: number) => (
-                <ConditionBadge key={i} condition={cond} />
+              {conditions.length > 0 ? conditions.map((cond) => (
+                <ConditionBadge key={cond.id} condition={cond} />
               )) : (
                 <div className="p-6 border border-dashed border-white/5 rounded-2xl text-center opacity-30 italic text-xs">Sem enfermidades</div>
               )}
             </div>
+          </section>
+
+          {/* Bloco: Itens Equipados */}
+          <section className="space-y-6">
+            <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+              <Shirt className="mr-2 h-4 w-4 text-primary" /> Itens Equipados
+            </h3>
+            <div className="flex flex-col gap-3">
+              {equippedItems.length > 0 ? equippedItems.map((ci) => (
+                <EquippedItemCard key={ci.id} characterItem={ci} />
+              )) : (
+                <div className="p-6 border border-dashed border-white/5 rounded-2xl text-center opacity-30 italic text-xs flex flex-col items-center gap-2">
+                  <Backpack className="h-5 w-5" />
+                  Nenhum item equipado.
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-muted-foreground/60 italic leading-relaxed">
+              Bônus de equipamentos serão aplicados automaticamente na fase de combate/ficha avançada.
+            </p>
           </section>
 
           <Card className="bg-primary/5 border-primary/20 oracle-glow">
@@ -571,6 +896,148 @@ export default function FichaPersonagem() {
           </Card>
         </div>
       </div>
+
+      {/* Bloco: Recursos */}
+      <section className="space-y-6">
+        <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+          <BookMarked className="mr-2 h-4 w-4 text-primary" /> Recursos
+        </h3>
+        {resources.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {resources.map((resource) => (
+              <Card key={resource.id} className="bg-white/5 border-white/5 p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-display font-bold text-sm">{resource.label}</span>
+                  <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-white/10 text-muted-foreground">
+                    {resource.resource_type}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 rounded-full border border-white/10"
+                    disabled={resource.current_value <= 0}
+                    onClick={() => handleAdjustResource(resource, -1)}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="font-code font-bold text-lg">{resource.current_value} / {resource.max_value}</span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 rounded-full border border-white/10"
+                    disabled={resource.current_value >= resource.max_value}
+                    onClick={() => handleAdjustResource(resource, 1)}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                {resource.recovery_rule && (
+                  <p className="text-[10px] text-muted-foreground/70 italic">{resource.recovery_rule}</p>
+                )}
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="p-6 border border-dashed border-white/5 rounded-2xl text-center opacity-30 italic text-xs">
+            Nenhum recurso registrado. O mestre poderá adicionar dados de vida, espaços de magia e outros recursos conforme a campanha evolui.
+          </div>
+        )}
+      </section>
+
+      {/* Bloco: Anotações */}
+      <section className="space-y-4">
+        <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+          <BookMarked className="mr-2 h-4 w-4 text-primary" /> Anotações
+        </h3>
+        <Textarea
+          value={notesInput}
+          onChange={(e) => setNotesInput(e.target.value)}
+          placeholder="Anotações pessoais, lembretes, segredos do personagem..."
+          className="bg-black/30 border-white/10 min-h-32 font-heading italic"
+        />
+        <div className="flex justify-end">
+          <Button onClick={handleSaveNotes} disabled={isSavingNotes} variant="outline" className="rounded-full border-primary/30 hover:bg-primary/5 text-[10px] uppercase tracking-widest font-display">
+            {isSavingNotes ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : null}
+            Salvar Anotações
+          </Button>
+        </div>
+      </section>
+
+      {/* Bloco: Progressão / Level Up */}
+      <section className="space-y-4">
+        <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
+          <TrendingUp className="mr-2 h-4 w-4 text-primary" /> Progressão / Level Up
+        </h3>
+        <Card className="bg-white/5 border-white/5 p-8 space-y-4">
+          <p className="text-sm text-muted-foreground font-heading italic">
+            {character.name} está atualmente no nível <span className="text-primary font-bold not-italic">{characterLevel}</span>.
+          </p>
+
+          {levelUpRequest?.status === 'pending' ? (
+            <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 text-sm">
+              Pedido de level up para o nível <span className="font-bold">{levelUpRequest.to_level}</span> enviado e aguardando aprovação do mestre.
+            </div>
+          ) : (
+            <>
+              {levelUpRequest?.status === 'rejected' && (
+                <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-sm">
+                  Seu último pedido de level up (nível {levelUpRequest.to_level}) foi rejeitado pelo mestre. Você pode enviar um novo pedido.
+                </div>
+              )}
+              <Dialog open={isLevelUpOpen} onOpenChange={setIsLevelUpOpen}>
+                <DialogTrigger asChild>
+                  <Button onClick={openLevelUpDialog} className="bg-primary rounded-full px-8 font-display text-[10px] uppercase tracking-widest gap-2">
+                    <TrendingUp className="h-4 w-4" /> Solicitar Level Up
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-card/95 border-white/10 text-[#FFF6E5]">
+                  <DialogHeader>
+                    <DialogTitle className="font-display">Solicitar Level Up</DialogTitle>
+                    <DialogDescription className="font-heading italic">
+                      Proponha sua evolução do nível {characterLevel} para o nível {characterLevel + 1}. O mestre revisará e aplicará as mudanças.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-sm space-y-1">
+                      <p>Bônus de Proficiência sugerido: <span className="font-bold text-primary">+{Math.floor(((characterLevel + 1) - 1) / 4) + 2}</span></p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">HP Máximo Sugerido (opcional)</Label>
+                      <Input
+                        type="number"
+                        value={levelUpForm.maxHp}
+                        onChange={(e) => setLevelUpForm({ ...levelUpForm, maxHp: e.target.value })}
+                        placeholder={character.max_hp != null ? String(character.max_hp) : "Ex: 24"}
+                        className="bg-black/30 border-white/10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Mensagem para o Mestre (opcional)</Label>
+                      <Textarea
+                        value={levelUpForm.notes}
+                        onChange={(e) => setLevelUpForm({ ...levelUpForm, notes: e.target.value })}
+                        placeholder="Ex: Escolhi a magia X, peço o recurso Y..."
+                        className="bg-black/30 border-white/10"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsLevelUpOpen(false)} className="rounded-full border-white/10">
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleRequestLevelUp} disabled={isRequestingLevelUp} className="btn-ritual rounded-full">
+                      {isRequestingLevelUp ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      Enviar Pedido
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </>
+          )}
+        </Card>
+      </section>
     </div>
   )
 }
@@ -606,9 +1073,9 @@ function ActionCard({ name, detail }: { name: string, detail: string }) {
   )
 }
 
-function ConditionBadge({ condition }: { condition: string }) {
+function ConditionBadge({ condition }: { condition: CharacterCondition }) {
   const getIcon = () => {
-    const c = condition.toLowerCase();
+    const c = condition.label.toLowerCase();
     if (c.includes('envenenado')) return <Skull className="h-3 w-3" />;
     if (c.includes('bêbado') || c.includes('bebado')) return <Wine className="h-3 w-3" />;
     if (c.includes('sangramento')) return <Droplets className="h-3 w-3" />;
@@ -616,12 +1083,55 @@ function ConditionBadge({ condition }: { condition: string }) {
   }
 
   return (
-    <div className="flex items-center justify-between p-4 rounded-xl bg-destructive/5 border border-destructive/20 text-destructive">
-       <div className="flex items-center gap-3">
-         {getIcon()}
-         <span className="text-[10px] font-black uppercase tracking-widest">{condition}</span>
+    <div className="flex flex-col gap-1 p-4 rounded-xl bg-destructive/5 border border-destructive/20 text-destructive">
+       <div className="flex items-center justify-between">
+         <div className="flex items-center gap-3">
+           {getIcon()}
+           <span className="text-[10px] font-black uppercase tracking-widest">{condition.label}</span>
+         </div>
+         <Info className="h-3 w-3 opacity-30" />
        </div>
-       <Info className="h-3 w-3 opacity-30" />
+       {condition.description && (
+         <p className="text-[10px] text-destructive/70 italic">{condition.description}</p>
+       )}
+    </div>
+  )
+}
+
+function EquippedItemCard({ characterItem }: { characterItem: EquippedItem }) {
+  const item = characterItem.item
+  if (!item) return null
+  const properties = item.properties && Object.keys(item.properties).length > 0 ? item.properties : null
+
+  return (
+    <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-sm font-display font-bold">{item.name}</span>
+        {characterItem.quantity > 1 && (
+          <Badge variant="secondary" className="text-[9px] shrink-0">x{characterItem.quantity}</Badge>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {item.item_type && (
+          <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-white/10 text-muted-foreground">
+            {item.item_type}
+          </Badge>
+        )}
+        {item.rarity && (
+          <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-accent/30 text-accent">
+            {item.rarity}
+          </Badge>
+        )}
+      </div>
+      {properties && (
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(properties).map(([key, value]) => (
+            <Badge key={key} variant="outline" className="text-[9px] border-white/10 text-muted-foreground/80">
+              {key}: {String(value)}
+            </Badge>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
