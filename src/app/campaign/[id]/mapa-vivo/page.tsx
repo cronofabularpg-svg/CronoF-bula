@@ -44,6 +44,10 @@ export default function MapaVivo() {
   const [isInvestigateOpen, setIsInvestigateOpen] = React.useState(false)
   const [newLocation, setNewLocation] = React.useState({ name: "", type: "city", description: "", visibility: "visible" })
 
+  // Preparação Fase 10: item_type='map' poderá liberar anotações pessoais no Mapa Vivo.
+  // Não bloqueia a visualização básica de locais já visíveis.
+  const [hasMapItem, setHasMapItem] = React.useState(false)
+
   React.useEffect(() => {
     if (!campaignId) return
     let active = true
@@ -105,6 +109,34 @@ export default function MapaVivo() {
         sceneData = data
       }
 
+      if (user) {
+        const { data: character } = await supabase
+          .from('characters')
+          .select('id')
+          .eq('campaign_id', campaignId)
+          .eq('owner_user_id', user.uid)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (character) {
+          const { data: itemRows } = await supabase
+            .from('character_items')
+            .select('items(name, item_type)')
+            .eq('character_id', character.id)
+
+          const found = (itemRows || []).some((row: any) => {
+            const item = Array.isArray(row.items) ? row.items[0] : row.items
+            if (!item) return false
+            const type = (item.item_type || '').toLowerCase()
+            const name = (item.name || '').toLowerCase()
+            return type === 'map' || /mapa/.test(name)
+          })
+
+          if (active) setHasMapItem(found)
+        }
+      }
+
       if (!active) return
       setLocations(locationData || [])
       setActiveSession(sessionData)
@@ -117,7 +149,7 @@ export default function MapaVivo() {
     return () => {
       active = false
     }
-  }, [campaignId, toast])
+  }, [campaignId, toast, user])
 
   const displayLocations = locations.map((location, index) => ({
     ...location,
@@ -257,6 +289,11 @@ export default function MapaVivo() {
             <MapPin className="mr-3 h-6 w-6 text-primary animate-pulse" /> Cartografia da Crônica
           </h1>
           <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-[0.2em] mt-1">Costa de Arvand</p>
+          {hasMapItem && (
+            <Badge variant="outline" className="mt-2 text-[9px] uppercase tracking-widest border-accent/30 text-accent">
+              Mapa em posse — anotações pessoais em breve
+            </Badge>
+          )}
         </div>
         <div className="flex gap-3">
           {isMaster && (

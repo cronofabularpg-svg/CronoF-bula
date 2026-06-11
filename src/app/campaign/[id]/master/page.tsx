@@ -33,7 +33,12 @@ import {
   Wand2,
   CircleCheck,
   CircleX,
-  BookMarked
+  BookMarked,
+  Gift,
+  BookOpen,
+  Map as MapIcon,
+  FileText,
+  KeyRound,
 } from "lucide-react"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
@@ -158,6 +163,30 @@ type WorldPrepSummary = {
   quests: Array<{ id: string; title: string; visibility: string; created_at: string }>
 }
 
+type CampaignItem = {
+  id: string
+  name: string
+  item_type: string | null
+  description: string | null
+  rarity: string | null
+  visibility: WorldVisibility
+  created_at: string
+}
+
+type CampaignCharacterOption = {
+  id: string
+  name: string
+}
+
+type SpecialItemKey = "diario" | "mapa" | "documento" | "chave"
+
+const SPECIAL_ITEM_PRESETS: Record<SpecialItemKey, { name: string; item_type: string; description: string; icon: React.ReactNode; defaultVisibility: WorldVisibility }> = {
+  diario: { name: "Diário", item_type: "journal", description: "Um diário de bordo para registrar memórias da jornada.", icon: <BookOpen className="h-4 w-4" />, defaultVisibility: "party" },
+  mapa: { name: "Mapa", item_type: "map", description: "Um mapa com locais conhecidos da região.", icon: <MapIcon className="h-4 w-4" />, defaultVisibility: "master_only" },
+  documento: { name: "Documento", item_type: "document", description: "Um documento com informações relevantes para a história.", icon: <FileText className="h-4 w-4" />, defaultVisibility: "master_only" },
+  chave: { name: "Chave", item_type: "key", description: "Uma chave que pode abrir algo importante.", icon: <KeyRound className="h-4 w-4" />, defaultVisibility: "master_only" },
+}
+
 function toNpcVisibility(visibility: WorldVisibility): string {
   return visibility === 'master_only' ? 'master_only' : visibility === 'public' ? 'public' : 'visible'
 }
@@ -268,6 +297,18 @@ export default function MasterPanel() {
     factions: [],
     quests: [],
   })
+
+  // Inventário real: itens da campanha, personagens e entrega de itens
+  const [campaignItems, setCampaignItems] = React.useState<CampaignItem[]>([])
+  const [campaignCharacters, setCampaignCharacters] = React.useState<CampaignCharacterOption[]>([])
+  const [activeSession, setActiveSession] = React.useState<{ id: string } | null>(null)
+  const [activeScene, setActiveScene] = React.useState<{ id: string } | null>(null)
+  const [deliverItem, setDeliverItem] = React.useState<CampaignItem | null>(null)
+  const [deliverForm, setDeliverForm] = React.useState({ characterId: "", quantity: "1", notes: "" })
+  const [isDelivering, setIsDelivering] = React.useState(false)
+  const [quickCreateKey, setQuickCreateKey] = React.useState<SpecialItemKey | null>(null)
+  const [quickCreateVisibility, setQuickCreateVisibility] = React.useState<WorldVisibility>("master_only")
+  const [isCreatingQuickItem, setIsCreatingQuickItem] = React.useState(false)
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -406,10 +447,178 @@ export default function MasterPanel() {
       })
     })
 
+    supabase
+      .from('items')
+      .select('id, name, item_type, description, rarity, visibility, created_at')
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Itens", description: error.message })
+        }
+        setCampaignItems((data as CampaignItem[]) || [])
+      })
+
+    supabase
+      .from('characters')
+      .select('id, name')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'active')
+      .order('name', { ascending: true })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Personagens", description: error.message })
+        }
+        setCampaignCharacters((data as CampaignCharacterOption[]) || [])
+      })
+
+    supabase
+      .from('sessions')
+      .select('id')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data: session }) => {
+        if (!active) return
+        setActiveSession(session)
+        if (!session) {
+          setActiveScene(null)
+          return
+        }
+        supabase
+          .from('scenes')
+          .select('id')
+          .eq('session_id', session.id)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then(({ data: scene }) => {
+            if (active) setActiveScene(scene)
+          })
+      })
+
     return () => {
       active = false
     }
   }, [campaignId, toast])
+
+  async function refreshCampaignItems() {
+    if (!campaignId) return
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('items')
+      .select('id, name, item_type, description, rarity, visibility, created_at')
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Carregar Itens", description: error.message })
+      return
+    }
+    setCampaignItems((data as CampaignItem[]) || [])
+  }
+
+  async function handleConfirmDeliverItem() {
+    if (!deliverItem || !deliverForm.characterId || !user) return
+
+    const quantity = Math.max(1, Number.parseInt(deliverForm.quantity, 10) || 1)
+    const supabase = createClient()
+    setIsDelivering(true)
+
+    const { data: existing, error: existingError } = await supabase
+      .from('character_items')
+      .select('id, quantity')
+      .eq('character_id', deliverForm.characterId)
+      .eq('item_id', deliverItem.id)
+      .maybeSingle()
+
+    if (existingError) {
+      toast({ variant: "destructive", title: "Erro ao Verificar Inventário", description: existingError.message })
+      setIsDelivering(false)
+      return
+    }
+
+    const upsertResult = existing
+      ? await supabase
+          .from('character_items')
+          .update({
+            quantity: existing.quantity + quantity,
+            ...(deliverForm.notes ? { notes: deliverForm.notes } : {}),
+          })
+          .eq('id', existing.id)
+      : await supabase.from('character_items').insert({
+          campaign_id: campaignId,
+          character_id: deliverForm.characterId,
+          item_id: deliverItem.id,
+          quantity,
+          equipped: false,
+          notes: deliverForm.notes || null,
+        })
+
+    if (upsertResult.error) {
+      toast({ variant: "destructive", title: "Erro ao Entregar Item", description: upsertResult.error.message })
+      setIsDelivering(false)
+      return
+    }
+
+    const character = campaignCharacters.find((c) => c.id === deliverForm.characterId)
+
+    if (activeSession && activeScene && character) {
+      await supabase.from('scene_events').insert({
+        campaign_id: campaignId,
+        session_id: activeSession.id,
+        scene_id: activeScene.id,
+        event_type: 'item_delivery',
+        content: `${character.name} recebeu ${deliverItem.name}`,
+        metadata: { item_id: deliverItem.id, quantity },
+        created_by: user.uid,
+      })
+    }
+
+    toast({
+      title: "Item entregue",
+      description: `${deliverItem.name} entregue para ${character?.name ?? 'personagem'}.`,
+    })
+
+    setDeliverItem(null)
+    setDeliverForm({ characterId: "", quantity: "1", notes: "" })
+    setIsDelivering(false)
+  }
+
+  async function handleCreateQuickItem() {
+    if (!quickCreateKey || !user) return
+    const preset = SPECIAL_ITEM_PRESETS[quickCreateKey]
+    const supabase = createClient()
+    setIsCreatingQuickItem(true)
+
+    const { error } = await supabase.from('items').insert({
+      campaign_id: campaignId,
+      name: preset.name,
+      item_type: preset.item_type,
+      description: preset.description,
+      rarity: 'common',
+      visibility: quickCreateVisibility,
+      created_by: user.uid,
+    })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Criar Item", description: error.message })
+      setIsCreatingQuickItem(false)
+      return
+    }
+
+    toast({ title: "Item criado", description: `${preset.name} foi adicionado ao mundo da campanha.` })
+    await refreshCampaignItems()
+    await refreshWorldPrepSummary()
+    setQuickCreateKey(null)
+    setQuickCreateVisibility('master_only')
+    setIsCreatingQuickItem(false)
+  }
 
   async function refreshWorldPrepSummary() {
     if (!campaignId) return
@@ -1529,6 +1738,20 @@ export default function MasterPanel() {
 
           <WorldPrepSummaryPanel summary={worldPrepSummary} campaignId={campaignId} />
 
+          <ItemsInventoryPanel
+            items={campaignItems}
+            characters={campaignCharacters}
+            onDeliver={(item) => {
+              setDeliverItem(item)
+              setDeliverForm({ characterId: "", quantity: "1", notes: "" })
+            }}
+            onQuickCreate={(key) => {
+              setQuickCreateKey(key)
+              setQuickCreateVisibility(SPECIAL_ITEM_PRESETS[key].defaultVisibility)
+            }}
+            isCreatingQuickItem={isCreatingQuickItem}
+          />
+
           {worldProposal && (
             <Card className="bg-card/30 border-primary/20 p-8 space-y-8">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1661,6 +1884,112 @@ export default function MasterPanel() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Modal: Entregar Item a Personagem */}
+      <Dialog open={Boolean(deliverItem)} onOpenChange={(open) => !open && setDeliverItem(null)}>
+        <DialogContent className="bg-card border-accent/30 max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-display text-accent flex items-center gap-3">
+              <Gift className="h-6 w-6" /> Entregar Item
+            </DialogTitle>
+            <DialogDescription className="font-heading italic">
+              {deliverItem ? `Entregar "${deliverItem.name}" para um personagem da campanha.` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-[10px] uppercase font-bold tracking-widest">Personagem</Label>
+              <select
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                value={deliverForm.characterId}
+                onChange={(e) => setDeliverForm({ ...deliverForm, characterId: e.target.value })}
+              >
+                <option value="">Selecione um personagem</option>
+                {campaignCharacters.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              {campaignCharacters.length === 0 && (
+                <p className="text-[11px] text-muted-foreground">Nenhum personagem ativo nesta campanha.</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] uppercase font-bold tracking-widest">Quantidade</Label>
+              <Input
+                type="number"
+                min={1}
+                value={deliverForm.quantity}
+                onChange={(e) => setDeliverForm({ ...deliverForm, quantity: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] uppercase font-bold tracking-widest">Observação (opcional)</Label>
+              <Textarea
+                value={deliverForm.notes}
+                onChange={(e) => setDeliverForm({ ...deliverForm, notes: e.target.value })}
+                className="min-h-[80px]"
+                placeholder="Ex: encontrado nas ruínas do templo"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeliverItem(null)}>Cancelar</Button>
+            <Button
+              onClick={handleConfirmDeliverItem}
+              disabled={isDelivering || !deliverForm.characterId}
+              className="bg-primary px-10 rounded-full h-12"
+            >
+              {isDelivering ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Gift className="h-4 w-4 mr-2" />}
+              Entregar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Criar Item Especial */}
+      <Dialog open={Boolean(quickCreateKey)} onOpenChange={(open) => !open && setQuickCreateKey(null)}>
+        <DialogContent className="bg-card border-accent/30 max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-display text-accent flex items-center gap-3">
+              {quickCreateKey ? SPECIAL_ITEM_PRESETS[quickCreateKey].icon : null}
+              Criar {quickCreateKey ? SPECIAL_ITEM_PRESETS[quickCreateKey].name : ""}
+            </DialogTitle>
+            <DialogDescription className="font-heading italic">
+              O item será criado no registro real de itens da campanha.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2">
+            <Label className="text-[10px] uppercase font-bold tracking-widest">Visibilidade</Label>
+            <select
+              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              value={quickCreateVisibility}
+              onChange={(e) => setQuickCreateVisibility(e.target.value as WorldVisibility)}
+            >
+              <option value="master_only">Apenas Mestre</option>
+              <option value="party">Grupo</option>
+              <option value="public">Público</option>
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              Itens "Apenas Mestre" ficam visíveis ao jogador somente após serem entregues ao personagem.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setQuickCreateKey(null)}>Cancelar</Button>
+            <Button
+              onClick={handleCreateQuickItem}
+              disabled={isCreatingQuickItem}
+              className="bg-primary px-10 rounded-full h-12"
+            >
+              {isCreatingQuickItem ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Criar Item
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Revisão da Crônica */}
       <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>
@@ -1889,6 +2218,112 @@ function WorldPrepList({ title, items }: { title: string; items: Array<{ id: str
         </div>
       ))}
     </div>
+  )
+}
+
+const ITEM_VISIBILITY_LABEL: Record<string, string> = {
+  public: "Público",
+  party: "Grupo",
+  master_only: "Apenas Mestre",
+}
+
+function ItemsInventoryPanel({
+  items,
+  characters,
+  onDeliver,
+  onQuickCreate,
+  isCreatingQuickItem,
+}: {
+  items: CampaignItem[]
+  characters: CampaignCharacterOption[]
+  onDeliver: (item: CampaignItem) => void
+  onQuickCreate: (key: SpecialItemKey) => void
+  isCreatingQuickItem: boolean
+}) {
+  return (
+    <Card className="bg-card/30 border-white/5 p-6 space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h3 className="font-display font-bold text-2xl flex items-center gap-3">
+            <Package className="h-6 w-6 text-accent" /> Itens & Inventário
+          </h3>
+          <p className="text-sm text-muted-foreground font-heading italic mt-1">
+            Entregue itens reais aos personagens. A entrega é registrada em character_items.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h4 className="text-[10px] uppercase font-bold tracking-[0.25em] text-muted-foreground">Criar item especial</h4>
+        <div className="flex flex-wrap gap-3">
+          {(Object.keys(SPECIAL_ITEM_PRESETS) as SpecialItemKey[]).map((key) => (
+            <Button
+              key={key}
+              type="button"
+              variant="outline"
+              disabled={isCreatingQuickItem}
+              onClick={() => onQuickCreate(key)}
+              className="rounded-full border-accent/30 text-accent hover:bg-accent/10 h-10 text-[10px] uppercase tracking-widest gap-2"
+            >
+              {SPECIAL_ITEM_PRESETS[key].icon}
+              {SPECIAL_ITEM_PRESETS[key].name}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h4 className="text-[10px] uppercase font-bold tracking-[0.25em] text-muted-foreground">Itens da campanha</h4>
+        {items.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-muted-foreground">
+            Nenhum item criado ainda.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {items.map((item) => (
+              <div key={item.id} className="rounded-xl bg-white/5 border border-white/5 p-4 flex items-start justify-between gap-4">
+                <div className="space-y-1 min-w-0">
+                  <p className="text-sm font-bold truncate">{item.name}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {item.item_type && (
+                      <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-white/10 text-muted-foreground">
+                        {item.item_type}
+                      </Badge>
+                    )}
+                    {item.rarity && (
+                      <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-accent/30 text-accent">
+                        {item.rarity}
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-secondary/30 text-secondary">
+                      {ITEM_VISIBILITY_LABEL[item.visibility] || item.visibility}
+                    </Badge>
+                  </div>
+                  {item.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={characters.length === 0}
+                  onClick={() => onDeliver(item)}
+                  className="rounded-full border-primary/30 text-primary hover:bg-primary/10 h-9 text-[10px] uppercase tracking-widest gap-2 shrink-0"
+                >
+                  <Gift className="h-3.5 w-3.5" /> Entregar
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+        {characters.length === 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            Nenhum personagem ativo nesta campanha para receber itens.
+          </p>
+        )}
+      </div>
+    </Card>
   )
 }
 

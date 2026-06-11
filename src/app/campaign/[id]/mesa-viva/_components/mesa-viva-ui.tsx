@@ -347,7 +347,7 @@ export function PlayerActionPanel({
   return (
     <div className="space-y-3">
       <p className="text-[9px] font-display uppercase tracking-[0.3em] text-muted-foreground opacity-50">Ação do Jogador</p>
-      <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="flex flex-wrap items-center gap-4">
         <ModeButton icon={<Volume2 />} label="Falar" active={actionMode === "speech"} onClick={() => onSelectMode("speech")} />
         <ModeButton icon={<Ghost />} label="Agir" active={actionMode === "action"} onClick={() => onSelectMode("action")} />
         <ModeButton icon={<Dices />} label="Rolar" onClick={onOpenDice} />
@@ -407,11 +407,11 @@ export function MasterActionPanel({
       <p className="text-[9px] font-display uppercase tracking-[0.3em] text-accent opacity-60 flex items-center gap-2">
         <Crown className="h-3 w-3" /> Ação do Mestre
       </p>
-      <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="flex flex-wrap items-center gap-4">
         <ModeButton icon={<Sparkles />} label="Narrar Cena" active={actionMode === "narration"} onClick={() => onSelectMode("narration")} />
         <ModeButton icon={<MessageSquare />} label="Responder como NPC" active={actionMode === "npc_dialogue"} onClick={() => onSelectMode("npc_dialogue")} />
         <ModeButton icon={<ScrollText />} label="Registrar Evento" active={actionMode === "event"} onClick={() => onSelectMode("event")} />
-        <div className="h-8 w-px bg-white/10 mx-1 shrink-0" />
+        <div className="hidden md:block h-8 w-px bg-white/10 mx-1 shrink-0" />
         <ModeButton
           icon={<Megaphone />}
           label={pendingCount > 0 ? `Publicar Sugestão (${pendingCount})` : "Publicar Sugestão"}
