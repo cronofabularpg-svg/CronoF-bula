@@ -203,6 +203,9 @@ export default function Diario() {
           <p className="text-lg text-muted-foreground/70 font-heading italic">
             A escrita e o registro de memórias serão ativados em uma fase futura. Por enquanto, seu Diário está liberado.
           </p>
+          <p className="text-sm text-muted-foreground/50 font-heading italic">
+            O Diário é um item físico/diegético da campanha — guarde-o com cuidado em seu Inventário.
+          </p>
         </div>
         <div className="flex gap-8">
           <Button asChild variant="outline" className="rounded-full border-primary/20 hover:bg-primary/5 px-12 h-16 font-display text-[10px] tracking-widest">
@@ -227,17 +230,15 @@ export default function Diario() {
       <div className="max-w-2xl space-y-6">
         <h1 className="text-6xl font-display font-black tracking-tighter text-primary">Memórias Inacessíveis</h1>
         <p className="text-3xl font-heading italic text-muted-foreground leading-relaxed">
-          {characterName
-            ? `${characterName} ainda não possui um Diário para registrar suas memórias.`
-            : "As páginas de sua jornada não estão em suas mãos."}
+          Você ainda não possui um Diário no Inventário.
         </p>
         <p className="text-lg text-muted-foreground/70 font-heading italic">
-          O Diário depende do item "Diário". Peça ao mestre para entregá-lo ou verifique seu inventário.
+          O Diário é um item físico/diegético da campanha. Peça ao mestre para entregá-lo através do Portal do Mestre ou verifique seu Inventário.
         </p>
       </div>
       <div className="flex flex-wrap justify-center gap-8">
         <Button asChild variant="outline" className="rounded-full border-primary/20 hover:bg-primary/5 px-12 h-16 font-display text-[10px] tracking-widest">
-          <Link href={`/campaign/${campaignId}/inventario`}>Verificar Inventário</Link>
+          <Link href={`/campaign/${campaignId}/inventario`}>Voltar ao Inventário</Link>
         </Button>
         <Button asChild className="btn-ritual rounded-full px-16 h-16 literary-shadow">
           <Link href={`/campaign/${campaignId}/mesa-viva`}>Voltar à Mesa</Link>
@@ -250,7 +251,7 @@ export default function Diario() {
             className="rounded-full border-accent/30 text-accent hover:bg-accent/10 px-12 h-16 font-display text-[10px] tracking-widest"
           >
             {isDelivering ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Entregar Diário a este personagem
+            Entregar Diário
           </Button>
         )}
       </div>

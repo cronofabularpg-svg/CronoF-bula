@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import {
   Package,
@@ -20,6 +21,9 @@ import {
   ScrollText,
   FlaskConical,
   BookOpen,
+  Map as MapIcon,
+  FileText,
+  KeyRound,
   Loader2,
 } from "lucide-react"
 
@@ -72,6 +76,19 @@ function categorize(item: ItemRow): Category {
   return "geral"
 }
 
+type SpecialAction = "journal" | "map" | "document" | "key" | null
+
+function specialActionFor(item: ItemRow): SpecialAction {
+  const type = (item.item_type || "").toLowerCase()
+  const name = (item.name || "").toLowerCase()
+
+  if (type === "journal" || /di[áa]rio/.test(name)) return "journal"
+  if (type === "map" || /mapa/.test(name)) return "map"
+  if (type === "document" || /documento/.test(name)) return "document"
+  if (type === "key" || /chave/.test(name)) return "key"
+  return null
+}
+
 function extractItem(raw: any): ItemRow | null {
   if (!raw) return null
   return Array.isArray(raw) ? raw[0] ?? null : raw
@@ -87,6 +104,7 @@ export default function Inventario() {
   const [characterItems, setCharacterItems] = React.useState<CharacterItem[]>([])
   const [loading, setLoading] = React.useState(true)
   const [updatingId, setUpdatingId] = React.useState<string | null>(null)
+  const [inspectItem, setInspectItem] = React.useState<ItemRow | null>(null)
 
   const loadInventory = React.useCallback(async () => {
     if (!user || !campaignId) return
@@ -280,13 +298,36 @@ export default function Inventario() {
           <InventorySection
             title="Documentos / Diário / Mapa"
             icon={<BookOpen className="h-5 w-5 text-primary" />}
+            description="Itens desta seção podem desbloquear áreas e registros da campanha."
             items={documentos}
             onToggleEquip={handleToggleEquip}
             updatingId={updatingId}
             emptyLabel="Nenhum documento."
+            campaignId={campaignId}
+            onInspect={setInspectItem}
           />
         </div>
       )}
+
+      <Dialog open={!!inspectItem} onOpenChange={(open) => !open && setInspectItem(null)}>
+        <DialogContent className="bg-card/95 border-white/10 text-[#FFF6E5]">
+          <DialogHeader>
+            <DialogTitle className="font-display">{inspectItem?.name}</DialogTitle>
+            <DialogDescription className="font-heading italic">
+              {inspectItem?.description || "Sem descrição registrada."}
+            </DialogDescription>
+          </DialogHeader>
+          {inspectItem?.properties && Object.keys(inspectItem.properties).length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {Object.entries(inspectItem.properties).map(([key, value]) => (
+                <Badge key={key} variant="outline" className="text-[9px] border-white/10 text-muted-foreground/80">
+                  {key}: {String(value)}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -294,29 +335,47 @@ export default function Inventario() {
 function InventorySection({
   title,
   icon,
+  description,
   items,
   onToggleEquip,
   updatingId,
   emptyLabel,
+  campaignId,
+  onInspect,
 }: {
   title: string
   icon: React.ReactNode
+  description?: string
   items: CharacterItem[]
   onToggleEquip: (item: CharacterItem) => void
   updatingId: string | null
   emptyLabel: string
+  campaignId?: string
+  onInspect?: (item: ItemRow) => void
 }) {
   return (
     <section className="space-y-4">
-      <h2 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-60 flex items-center gap-2">
-        {icon} {title}
-      </h2>
+      <div className="space-y-1">
+        <h2 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-60 flex items-center gap-2">
+          {icon} {title}
+        </h2>
+        {description && (
+          <p className="text-xs text-muted-foreground/60 font-heading italic pl-7">{description}</p>
+        )}
+      </div>
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground/60 font-heading italic pl-1">{emptyLabel}</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {items.map((ci) => (
-            <ItemCard key={ci.id} characterItem={ci} onToggleEquip={onToggleEquip} updating={updatingId === ci.id} />
+            <ItemCard
+              key={ci.id}
+              characterItem={ci}
+              onToggleEquip={onToggleEquip}
+              updating={updatingId === ci.id}
+              campaignId={campaignId}
+              onInspect={onInspect}
+            />
           ))}
         </div>
       )}
@@ -328,13 +387,18 @@ function ItemCard({
   characterItem,
   onToggleEquip,
   updating,
+  campaignId,
+  onInspect,
 }: {
   characterItem: CharacterItem
   onToggleEquip: (item: CharacterItem) => void
   updating: boolean
+  campaignId?: string
+  onInspect?: (item: ItemRow) => void
 }) {
   const item = characterItem.item!
   const properties = item.properties && Object.keys(item.properties).length > 0 ? item.properties : null
+  const action = specialActionFor(item)
 
   return (
     <Card className="bg-card/30 border-white/5 p-5 space-y-3">
@@ -375,6 +439,45 @@ function ItemCard({
               {key}: {String(value)}
             </Badge>
           ))}
+        </div>
+      )}
+
+      {action && campaignId && (
+        <div className="pt-1">
+          {action === "journal" && (
+            <Button asChild size="sm" variant="outline" className="w-full rounded-full border-primary/30 hover:bg-primary/5 font-display text-[10px] tracking-widest gap-2">
+              <Link href={`/campaign/${campaignId}/diario`}>
+                <BookOpen className="h-3.5 w-3.5" /> Abrir Diário
+              </Link>
+            </Button>
+          )}
+          {action === "map" && (
+            <Button asChild size="sm" variant="outline" className="w-full rounded-full border-primary/30 hover:bg-primary/5 font-display text-[10px] tracking-widest gap-2">
+              <Link href={`/campaign/${campaignId}/mapa-vivo`}>
+                <MapIcon className="h-3.5 w-3.5" /> Abrir Mapa
+              </Link>
+            </Button>
+          )}
+          {action === "document" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full rounded-full border-primary/30 hover:bg-primary/5 font-display text-[10px] tracking-widest gap-2"
+              onClick={() => onInspect?.(item)}
+            >
+              <FileText className="h-3.5 w-3.5" /> Ler Documento
+            </Button>
+          )}
+          {action === "key" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full rounded-full border-primary/30 hover:bg-primary/5 font-display text-[10px] tracking-widest gap-2"
+              onClick={() => onInspect?.(item)}
+            >
+              <KeyRound className="h-3.5 w-3.5" /> Inspecionar Chave
+            </Button>
+          )}
         </div>
       )}
 
