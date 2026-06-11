@@ -5,50 +5,51 @@ import * as React from "react"
 import { useParams, useSearchParams } from "next/navigation"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { 
-  Send, 
-  Sparkles, 
-  MapPin, 
-  Users, 
-  Dices, 
-  MessageSquareDashed, 
-  Volume2, 
-  Ghost,
+import {
+  Send,
+  Sparkles,
+  Users,
+  Dices,
+  MessageSquareDashed,
   Hash,
-  Crown,
   Zap,
-  Shield,
   ShieldCheck,
-  Eye,
-  MessageSquare,
-  Lock,
-  Infinity,
   Hourglass,
   Quote,
-  Maximize2
+  Lock,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { 
-  Tooltip, 
-  TooltipContent, 
-  TooltipTrigger, 
-  TooltipProvider 
-} from "@/components/ui/tooltip"
-import { 
+import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
 import { buildAIContext } from "@/lib/ai-context"
+import {
+  ExpandableText,
+  MessageBadges,
+  PlayerActionPanel,
+  MasterActionPanel,
+  PlayerSuggestionNotice,
+  SuggestionCard,
+  getMessageMeta,
+  type AiSuggestion,
+  type PlayerActionMode,
+  type MasterActionMode,
+} from "./_components/mesa-viva-ui"
 
 export default function MesaViva() {
   const { id: campaignId } = useParams() as { id: string }
@@ -57,12 +58,15 @@ export default function MesaViva() {
   const { toast } = useToast()
 
   const [inputValue, setInputValue] = React.useState('')
-  const [messageType, setMessageType] = React.useState<'speech' | 'action' | 'narration'>('speech')
+  const [actionMode, setActionMode] = React.useState<PlayerActionMode | MasterActionMode>('speech')
   const [isSoloMode, setIsSoloMode] = React.useState(false)
   const [isAiThinking, setIsAiThinking] = React.useState(false)
   const [aiSuggestion, setAiSuggestion] = React.useState<string | null>(null)
   const [aiError, setAiError] = React.useState<string | null>(null)
-  
+  const [pendingSuggestions, setPendingSuggestions] = React.useState<AiSuggestion[]>([])
+  const [selectedNpcId, setSelectedNpcId] = React.useState<string | null>(null)
+  const [isFinalizeDialogOpen, setIsFinalizeDialogOpen] = React.useState(false)
+
   const [diceFormula, setDiceFormula] = React.useState('1d20')
   const [rollReason, setRollReason] = React.useState('')
   const [physicalResult, setPhysicalResult] = React.useState('')
@@ -306,9 +310,39 @@ export default function MesaViva() {
     }
   }, [searchParams, aiAvailable, isMaster])
 
+  // Sugestões pendentes da IA (apenas o mestre lê ai_generated_suggestions, via RLS).
+  // Sem realtime nessa tabela: usamos refetch após ações de IA + polling leve.
+  const fetchPendingSuggestions = React.useCallback(async () => {
+    if (!isMaster || !activeScene) return
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('ai_generated_suggestions')
+      .select('id, session_id, scene_id, suggestion_type, title, content, payload, created_at')
+      .eq('campaign_id', campaignId)
+      .eq('scene_id', activeScene.id)
+      .eq('approval_status', 'pending')
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Carregar Sugestões da IA", description: error.message })
+      return
+    }
+    setPendingSuggestions((data as AiSuggestion[]) || [])
+  }, [isMaster, activeScene, campaignId, toast])
+
+  React.useEffect(() => {
+    if (!isMaster || !activeScene) {
+      setPendingSuggestions([])
+      return
+    }
+    fetchPendingSuggestions()
+    const interval = setInterval(fetchPendingSuggestions, 10000)
+    return () => clearInterval(interval)
+  }, [isMaster, activeScene, fetchPendingSuggestions])
+
   const handleSend = async (text?: string, type?: string, rollData?: any) => {
     const finalContent = text || inputValue
-    const finalType = type || (isMaster && messageType === 'narration' ? 'narration' : messageType)
+    const finalType = type || actionMode
     if (!finalContent.trim() || !activeSession || !activeScene || !user) return
 
     const supabase = createClient()
@@ -359,6 +393,10 @@ export default function MesaViva() {
 
       if (data.published) {
         toast({ title: "Narração Publicada", description: "O Oráculo escreveu o próximo trecho da crônica." })
+      } else if (isMaster) {
+        // Sugestão registrada em ai_generated_suggestions: o mestre revisa na linha do tempo.
+        await fetchPendingSuggestions()
+        toast({ title: "Sugestão do Oráculo Recebida", description: "Revise na linha do tempo para publicar como cânone." })
       } else {
         // Resposta do Oráculo é apenas uma sugestão: não vira cânone automaticamente.
         setAiSuggestion(data.output)
@@ -369,29 +407,208 @@ export default function MesaViva() {
     } finally { setIsAiThinking(false) }
   }
 
-  const handlePublishSuggestion = async () => {
-    if (!aiSuggestion || !activeSession || !activeScene || !user) return
+  // Reaproveita o fluxo de revisão do mestre: aprova (publica como cânone) ou descarta uma sugestão da IA.
+  const handleResolveSuggestion = async (suggestion: AiSuggestion, status: 'approved' | 'rejected', editedContent?: string) => {
+    if (!campaignId || !user) return
     const supabase = createClient()
-    const { error } = await supabase.from('scene_messages').insert({
+    const reviewedAt = new Date().toISOString()
+
+    if (status === 'approved') {
+      if (!suggestion.scene_id || !suggestion.session_id) {
+        toast({ variant: "destructive", title: "Erro ao Publicar", description: "Sugestão sem cena ou sessão associada." })
+        return
+      }
+
+      const messageType = suggestion.suggestion_type === 'npc_dialogue' ? 'speech' : 'narration'
+      const content = editedContent ?? suggestion.content ?? ''
+      const metadata: Record<string, any> = { source: 'groq', approved_suggestion_id: suggestion.id }
+      if (editedContent !== undefined) metadata.edited = true
+      if (suggestion.suggestion_type === 'npc_dialogue') {
+        metadata.npc_id = suggestion.payload?.npc_id
+        metadata.npc_name = suggestion.payload?.npc_name
+      }
+
+      const { error: messageError } = await supabase.from('scene_messages').insert({
+        campaign_id: campaignId,
+        session_id: suggestion.session_id,
+        scene_id: suggestion.scene_id,
+        sender_user_id: user.uid,
+        character_id: null,
+        message_type: messageType,
+        visibility: 'scene',
+        content,
+        metadata,
+      })
+
+      if (messageError) {
+        toast({ variant: "destructive", title: "Erro ao Publicar", description: messageError.message })
+        return
+      }
+    }
+
+    const { error } = await supabase
+      .from('ai_generated_suggestions')
+      .update({ approval_status: status, reviewed_by: user.uid, reviewed_at: reviewedAt })
+      .eq('id', suggestion.id)
+      .eq('campaign_id', campaignId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Atualizar Sugestão", description: error.message })
+      return
+    }
+
+    setPendingSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id))
+    toast({
+      title: status === 'approved' ? "Publicado como Cânone" : "Sugestão Descartada",
+      description: status === 'approved' ? "A sugestão do Oráculo agora é cânone da cena." : "A sugestão foi marcada como descartada.",
+    })
+  }
+
+  // Mestre pede a um NPC presente que responda diretamente (auto-publica, conforme /api/ai/npc-dialogue).
+  const handleNpcDialogue = async () => {
+    const text = inputValue.trim()
+    if (!selectedNpcId) {
+      toast({ variant: "destructive", title: "Selecione um NPC", description: "Escolha o NPC que vai responder." })
+      return
+    }
+    if (!text || !activeSession || !activeScene || !user) return
+
+    setIsAiThinking(true)
+    try {
+      const response = await fetch('/api/ai/npc-dialogue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignId,
+          sessionId: activeSession.id,
+          sceneId: activeScene.id,
+          npcId: selectedNpcId,
+          characterId: myCharacter?.id ?? null,
+          message: text,
+          publish: true,
+        })
+      })
+
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Falha ao consultar o Oráculo.')
+
+      if (data.published) {
+        toast({ title: "Fala do NPC Publicada", description: `${data.npcName} respondeu na cena.` })
+      } else {
+        await fetchPendingSuggestions()
+        toast({ title: "Sugestão Gerada", description: "A fala do NPC ficou pendente de revisão." })
+      }
+      setInputValue('')
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro do Oráculo", description: e.message || "O NPC não respondeu." })
+    } finally { setIsAiThinking(false) }
+  }
+
+  // Mestre registra um evento de cena (scene_events) e o exibe na linha do tempo como mensagem de Sistema.
+  const handleRegisterEvent = async () => {
+    const text = inputValue.trim()
+    if (!text || !activeSession || !activeScene || !user) return
+
+    const supabase = createClient()
+    const { error: eventError } = await supabase.from('scene_events').insert({
+      campaign_id: campaignId,
+      session_id: activeSession.id,
+      scene_id: activeScene.id,
+      event_type: 'note',
+      content: text,
+      metadata: {},
+      created_by: user.uid,
+    })
+
+    if (eventError) {
+      toast({ variant: "destructive", title: "Erro ao Registrar Evento", description: eventError.message })
+      return
+    }
+
+    const { error: messageError } = await supabase.from('scene_messages').insert({
       campaign_id: campaignId,
       session_id: activeSession.id,
       scene_id: activeScene.id,
       sender_user_id: user.uid,
       character_id: null,
-      message_type: 'narration',
+      message_type: 'system',
       visibility: 'scene',
-      content: aiSuggestion,
-      metadata: { source: 'ai-narrator' },
+      content: text,
+      metadata: { source: 'system', event: true },
     })
 
-    if (error) {
-      toast({ variant: "destructive", title: "Erro ao Publicar", description: error.message })
+    if (messageError) {
+      toast({ variant: "destructive", title: "Erro ao Exibir Evento", description: messageError.message })
       return
     }
 
-    setAiSuggestion(null)
-    toast({ title: "Narração Publicada", description: "A sugestão do Oráculo agora é cânone da cena." })
+    setInputValue('')
+    toast({ title: "Evento Registrado", description: "O evento foi adicionado ao registro da cena." })
   }
+
+  const handleSubmitAction = async () => {
+    switch (actionMode) {
+      case 'speech':
+      case 'action':
+      case 'narration':
+        if (!inputValue.trim()) return
+        await handleSend(undefined, actionMode)
+        break
+      case 'oracle': {
+        const text = inputValue.trim()
+        if (!text) return
+        setInputValue('')
+        await handleAiMasterResponse(text, false)
+        break
+      }
+      case 'npc_dialogue':
+        await handleNpcDialogue()
+        break
+      case 'event':
+        await handleRegisterEvent()
+        break
+    }
+  }
+
+  const handleOpenDice = () => {
+    if (diceSettings && !diceSettings.allow_physical_dice && !diceSettings.allow_virtual_dice) {
+      toast({ variant: "destructive", title: "Rolagem Indisponível", description: "A rolagem de dados está desativada para esta campanha." })
+      return
+    }
+    setIsDiceDialogOpen(true)
+  }
+
+  const aiDisabledReason = !campaign?.ai_enabled
+    ? "A IA está desativada para esta campanha."
+    : !aiCanNarrate
+    ? "A narração por IA está desativada nas configurações da campanha."
+    : ""
+
+  const handlePublishSuggestionShortcut = () => {
+    if (pendingSuggestions.length === 0) {
+      toast({ title: "Nenhuma Sugestão Pendente", description: "O Oráculo ainda não enviou sugestões para revisão." })
+      return
+    }
+    document.getElementById(`suggestion-${pendingSuggestions[0].id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  // Linha do Tempo da Cena: combina mensagens canônicas (scene_messages) com
+  // sugestões pendentes da IA visíveis apenas ao mestre (ai_generated_suggestions).
+  type TimelineEntry =
+    | { kind: 'message'; id: string; createdAt: string; data: any }
+    | { kind: 'suggestion'; id: string; createdAt: string; data: AiSuggestion }
+
+  const timelineEntries = React.useMemo<TimelineEntry[]>(() => {
+    const entries: TimelineEntry[] = messages.map((m: any) => ({
+      kind: 'message' as const, id: m.id, createdAt: m.created_at, data: m,
+    }))
+    if (isMaster) {
+      for (const s of pendingSuggestions) {
+        entries.push({ kind: 'suggestion' as const, id: s.id, createdAt: s.created_at, data: s })
+      }
+    }
+    return entries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  }, [messages, pendingSuggestions, isMaster])
 
   const handleRollDice = async (isPhysical: boolean = false) => {
     if (!activeSession || !activeScene || !user) return
@@ -603,10 +820,25 @@ export default function MesaViva() {
                  <Hourglass className="h-12 w-12 text-primary animate-spin-slow" />
                  <p className="font-heading italic text-2xl tracking-widest">Consultando os anais...</p>
               </div>
-            ) : messages && messages.length > 0 ? (
-              messages.map((msg: any) => (
-                <OracleMessage key={msg.id} msg={toDisplayMessage(msg, characters)} currentUserId={user?.uid} />
-              ))
+            ) : timelineEntries.length > 0 ? (
+              timelineEntries.map((entry) =>
+                entry.kind === 'message' ? (
+                  <OracleMessage
+                    key={entry.id}
+                    msg={toDisplayMessage(entry.data, characters, campaign?.owner_id)}
+                    currentUserId={user?.uid}
+                  />
+                ) : (
+                  <div key={entry.id} id={`suggestion-${entry.id}`}>
+                    <SuggestionCard
+                      suggestion={entry.data}
+                      onPublish={() => handleResolveSuggestion(entry.data, 'approved')}
+                      onDiscard={() => handleResolveSuggestion(entry.data, 'rejected')}
+                      onEditPublish={(content) => handleResolveSuggestion(entry.data, 'approved', content)}
+                    />
+                  </div>
+                )
+              )
             ) : (
               <div className="text-center py-40 space-y-8 opacity-40">
                 <Sparkles className="h-16 w-16 text-primary/50 mx-auto" />
@@ -625,36 +857,7 @@ export default function MesaViva() {
               </div>
             )}
             {aiSuggestion && (
-              <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
-                <div className="h-16 w-16 rounded-[1.5rem] bg-secondary/10 p-4 shrink-0 border border-secondary/40 flex items-center justify-center oracle-glow">
-                  <Sparkles className="h-7 w-7 text-secondary" />
-                </div>
-                <div className="space-y-4 pt-1">
-                  <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.4em] flex items-center gap-3">
-                    O Oráculo Arcano
-                    <Badge variant="outline" className="border-secondary/40 text-secondary text-[8px] px-2 h-4 uppercase font-black">Sugestão • não registrada</Badge>
-                  </p>
-                  <div className="text-xl leading-relaxed text-foreground/80 font-heading italic">
-                    {aiSuggestion}
-                  </div>
-                  <div className="flex items-center gap-6">
-                    <button
-                      onClick={() => setAiSuggestion(null)}
-                      className="text-[10px] font-display uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Descartar sugestão
-                    </button>
-                    {isMaster && (
-                      <button
-                        onClick={handlePublishSuggestion}
-                        className="text-[10px] font-display uppercase tracking-widest text-primary hover:text-primary/70 transition-colors"
-                      >
-                        Publicar como narração
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <PlayerSuggestionNotice content={aiSuggestion} onDismiss={() => setAiSuggestion(null)} />
             )}
             {aiError && (
               <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
@@ -680,73 +883,132 @@ export default function MesaViva() {
           </div>
         </ScrollArea>
 
-        {/* Rodapé de Ação */}
+        {/* Rodapé de Ação: jogador e mestre, sempre acessível */}
         <div className="p-10 px-16 border-t border-primary/10 bg-background/95 backdrop-blur-2xl shrink-0">
-          <div className="max-w-5xl mx-auto space-y-8">
-            <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-hide">
-              <RitualShortcut icon={<Volume2 />} label="Falar" active={messageType === 'speech'} onClick={() => setMessageType('speech')} />
-              <RitualShortcut icon={<Ghost />} label="Agir" active={messageType === 'action'} onClick={() => setMessageType('action')} />
-              {isMaster && (
-                <>
-                  <RitualShortcut icon={<Sparkles />} label="Narrar" active={messageType === 'narration'} onClick={() => setMessageType('narration')} />
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span>
-                          <RitualShortcut
-                            icon={<Sparkles />}
-                            label={isAiThinking ? "Tecendo..." : "Pedir ao Oráculo"}
-                            disabled={!aiAvailable || isAiThinking}
-                            onClick={() => handleAiMasterResponse(inputValue.trim() || 'Continue a narrativa a partir da cena atual.', true)}
-                          />
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {campaign && !campaign.ai_enabled
-                          ? "A IA está desativada para esta campanha."
-                          : !aiCanNarrate
-                          ? "A narração por IA está desativada nas configurações da campanha."
-                          : "A IA narra o próximo trecho e publica como cena oficial."}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </>
-              )}
-            </div>
-            
+          <div className="max-w-5xl mx-auto space-y-5">
+            <PlayerActionPanel
+              actionMode={actionMode}
+              onSelectMode={(mode) => setActionMode(mode)}
+              onOpenDice={handleOpenDice}
+              aiAvailable={aiAvailable}
+              isAiThinking={isAiThinking}
+              aiDisabledReason={aiDisabledReason}
+            />
+
+            {isMaster && (
+              <MasterActionPanel
+                actionMode={actionMode}
+                onSelectMode={(mode) => setActionMode(mode)}
+                onPublishSuggestion={handlePublishSuggestionShortcut}
+                onFinalizeSession={() => setIsFinalizeDialogOpen(true)}
+                pendingCount={pendingSuggestions.length}
+              />
+            )}
+
+            {isMaster && actionMode === 'npc_dialogue' && (
+              <div className="space-y-2">
+                <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">NPC que vai responder</Label>
+                <Select value={selectedNpcId ?? undefined} onValueChange={setSelectedNpcId}>
+                  <SelectTrigger className="bg-black/30 border-primary/20 h-12 rounded-2xl font-heading">
+                    <SelectValue placeholder="Selecione um NPC presente na cena" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {npcs.map((npc: any) => (
+                      <SelectItem key={npc.id} value={npc.id}>{npc.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {npcs.length === 0 && (
+                  <p className="text-[11px] font-heading italic text-muted-foreground opacity-60">Nenhum NPC presente nesta cena.</p>
+                )}
+              </div>
+            )}
+
             <div className="relative">
-              <Input 
-                placeholder={messageType === 'narration' ? "Narre o destino..." : `O que você faz?`}
-                className="pr-36 py-14 rounded-[2rem] bg-black/40 border-primary/20 font-heading italic focus:ring-primary text-2xl literary-shadow placeholder:text-muted-foreground/30 px-10"
+              <Textarea
+                placeholder={getActionPlaceholder(actionMode)}
+                className="pr-28 py-8 min-h-[7rem] max-h-64 rounded-[2rem] bg-black/40 border-primary/20 font-heading italic focus-visible:ring-primary text-2xl literary-shadow placeholder:text-muted-foreground/30 px-10 resize-none"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSubmitAction()
+                  }
+                }}
               />
-              <div className="absolute right-6 top-1/2 -translate-y-1/2">
-                <Button onClick={() => handleSend()} className="h-20 w-20 rounded-[1.5rem] btn-ritual shadow-arcane hover:scale-110 active:scale-95 transition-all">
-                  <Send className="h-8 w-8" />
+              <div className="absolute right-6 bottom-6">
+                <Button
+                  onClick={handleSubmitAction}
+                  disabled={isAiThinking}
+                  className="h-16 w-16 rounded-[1.5rem] btn-ritual shadow-arcane hover:scale-110 active:scale-95 transition-all disabled:opacity-40"
+                >
+                  <Send className="h-7 w-7" />
                 </Button>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Finalizar Sessão: confirmação leve, fluxo completo de encerramento vive no Painel do Mestre */}
+      <Dialog open={isFinalizeDialogOpen} onOpenChange={setIsFinalizeDialogOpen}>
+        <DialogContent className="bg-card border-primary/30 literary-shadow max-w-md p-10 rounded-[2rem]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl text-primary">Finalizar Sessão</DialogTitle>
+            <DialogDescription className="font-heading italic text-muted-foreground pt-2">
+              Encerrar a sessão, gerar o resumo da crônica e registrar os eventos oficiais são feitos no Painel do Mestre,
+              para preservar o registro da campanha.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-4 gap-3">
+            <Button variant="outline" onClick={() => setIsFinalizeDialogOpen(false)} className="rounded-2xl">Voltar à Mesa</Button>
+            <Button asChild className="btn-ritual rounded-2xl">
+              <a href={`/campaign/${campaignId}/master`}>Ir ao Painel do Mestre</a>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function toDisplayMessage(msg: any, characters: { id: string, name: string, avatar_url: string | null }[]) {
+const ACTION_PLACEHOLDERS: Record<string, string> = {
+  speech: "O que você diz?",
+  action: "O que você faz?",
+  oracle: "O que você quer perguntar ao Oráculo?",
+  narration: "Narre o destino...",
+  npc_dialogue: "O que o jogador disse? A IA responderá no papel do NPC selecionado...",
+  event: "Descreva o evento a registrar na crônica...",
+}
+
+function getActionPlaceholder(actionMode: string) {
+  return ACTION_PLACEHOLDERS[actionMode] || "O que você faz?"
+}
+
+function toDisplayMessage(msg: any, characters: { id: string, name: string, avatar_url: string | null }[], ownerId?: string) {
   const character = characters.find((c) => c.id === msg.character_id)
-  const isAiNarration = msg.message_type === 'narration' && msg.metadata?.source === 'ai-narrator'
+  const isAiNarration = msg.message_type === 'narration' && msg.metadata?.source === 'groq'
+  const isMasterSender = msg.sender_user_id === ownerId
+  const meta = getMessageMeta(msg.message_type, msg.metadata, isMasterSender)
+
+  let senderName = character?.name
+  if (!senderName) {
+    if (msg.message_type === 'narration') senderName = isAiNarration ? 'Oráculo Arcano' : 'Mestre Arcano'
+    else if (msg.message_type === 'speech' && msg.metadata?.source === 'groq') senderName = msg.metadata?.npc_name || 'NPC'
+    else if (msg.message_type === 'system') senderName = 'Sistema'
+    else senderName = 'Mestre Arcano'
+  }
 
   return {
     id: msg.id,
     type: msg.message_type,
     text: msg.content,
     senderId: msg.sender_user_id,
-    senderName: character?.name || (msg.message_type === 'narration' ? (isAiNarration ? 'Oráculo Arcano' : 'Mestre Arcano') : 'Mestre Arcano'),
+    senderName,
     senderPhotoURL: character?.avatar_url || '',
     rollData: msg.metadata?.rollData || null,
+    meta,
   }
 }
 
@@ -755,6 +1017,7 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
   const isMine = msg.senderId === currentUserId;
   const isAction = msg.type === 'action';
   const isDice = msg.type === 'dice';
+  const isSystem = msg.type === 'system';
 
   if (isNarrator) {
     return (
@@ -763,31 +1026,51 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
           <Sparkles className="h-full w-full text-primary relative z-10" />
         </div>
         <div className="space-y-4 pt-1">
-          <p className="text-[10px] font-display uppercase font-bold text-primary tracking-[0.4em] flex items-center gap-3">
-            O Oráculo Arcano • {msg.senderName}
-            <Badge className="bg-primary/10 text-primary border border-primary/30 text-[8px] px-2 h-4 uppercase font-black">Cânone</Badge>
-          </p>
-          <div className="text-3xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-6xl first-letter:font-display first-letter:mr-3 first-letter:float-left first-letter:text-primary">
-            {msg.text}
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="text-[10px] font-display uppercase font-bold text-primary tracking-[0.4em]">
+              {msg.senderName}
+            </p>
+            <MessageBadges meta={msg.meta} status="Cânone" />
           </div>
+          <ExpandableText
+            text={msg.text}
+            threshold={600}
+            className="text-3xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-6xl first-letter:font-display first-letter:mr-3 first-letter:float-left first-letter:text-primary"
+          />
         </div>
       </div>
     );
   }
 
+  if (isSystem) {
+    return (
+      <div className="flex justify-center">
+        <div className="px-8 py-4 rounded-2xl border border-white/10 bg-white/5 space-y-2 max-w-2xl w-full text-center">
+          <div className="flex justify-center">
+            <MessageBadges meta={msg.meta} status="Cânone" />
+          </div>
+          <ExpandableText text={msg.text} threshold={400} className="text-base font-heading italic text-muted-foreground" />
+        </div>
+      </div>
+    )
+  }
+
   if (isDice) {
     return (
-      <div className={`flex gap-8 animate-in duration-700 zoom-in-95 ${isMine ? 'justify-end' : ''}`}>
-        <div className={`p-8 rounded-[2.5rem] border-2 flex items-center gap-10 literary-shadow transition-all hover:scale-105 ${
-          msg.rollData?.isPhysical ? 'bg-primary/5 border-primary/40 shadow-gold' : 'bg-secondary/5 border-secondary/40 shadow-arcane'
-        }`}>
-          <div className={`p-5 rounded-[1.5rem] ${msg.rollData?.isPhysical ? 'bg-primary/20 text-primary' : 'bg-secondary/20 text-secondary'}`}>
-            {msg.rollData?.isPhysical ? <Hash className="h-10 w-10" /> : <Dices className="h-10 w-10" />}
-          </div>
-          <div>
-            <p className="text-[10px] font-display uppercase font-bold tracking-[0.2em] opacity-40 mb-2">{msg.senderName} conjurou {msg.rollData?.formula}</p>
-            <p className="text-6xl font-display font-black tracking-tighter text-foreground">{msg.rollData?.result}</p>
-            {msg.rollData?.reason && <p className="text-sm font-heading italic text-muted-foreground mt-3 border-l-2 border-primary/20 pl-4">"{msg.rollData?.reason}"</p>}
+      <div className={`flex flex-col gap-3 ${isMine ? 'items-end' : 'items-start'}`}>
+        <MessageBadges meta={msg.meta} status="Cânone" />
+        <div className={`flex gap-8 animate-in duration-700 zoom-in-95 ${isMine ? 'justify-end' : ''}`}>
+          <div className={`p-8 rounded-[2.5rem] border-2 flex items-center gap-10 literary-shadow transition-all hover:scale-105 ${
+            msg.rollData?.isPhysical ? 'bg-primary/5 border-primary/40 shadow-gold' : 'bg-secondary/5 border-secondary/40 shadow-arcane'
+          }`}>
+            <div className={`p-5 rounded-[1.5rem] ${msg.rollData?.isPhysical ? 'bg-primary/20 text-primary' : 'bg-secondary/20 text-secondary'}`}>
+              {msg.rollData?.isPhysical ? <Hash className="h-10 w-10" /> : <Dices className="h-10 w-10" />}
+            </div>
+            <div>
+              <p className="text-[10px] font-display uppercase font-bold tracking-[0.2em] opacity-40 mb-2">{msg.senderName} conjurou {msg.rollData?.formula}</p>
+              <p className="text-6xl font-display font-black tracking-tighter text-foreground">{msg.rollData?.result}</p>
+              {msg.rollData?.reason && <p className="text-sm font-heading italic text-muted-foreground mt-3 border-l-2 border-primary/20 pl-4">"{msg.rollData?.reason}"</p>}
+            </div>
           </div>
         </div>
       </div>
@@ -812,18 +1095,26 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
         </Dialog>
       )}
       <div className={`space-y-4 ${isMine ? 'text-right' : 'text-left'}`}>
-        <p className={`text-[10px] font-display uppercase font-bold tracking-[0.3em] ${isMine ? 'text-primary' : 'text-muted-foreground opacity-60'}`}>
-          {msg.senderName} {isAction && <span className="text-secondary ml-3">• Ação</span>}
-        </p>
+        <div className={`flex items-center gap-3 flex-wrap ${isMine ? 'justify-end' : ''}`}>
+          <p className={`text-[10px] font-display uppercase font-bold tracking-[0.3em] ${isMine ? 'text-primary' : 'text-muted-foreground opacity-60'}`}>
+            {msg.senderName}
+          </p>
+          <MessageBadges meta={msg.meta} status="Cânone" />
+        </div>
         <div className={`p-8 rounded-[2rem] border-2 text-2xl inline-block max-w-2xl literary-shadow transition-all relative overflow-hidden ${
-          isMine 
-            ? 'bg-primary/5 border-primary/30 text-foreground' 
+          isMine
+            ? 'bg-primary/5 border-primary/30 text-foreground'
             : 'bg-black/40 border-white/5 text-foreground'
         } ${isAction ? 'font-heading italic bg-secondary/5 border-secondary/20' : 'font-body font-light leading-relaxed'}`}>
-          {isAction ? <span className="flex items-center gap-3"><Zap className="h-5 w-5 text-secondary opacity-50 shrink-0" /> *{msg.text}*</span> : (
+          {isAction ? (
+            <span className="flex items-start gap-3">
+              <Zap className="h-5 w-5 text-secondary opacity-50 shrink-0 mt-1" />
+              <ExpandableText text={`*${msg.text}*`} className="text-left" />
+            </span>
+          ) : (
             <span className="flex items-start gap-4">
-               {!isAction && <Quote className="h-5 w-5 text-primary/30 rotate-180 shrink-0 mt-1" />}
-               <span>"{msg.text}"</span>
+               <Quote className="h-5 w-5 text-primary/30 rotate-180 shrink-0 mt-1" />
+               <ExpandableText text={`"${msg.text}"`} className="text-left" />
             </span>
           )}
         </div>
@@ -874,22 +1165,5 @@ function ParticipantItem({ name, photo, role, status, isAI = false, isNPC = fals
         </div>
       </div>
     </div>
-  );
-}
-
-function RitualShortcut({ icon, label, active, onClick, disabled }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void, disabled?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`flex items-center gap-3 px-6 py-3 rounded-2xl border-2 transition-all whitespace-nowrap group h-12 disabled:opacity-30 disabled:cursor-not-allowed ${
-        active
-          ? 'btn-ritual'
-          : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5 hover:border-primary/30 hover:text-foreground'
-      }`}
-    >
-      <span className={`transition-transform group-hover:scale-125 duration-500 [&_svg]:h-4 [&_svg]:w-4`}>{icon}</span>
-      <span className="text-[10px] font-display uppercase font-black tracking-[0.2em]">{label}</span>
-    </button>
   );
 }
