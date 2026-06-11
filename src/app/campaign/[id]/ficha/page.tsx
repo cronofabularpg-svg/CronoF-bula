@@ -76,41 +76,151 @@ export default function FichaPersonagem() {
   const [isEditingPhoto, setIsEditingPhoto] = React.useState(false)
   const [photoUrlInput, setPhotoUrlUrlInput] = React.useState("")
 
-  React.useEffect(() => {
-    if (!user || !campaignId) return
+  const [isCreatingCharacter, setIsCreatingCharacter] = React.useState(false)
+  const [isCreateCharacterOpen, setIsCreateCharacterOpen] = React.useState(false)
+  const [newCharacter, setNewCharacter] = React.useState({ name: "", race: "", class: "", level: 1 })
 
-    let active = true
+  const loadCharacter = React.useCallback(async () => {
+    if (!user || !campaignId) return
     const supabase = createClient()
 
-    supabase
+    const { data, error } = await supabase
       .from('characters')
       .select('id, name, race, class, level, status, current_hp, max_hp, armor_class, avatar_url, character_stats(*)')
       .eq('campaign_id', campaignId)
       .eq('owner_user_id', user.uid)
       .maybeSingle()
-      .then(({ data, error }) => {
-        if (!active) return
-        if (error) {
-          toast({ variant: "destructive", title: "Erro ao Carregar Ficha", description: error.message })
-        }
-        setCharacter((data as unknown as Character) || null)
-        setLoading(false)
-      })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Carregar Ficha", description: error.message })
+    }
+    setCharacter((data as unknown as Character) || null)
+    setLoading(false)
+  }, [user, campaignId, toast])
+
+  React.useEffect(() => {
+    if (!user || !campaignId) return
+    let active = true
+
+    loadCharacter().then(() => {
+      if (!active) return
+    })
 
     return () => {
       active = false
     }
-  }, [user, campaignId, toast])
+  }, [user, campaignId, loadCharacter])
+
+  async function handleCreateCharacter() {
+    if (!user || !campaignId || !newCharacter.name.trim()) return
+    setIsCreatingCharacter(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('characters')
+        .insert({
+          campaign_id: campaignId,
+          owner_user_id: user.uid,
+          name: newCharacter.name.trim(),
+          race: newCharacter.race.trim() || null,
+          class: newCharacter.class.trim() || null,
+          level: newCharacter.level,
+        })
+
+      if (error) throw error
+
+      toast({ title: "Personagem Criado!", description: `${newCharacter.name} entra nos anais desta campanha.` })
+      setIsCreateCharacterOpen(false)
+      setNewCharacter({ name: "", race: "", class: "", level: 1 })
+      setLoading(true)
+      await loadCharacter()
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro ao Criar Personagem", description: error.message })
+    } finally {
+      setIsCreatingCharacter(false)
+    }
+  }
 
   if (loading) return <div className="p-20 text-center italic font-heading text-2xl opacity-40">Consultando os anais...</div>
-  if (!character) return <div className="p-20 text-center text-muted-foreground italic font-heading text-2xl opacity-40">Nenhum herói encontrado nesta campanha.</div>
+
+  if (!character) {
+    return (
+      <div className="p-20 flex flex-col items-center justify-center gap-8 text-center min-h-[60vh]">
+        <div className="space-y-3">
+          <h2 className="text-3xl font-display font-black text-primary">Nenhum herói encontrado</h2>
+          <p className="text-muted-foreground italic font-heading text-xl max-w-md mx-auto">
+            Você ainda não tem um personagem nesta campanha. Crie um para começar a jogar.
+          </p>
+        </div>
+        <Dialog open={isCreateCharacterOpen} onOpenChange={setIsCreateCharacterOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-primary px-10 h-12 rounded-full">Criar Personagem</Button>
+          </DialogTrigger>
+          <DialogContent className="bg-card border-accent/30">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-display">Criar Personagem</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase font-bold tracking-widest">Nome</Label>
+                <Input
+                  placeholder="Ex: Eldric, o Audaz"
+                  value={newCharacter.name}
+                  onChange={e => setNewCharacter({ ...newCharacter, name: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Raça</Label>
+                  <Input
+                    placeholder="Ex: Humano"
+                    value={newCharacter.race}
+                    onChange={e => setNewCharacter({ ...newCharacter, race: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-bold tracking-widest">Classe</Label>
+                  <Input
+                    placeholder="Ex: Guerreiro"
+                    value={newCharacter.class}
+                    onChange={e => setNewCharacter({ ...newCharacter, class: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase font-bold tracking-widest">Nível</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={newCharacter.level}
+                  onChange={e => setNewCharacter({ ...newCharacter, level: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="ghost" onClick={() => setIsCreateCharacterOpen(false)}>Cancelar</Button>
+              <Button onClick={handleCreateCharacter} disabled={isCreatingCharacter || !newCharacter.name.trim()} className="bg-primary px-8">
+                {isCreatingCharacter ? "Criando..." : "Criar"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
 
   const calculateModifier = (value: number) => {
     const mod = Math.floor((value - 10) / 2);
     return mod >= 0 ? `+${mod}` : mod.toString();
   };
 
-  const charStats = character.character_stats
+  // O Supabase pode retornar a relação 1:1 como objeto ou como array
+  // dependendo da introspecção do PostgREST — tratamos ambos os casos.
+  const charStatsRaw = character.character_stats as unknown
+  const charStats: CharacterStats | null = Array.isArray(charStatsRaw)
+    ? (charStatsRaw[0] as CharacterStats | undefined) ?? null
+    : (charStatsRaw as CharacterStats | null)
   const stats = {
     str: charStats?.strength ?? 10,
     dex: charStats?.dexterity ?? 10,
@@ -119,8 +229,11 @@ export default function FichaPersonagem() {
     wis: charStats?.wisdom ?? 10,
     cha: charStats?.charisma ?? 10,
   };
-  const savingThrows = charStats?.saving_throws ?? [];
-  const sheetState = charStats?.sheet_state ?? {};
+  // saving_throws é jsonb e pode vir como {} (default no banco) em vez de array.
+  const savingThrows = Array.isArray(charStats?.saving_throws) ? charStats!.saving_throws : [];
+  const sheetState = (charStats?.sheet_state && typeof charStats.sheet_state === 'object' && !Array.isArray(charStats.sheet_state))
+    ? charStats.sheet_state
+    : {};
   const proficiency = Math.floor((character.level - 1) / 4) + 2;
 
   const charPhoto = character.avatar_url || `https://picsum.photos/seed/${character.id}/500/500`;

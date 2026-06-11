@@ -5,7 +5,7 @@ import * as React from "react"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Shield, Sword, Heart, Zap, Sparkles, ChevronRight, Dices, Ghost, Maximize2, Skull, Wine, Star, Wind } from "lucide-react"
+import { Shield, Sword, Heart, Zap, Sparkles, ChevronRight, Dices, Ghost, Maximize2, Skull, Wine, Star, Wind, Construction } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
 
@@ -35,10 +35,17 @@ export default function Combate() {
           </div>
         </div>
         <div className="flex gap-4">
-          <Button variant="ghost" size="sm" className="text-muted-foreground font-ui uppercase tracking-widest text-[10px] font-bold">Interromper</Button>
-          <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10 font-ui uppercase tracking-widest text-[10px] font-bold px-8">Encerrar Conflito</Button>
+          <Button disabled title="Em desenvolvimento" variant="ghost" size="sm" className="text-muted-foreground font-ui uppercase tracking-widest text-[10px] font-bold disabled:opacity-30 disabled:cursor-not-allowed">Interromper</Button>
+          <Button disabled title="Em desenvolvimento" variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10 font-ui uppercase tracking-widest text-[10px] font-bold px-8 disabled:opacity-30 disabled:cursor-not-allowed">Encerrar Conflito</Button>
         </div>
       </header>
+
+      <div className="px-12 py-3 bg-accent/5 border-b border-accent/10 flex items-center gap-3 text-accent/70 shrink-0">
+        <Construction className="h-4 w-4" />
+        <p className="text-[10px] font-display uppercase font-black tracking-[0.2em]">
+          Sistema de Combate em desenvolvimento — exibindo dados de exemplo. Ações ainda não estão conectadas.
+        </p>
+      </div>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar de Iniciativa - Estilo Estandarte */}
@@ -111,10 +118,10 @@ export default function Combate() {
           <footer className="p-10 px-16 border-t border-primary/10 bg-background/95 backdrop-blur-3xl shrink-0">
             <div className="max-w-6xl mx-auto flex justify-between items-center">
               <div className="flex gap-6 overflow-x-auto pb-2 scrollbar-hide">
-                <ActionButton icon={<Sword />} label="Ataque" active />
-                <ActionButton icon={<Zap />} label="Magia" />
-                <ActionButton icon={<Shield />} label="Defesa" />
-                <ActionButton icon={<Ghost />} label="Truque" />
+                <ActionButton icon={<Sword />} label="Ataque" active disabled />
+                <ActionButton icon={<Zap />} label="Magia" disabled />
+                <ActionButton icon={<Shield />} label="Defesa" disabled />
+                <ActionButton icon={<Ghost />} label="Truque" disabled />
               </div>
 
               <div className="flex items-center gap-12">
@@ -122,7 +129,7 @@ export default function Combate() {
                   <span className="text-[10px] uppercase font-black text-muted-foreground tracking-[0.3em] opacity-40">Iniciativa de</span>
                   <span className="text-4xl font-display font-black text-primary tracking-tighter">Valerius</span>
                 </div>
-                <Button className="btn-ritual rounded-full px-20 h-20 text-2xl font-display literary-shadow group">
+                <Button disabled title="Em desenvolvimento" className="btn-ritual rounded-full px-20 h-20 text-2xl font-display literary-shadow group disabled:opacity-30 disabled:cursor-not-allowed">
                   Finalizar Turno <ChevronRight className="ml-3 h-8 w-8 group-hover:translate-x-2 transition-transform" />
                 </Button>
               </div>
@@ -212,7 +219,7 @@ function CombatantCard({ participant }: { participant: any }) {
               <span>{participant.ac}</span>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="rounded-2xl hover:bg-primary/10 border border-white/5 h-12 w-12 transition-all">
+          <Button disabled title="Em desenvolvimento" variant="ghost" size="icon" className="rounded-2xl hover:bg-primary/10 border border-white/5 h-12 w-12 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
             <Dices className="h-6 w-6 text-primary group-hover:rotate-45 transition-transform" />
           </Button>
         </div>
@@ -232,9 +239,13 @@ function ConditionMiniBadge({ condition }: { condition: string }) {
   );
 }
 
-function ActionButton({ icon, label, active = false }: { icon: React.ReactNode, label: string, active?: boolean }) {
+function ActionButton({ icon, label, active = false, disabled = false }: { icon: React.ReactNode, label: string, active?: boolean, disabled?: boolean }) {
   return (
-    <button className={`p-8 rounded-[2rem] border-2 flex flex-col items-center justify-center gap-4 min-w-[140px] transition-all duration-500 group relative overflow-hidden ${active ? 'bg-primary/10 border-primary shadow-gold text-primary' : 'bg-card border-white/5 hover:border-primary/30 text-muted-foreground hover:text-foreground'}`}>
+    <button
+      disabled={disabled}
+      title={disabled ? "Em desenvolvimento" : undefined}
+      className={`p-8 rounded-[2rem] border-2 flex flex-col items-center justify-center gap-4 min-w-[140px] transition-all duration-500 group relative overflow-hidden disabled:opacity-30 disabled:cursor-not-allowed ${active ? 'bg-primary/10 border-primary shadow-gold text-primary' : 'bg-card border-white/5 hover:border-primary/30 text-muted-foreground hover:text-foreground'}`}
+    >
       <span className={`transition-transform duration-700 group-hover:scale-125 [&_svg]:h-8 [&_svg]:w-8`}>{icon}</span>
       <span className="text-[10px] font-display font-black uppercase tracking-[0.3em]">{label}</span>
       {active && <div className="absolute top-0 left-0 w-full h-1 bg-primary shadow-gold" />}

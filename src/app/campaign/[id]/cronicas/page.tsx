@@ -40,6 +40,7 @@ export default function Cronicas() {
   const [chronicles, setChronicles] = React.useState<ChronicleRow[]>([])
   const [loading, setLoading] = React.useState(true)
   const [selectedChronicle, setSelectedChronicle] = React.useState<ChronicleRow | null>(null)
+  const [searchTerm, setSearchTerm] = React.useState("")
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -79,8 +80,10 @@ export default function Cronicas() {
         </div>
         <div className="relative w-80">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 opacity-30 text-primary" />
-          <input 
-            placeholder="Buscar verdades canônicas..." 
+          <input
+            placeholder="Buscar verdades canônicas..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-12 pr-6 py-4 bg-black/40 border-primary/20 rounded-2xl text-sm font-heading italic focus:ring-primary focus:border-primary/40 outline-none transition-all"
           />
         </div>
@@ -97,7 +100,7 @@ export default function Cronicas() {
             <div className="p-6 space-y-4">
               {loading ? (
                 <div className="p-20 text-center italic font-heading text-xl opacity-30 animate-pulse">Lendo os anais...</div>
-              ) : chronicles.map((chron) => (
+              ) : chronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).map((chron) => (
                 <button
                   key={chron.id}
                   onClick={() => setSelectedChronicle(chron)}
@@ -114,9 +117,14 @@ export default function Cronicas() {
                   <h4 className="font-display font-bold text-lg leading-tight group-hover:text-primary transition-colors">{chron.title}</h4>
                 </button>
               ))}
-              {chronicles.length === 0 && (
+              {!loading && chronicles.length === 0 && (
                 <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40">
                   "A história ainda não foi escrita nas estrelas."
+                </div>
+              )}
+              {!loading && chronicles.length > 0 && chronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).length === 0 && (
+                <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40">
+                  Nenhuma crônica corresponde à busca.
                 </div>
               )}
             </div>

@@ -76,6 +76,7 @@ export default function MesaViva() {
     tone: string | null
     system_key: string | null
     owner_id: string
+    ai_enabled: boolean
   } | null>(null)
   const [characters, setCharacters] = React.useState<{
     id: string
@@ -93,7 +94,7 @@ export default function MesaViva() {
 
     supabase
       .from('campaigns')
-      .select('id, name, tone, system_key, owner_id')
+      .select('id, name, tone, system_key, owner_id, ai_enabled')
       .eq('id', campaignId)
       .maybeSingle()
       .then(({ data }) => {
@@ -322,8 +323,9 @@ export default function MesaViva() {
     }
   }
 
-  const handleAiMasterResponse = async (playerAction: string) => {
-    if (!activeSession || !activeScene || !myCharacter || !user) return
+  const handleAiMasterResponse = async (playerAction: string, publish: boolean = false) => {
+    if (!activeSession || !activeScene || !user) return
+    if (!isMaster && !myCharacter) return
     setIsAiThinking(true)
     setAiSuggestion(null)
     try {
@@ -334,16 +336,21 @@ export default function MesaViva() {
           campaignId,
           sessionId: activeSession.id,
           sceneId: activeScene.id,
-          characterId: myCharacter.id,
+          characterId: myCharacter?.id ?? null,
           playerAction,
+          publish,
         })
       })
 
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Falha ao consultar o Oráculo.')
 
-      // Resposta do Oráculo é apenas uma sugestão: não vira cânone automaticamente.
-      setAiSuggestion(data.output)
+      if (data.published) {
+        toast({ title: "Narração Publicada", description: "O Oráculo escreveu o próximo trecho da crônica." })
+      } else {
+        // Resposta do Oráculo é apenas uma sugestão: não vira cânone automaticamente.
+        setAiSuggestion(data.output)
+      }
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro do Oráculo", description: e.message || "A IA encontrou uma bruma mental." })
     } finally { setIsAiThinking(false) }
@@ -471,10 +478,13 @@ export default function MesaViva() {
           <section className="mt-auto pt-10 border-t border-white/5">
             <div className="p-6 rounded-3xl bg-secondary/10 border border-secondary/20 space-y-5">
               <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.2em] text-center">Jornada Solo</p>
-              <p className="text-[11px] text-muted-foreground italic text-center font-heading">"O Oráculo narrará seus atos."</p>
-              <Button 
-                onClick={() => setIsSoloMode(!isSoloMode)} 
-                className={`w-full rounded-2xl h-12 transition-all font-display text-[10px] tracking-widest ${isSoloMode ? 'btn-arcane' : 'border-secondary text-secondary hover:bg-secondary/10 border-2'}`}
+              <p className="text-[11px] text-muted-foreground italic text-center font-heading">
+                {campaign && !campaign.ai_enabled ? "A IA está desativada para esta campanha." : "\"O Oráculo narrará seus atos.\""}
+              </p>
+              <Button
+                onClick={() => setIsSoloMode(!isSoloMode)}
+                disabled={campaign ? !campaign.ai_enabled : false}
+                className={`w-full rounded-2xl h-12 transition-all font-display text-[10px] tracking-widest disabled:opacity-30 disabled:cursor-not-allowed ${isSoloMode ? 'btn-arcane' : 'border-secondary text-secondary hover:bg-secondary/10 border-2'}`}
               >
                 {isSoloMode ? "Dissipar Oráculo" : "Invocar Oráculo"}
               </Button>
@@ -609,7 +619,28 @@ export default function MesaViva() {
               <RitualShortcut icon={<Volume2 />} label="Falar" active={messageType === 'speech'} onClick={() => setMessageType('speech')} />
               <RitualShortcut icon={<Ghost />} label="Agir" active={messageType === 'action'} onClick={() => setMessageType('action')} />
               {isMaster && (
-                <RitualShortcut icon={<Sparkles />} label="Narrar" active={messageType === 'narration'} onClick={() => setMessageType('narration')} />
+                <>
+                  <RitualShortcut icon={<Sparkles />} label="Narrar" active={messageType === 'narration'} onClick={() => setMessageType('narration')} />
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span>
+                          <RitualShortcut
+                            icon={<Sparkles />}
+                            label={isAiThinking ? "Tecendo..." : "Pedir ao Oráculo"}
+                            disabled={!campaign?.ai_enabled || isAiThinking}
+                            onClick={() => handleAiMasterResponse(inputValue.trim() || 'Continue a narrativa a partir da cena atual.', true)}
+                          />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {campaign && !campaign.ai_enabled
+                          ? "A IA está desativada para esta campanha."
+                          : "A IA narra o próximo trecho e publica como cena oficial."}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </>
               )}
             </div>
             
@@ -776,13 +807,14 @@ function ParticipantItem({ name, photo, role, status, isAI = false, isNPC = fals
   );
 }
 
-function RitualShortcut({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) {
+function RitualShortcut({ icon, label, active, onClick, disabled }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void, disabled?: boolean }) {
   return (
-    <button 
+    <button
       onClick={onClick}
-      className={`flex items-center gap-3 px-6 py-3 rounded-2xl border-2 transition-all whitespace-nowrap group h-12 ${
-        active 
-          ? 'btn-ritual' 
+      disabled={disabled}
+      className={`flex items-center gap-3 px-6 py-3 rounded-2xl border-2 transition-all whitespace-nowrap group h-12 disabled:opacity-30 disabled:cursor-not-allowed ${
+        active
+          ? 'btn-ritual'
           : 'bg-black/20 border-white/5 text-muted-foreground hover:bg-white/5 hover:border-primary/30 hover:text-foreground'
       }`}
     >

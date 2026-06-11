@@ -10,14 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { 
-  Check, 
-  X, 
-  ShieldCheck, 
-  Sparkles, 
-  MessageSquare, 
-  MapPin, 
-  Package, 
+import {
+  Check,
+  X,
+  ShieldCheck,
+  Sparkles,
+  MessageSquare,
+  MapPin,
+  Package,
   Trophy,
   History,
   Settings,
@@ -28,7 +28,10 @@ import {
   Hash,
   Infinity,
   ScrollText,
-  Loader2
+  Loader2,
+  Wand2,
+  CircleCheck,
+  CircleX
 } from "lucide-react"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
@@ -49,6 +52,23 @@ type CampaignSummary = {
   name: string
   tone: string | null
   owner_id: string
+  ai_enabled: boolean
+}
+
+type CampaignSettingsRow = {
+  ai_can_narrate: boolean
+  ai_default_mode: string | null
+}
+
+type AiSuggestion = {
+  id: string
+  session_id: string | null
+  scene_id: string | null
+  suggestion_type: string
+  title: string | null
+  content: string | null
+  payload: Record<string, any> | null
+  created_at: string
 }
 
 type SessionRow = {
@@ -147,11 +167,16 @@ export default function MasterPanel() {
   const [isSummaryOpen, setIsSummaryOpen] = React.useState(false)
 
   const [campaign, setCampaign] = React.useState<CampaignSummary | null>(null)
+  const [campaignSettings, setCampaignSettings] = React.useState<CampaignSettingsRow | null>(null)
   const [pendingCharacters, setPendingCharacters] = React.useState<PendingCharacter[]>([])
   const [approvalRequests, setApprovalRequests] = React.useState<ApprovalRequest[]>([])
+  const [aiSuggestions, setAiSuggestions] = React.useState<AiSuggestion[]>([])
   const [sessions, setSessions] = React.useState<SessionRow[]>([])
   const [loadingSessions, setLoadingSessions] = React.useState(true)
   const [draftChronicleId, setDraftChronicleId] = React.useState<string | null>(null)
+  const [groqConfigured, setGroqConfigured] = React.useState<boolean | null>(null)
+  const [isTestingAI, setIsTestingAI] = React.useState(false)
+  const [aiTestResult, setAiTestResult] = React.useState<{ ok: boolean; message: string } | null>(null)
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -160,11 +185,43 @@ export default function MasterPanel() {
 
     supabase
       .from('campaigns')
-      .select('id, name, tone, owner_id')
+      .select('id, name, tone, owner_id, ai_enabled')
       .eq('id', campaignId)
       .maybeSingle()
       .then(({ data }) => {
         if (active) setCampaign(data as CampaignSummary | null)
+      })
+
+    supabase
+      .from('campaign_settings')
+      .select('ai_can_narrate, ai_default_mode')
+      .eq('campaign_id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setCampaignSettings(data as CampaignSettingsRow | null)
+      })
+
+    supabase
+      .from('ai_generated_suggestions')
+      .select('id, session_id, scene_id, suggestion_type, title, content, payload, created_at')
+      .eq('campaign_id', campaignId)
+      .eq('approval_status', 'pending')
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Sugestões da IA", description: error.message })
+        }
+        setAiSuggestions((data as AiSuggestion[]) || [])
+      })
+
+    fetch('/api/ai/status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (active) setGroqConfigured(Boolean(data?.groqConfigured))
+      })
+      .catch(() => {
+        if (active) setGroqConfigured(false)
       })
 
     supabase
@@ -250,6 +307,76 @@ export default function MasterPanel() {
       title: status === 'approved' ? "Solicitação Aprovada" : "Solicitação Rejeitada",
       description: "A decisão foi registrada no cânone da campanha."
     })
+  }
+
+  async function handleResolveAiSuggestion(suggestion: AiSuggestion, status: 'approved' | 'rejected') {
+    if (!campaignId || !user) return
+    const supabase = createClient()
+    const reviewedAt = new Date().toISOString()
+
+    if (status === 'approved') {
+      if (!suggestion.scene_id || !suggestion.session_id) {
+        toast({ variant: "destructive", title: "Erro ao Aprovar", description: "Sugestão sem cena ou sessão associada." })
+        return
+      }
+
+      const messageType = suggestion.suggestion_type === 'npc_dialogue' ? 'speech' : 'narration'
+      const { error: messageError } = await supabase
+        .from('scene_messages')
+        .insert({
+          campaign_id: campaignId,
+          session_id: suggestion.session_id,
+          scene_id: suggestion.scene_id,
+          sender_user_id: user.uid,
+          character_id: null,
+          message_type: messageType,
+          visibility: 'scene',
+          content: suggestion.content,
+          metadata: { source: 'groq', approved_suggestion_id: suggestion.id },
+        })
+
+      if (messageError) {
+        toast({ variant: "destructive", title: "Erro ao Publicar Sugestão", description: messageError.message })
+        return
+      }
+    }
+
+    const { error } = await supabase
+      .from('ai_generated_suggestions')
+      .update({ approval_status: status, reviewed_by: user.uid, reviewed_at: reviewedAt })
+      .eq('id', suggestion.id)
+      .eq('campaign_id', campaignId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Atualizar Sugestão", description: error.message })
+      return
+    }
+
+    setAiSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id))
+    toast({
+      title: status === 'approved' ? "Sugestão Publicada" : "Sugestão Rejeitada",
+      description: status === 'approved' ? "A narração da IA foi enviada à cena." : "A sugestão foi descartada."
+    })
+  }
+
+  async function handleTestAI() {
+    if (!campaignId) return
+    setIsTestingAI(true)
+    setAiTestResult(null)
+    try {
+      const response = await fetch('/api/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Falha ao testar a IA.')
+      setAiTestResult({ ok: true, message: data.output || 'Conexão estabelecida.' })
+    } catch (e: any) {
+      setAiTestResult({ ok: false, message: e.message || 'Falha ao testar a IA.' })
+    } finally {
+      setIsTestingAI(false)
+    }
   }
 
   async function handleStartSession() {
@@ -533,8 +660,28 @@ export default function MasterPanel() {
               <h3 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-50 font-ui flex items-center">
                 <Sparkles className="mr-2 h-4 w-4" /> Sugestões da IA
               </h3>
-              <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
-                A IA Mestre ainda está observando a narrativa.
+              <div className="space-y-4">
+                {aiSuggestions.map((suggestion) => (
+                  <ApprovalCard
+                    key={suggestion.id}
+                    icon={<Wand2 className="h-4 w-4" />}
+                    type={
+                      suggestion.suggestion_type === 'narration' ? 'Narração'
+                        : suggestion.suggestion_type === 'npc_dialogue' ? 'Fala de NPC'
+                        : 'Resumo de Sessão'
+                    }
+                    title={suggestion.title || "Sugestão da IA"}
+                    desc={suggestion.content || "Sem conteúdo."}
+                    time="Pendente"
+                    onApprove={() => handleResolveAiSuggestion(suggestion, 'approved')}
+                    onReject={() => handleResolveAiSuggestion(suggestion, 'rejected')}
+                  />
+                ))}
+                {aiSuggestions.length === 0 && (
+                  <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
+                    A IA Mestre ainda está observando a narrativa.
+                  </div>
+                )}
               </div>
             </section>
           </div>
@@ -640,6 +787,89 @@ export default function MasterPanel() {
                   </div>
                 )}
               </div>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="ai-config" className="space-y-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <Card className="bg-card/30 border-white/5 p-8 space-y-6">
+              <h3 className="font-display font-bold text-2xl flex items-center gap-3">
+                <Sparkles className="h-6 w-6 text-primary" /> Estado da IA
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
+                  <div>
+                    <p className="font-bold text-sm">IA ativa na campanha</p>
+                    <p className="text-xs text-muted-foreground font-heading italic mt-1">campaigns.ai_enabled</p>
+                  </div>
+                  {campaign?.ai_enabled ? (
+                    <Badge className="bg-primary/20 text-primary border border-primary/30"><CircleCheck className="mr-2 h-3.5 w-3.5" /> Ativa</Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-destructive/30 text-destructive"><CircleX className="mr-2 h-3.5 w-3.5" /> Desativada</Badge>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
+                  <div>
+                    <p className="font-bold text-sm">Narração por IA permitida</p>
+                    <p className="text-xs text-muted-foreground font-heading italic mt-1">campaign_settings.ai_can_narrate</p>
+                  </div>
+                  {campaignSettings?.ai_can_narrate ? (
+                    <Badge className="bg-primary/20 text-primary border border-primary/30"><CircleCheck className="mr-2 h-3.5 w-3.5" /> Permitida</Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-destructive/30 text-destructive"><CircleX className="mr-2 h-3.5 w-3.5" /> Bloqueada</Badge>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
+                  <div>
+                    <p className="font-bold text-sm">Provedor Groq configurado</p>
+                    <p className="text-xs text-muted-foreground font-heading italic mt-1">Verificado no servidor, sem expor a chave.</p>
+                  </div>
+                  {groqConfigured === null ? (
+                    <Badge variant="outline" className="border-white/10 text-muted-foreground">Verificando...</Badge>
+                  ) : groqConfigured ? (
+                    <Badge className="bg-primary/20 text-primary border border-primary/30"><CircleCheck className="mr-2 h-3.5 w-3.5" /> Configurado</Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-destructive/30 text-destructive"><CircleX className="mr-2 h-3.5 w-3.5" /> Ausente</Badge>
+                  )}
+                </div>
+
+                {campaignSettings?.ai_default_mode && (
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
+                    <div>
+                      <p className="font-bold text-sm">Modo padrão da IA</p>
+                      <p className="text-xs text-muted-foreground font-heading italic mt-1">campaign_settings.ai_default_mode</p>
+                    </div>
+                    <Badge variant="secondary" className="capitalize">{campaignSettings.ai_default_mode}</Badge>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            <Card className="bg-card/30 border-white/5 p-8 space-y-6">
+              <h3 className="font-display font-bold text-2xl flex items-center gap-3">
+                <Wand2 className="h-6 w-6 text-primary" /> Testar IA da Campanha
+              </h3>
+              <p className="text-sm text-muted-foreground font-heading italic">
+                Envia uma mensagem de teste ao Oráculo (Groq) para confirmar que a integração está respondendo.
+              </p>
+              <Button
+                onClick={handleTestAI}
+                disabled={isTestingAI}
+                className="w-full rounded-full bg-primary h-14"
+              >
+                {isTestingAI ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                Testar IA da Campanha
+              </Button>
+
+              {aiTestResult && (
+                <div className={`p-4 rounded-xl border text-sm ${aiTestResult.ok ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-destructive/10 border-destructive/30 text-destructive'}`}>
+                  {aiTestResult.ok ? <Check className="inline h-4 w-4 mr-2" /> : <X className="inline h-4 w-4 mr-2" />}
+                  {aiTestResult.message}
+                </div>
+              )}
             </Card>
           </div>
         </TabsContent>

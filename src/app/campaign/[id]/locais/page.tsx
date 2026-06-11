@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 export default function LocalManager() {
   const { id: campaignId } = useParams() as { id: string }
+  const router = useRouter()
   const { user } = useUser()
   const { toast } = useToast()
 
@@ -225,7 +226,7 @@ export default function LocalManager() {
                      {['secret', 'master_only', 'hidden'].includes(loc.visibility) ? <><Eye className="mr-2 h-3 w-3" /> Revelar</> : <><EyeOff className="mr-2 h-3 w-3" /> Ocultar</>}
                   </Button>
                 )}
-                <Button variant="ghost" size="sm" className="bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black">
+                <Button variant="ghost" size="sm" className="bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black" onClick={() => router.push(`/campaign/${campaignId}/mapa-vivo`)}>
                    <Navigation className="mr-2 h-3 w-3" /> Ver no Mapa
                 </Button>
              </CardFooter>

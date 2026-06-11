@@ -271,7 +271,7 @@ export default function NPCManager() {
                 )}
               </CardContent>
               <CardFooter className="grid grid-cols-2 gap-4 border-t border-white/5 pt-6 p-6">
-                <Button variant="ghost" size="sm" className="w-full hover:bg-white/5">
+                <Button variant="ghost" size="sm" className="w-full hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed" disabled title="Em desenvolvimento">
                   <Edit2 className="mr-2 h-4 w-4" /> Editar
                 </Button>
                 {isMaster && npc.status === 'alive' && (

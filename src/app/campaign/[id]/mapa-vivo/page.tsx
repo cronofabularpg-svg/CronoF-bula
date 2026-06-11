@@ -11,6 +11,10 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { MapPin, Search, ChevronRight, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices, ShieldCheck, XCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function MapaVivo() {
   const { id: campaignId } = useParams() as { id: string }
@@ -35,6 +39,10 @@ export default function MapaVivo() {
   const [activeScene, setActiveScene] = React.useState<{ id: string; title: string } | null>(null)
   const [locations, setLocations] = React.useState<any[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [isCreateLocationOpen, setIsCreateLocationOpen] = React.useState(false)
+  const [isCreatingLocation, setIsCreatingLocation] = React.useState(false)
+  const [isInvestigateOpen, setIsInvestigateOpen] = React.useState(false)
+  const [newLocation, setNewLocation] = React.useState({ name: "", type: "city", description: "", visibility: "visible" })
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -209,6 +217,38 @@ export default function MapaVivo() {
     setTravelEvent(null)
   }
 
+  async function handleCreateLocation() {
+    if (!campaignId || !user || !newLocation.name.trim()) return
+    setIsCreatingLocation(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('locations')
+        .insert({
+          campaign_id: campaignId,
+          name: newLocation.name.trim(),
+          type: newLocation.type,
+          description: newLocation.description || null,
+          visibility: newLocation.visibility,
+          status: 'active',
+          created_by: user.uid,
+        })
+        .select('id, name, type, description, visibility, status')
+        .single()
+
+      if (error) throw error
+
+      setLocations((prev) => [data, ...prev])
+      toast({ title: "Ponto Marcado", description: `${newLocation.name} agora existe no mapa.` })
+      setIsCreateLocationOpen(false)
+      setNewLocation({ name: "", type: "city", description: "", visibility: "visible" })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Erro na Cartografia", description: e.message })
+    } finally {
+      setIsCreatingLocation(false)
+    }
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <header className="p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex justify-between items-center z-10 shrink-0">
@@ -220,13 +260,120 @@ export default function MapaVivo() {
         </div>
         <div className="flex gap-3">
           {isMaster && (
-            <Button variant="outline" size="sm" className="rounded-full border-primary/30 text-primary hover:bg-primary/10">
-              <Plus className="mr-2 h-4 w-4" /> Novo Ponto
-            </Button>
+            <Dialog open={isCreateLocationOpen} onOpenChange={setIsCreateLocationOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="rounded-full border-primary/30 text-primary hover:bg-primary/10">
+                  <Plus className="mr-2 h-4 w-4" /> Novo Ponto
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-card border-primary/20 literary-shadow max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-display text-accent">Marcar Novo Ponto no Mapa</DialogTitle>
+                  <DialogDescription className="font-heading italic">
+                    Registre um novo local na cartografia desta crônica.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="loc-name">Nome</Label>
+                    <Input
+                      id="loc-name"
+                      value={newLocation.name}
+                      onChange={(e) => setNewLocation((p) => ({ ...p, name: e.target.value }))}
+                      placeholder="Ex: Vila de Arvand"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Tipo</Label>
+                      <Select value={newLocation.type} onValueChange={(v) => setNewLocation((p) => ({ ...p, type: v }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="city">Cidade</SelectItem>
+                          <SelectItem value="village">Vilarejo</SelectItem>
+                          <SelectItem value="dungeon">Masmorra</SelectItem>
+                          <SelectItem value="wilderness">Natureza Selvagem</SelectItem>
+                          <SelectItem value="landmark">Marco</SelectItem>
+                          <SelectItem value="other">Outro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Visibilidade</Label>
+                      <Select value={newLocation.visibility} onValueChange={(v) => setNewLocation((p) => ({ ...p, visibility: v }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="visible">Visível aos Jogadores</SelectItem>
+                          <SelectItem value="known">Conhecido</SelectItem>
+                          <SelectItem value="hidden">Oculto</SelectItem>
+                          <SelectItem value="secret">Secreto</SelectItem>
+                          <SelectItem value="master_only">Apenas Mestre</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="loc-desc">Descrição</Label>
+                    <Textarea
+                      id="loc-desc"
+                      value={newLocation.description}
+                      onChange={(e) => setNewLocation((p) => ({ ...p, description: e.target.value }))}
+                      placeholder="O que torna este lugar memorável?"
+                      rows={4}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    className="bg-primary hover:bg-primary/90"
+                    disabled={!newLocation.name.trim() || isCreatingLocation}
+                    onClick={handleCreateLocation}
+                  >
+                    {isCreatingLocation ? "Marcando..." : "Marcar no Mapa"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
-          <Button variant="outline" size="sm" className="rounded-full bg-white/5 border-white/10">
-            <Search className="mr-2 h-4 w-4" /> Investigar
-          </Button>
+          <Dialog open={isInvestigateOpen} onOpenChange={setIsInvestigateOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="rounded-full bg-white/5 border-white/10">
+                <Search className="mr-2 h-4 w-4" /> Investigar
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-accent/20 literary-shadow max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-display text-accent">Locais Conhecidos</DialogTitle>
+                <DialogDescription className="font-heading italic">
+                  Tudo o que sua party já descobriu sobre esta região.
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="max-h-96">
+                <div className="space-y-3 pr-4">
+                  {locations.length === 0 && (
+                    <p className="text-sm text-muted-foreground font-heading italic text-center py-8">
+                      Nenhum local foi descoberto ainda.
+                    </p>
+                  )}
+                  {locations.map((loc) => (
+                    <div key={loc.id} className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-display font-bold text-accent">{loc.name}</span>
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-widest">{loc.type}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground font-heading italic leading-relaxed">
+                        {loc.description || 'Nenhum detalhe registrado ainda.'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
         </div>
       </header>
 
