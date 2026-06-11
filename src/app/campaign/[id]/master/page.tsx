@@ -151,6 +151,8 @@ type WorldImportReport = {
 
 type WorldPrepSummary = {
   memory: Array<{ id: string; title: string; memory_type: string; visibility: string; created_at: string }>
+  locations: Array<{ id: string; name: string; visibility: string; created_at: string }>
+  npcs: Array<{ id: string; name: string; visibility: string; created_at: string }>
   items: Array<{ id: string; name: string; visibility: string; created_at: string }>
   factions: Array<{ id: string; name: string; visibility: string; created_at: string }>
   quests: Array<{ id: string; title: string; visibility: string; created_at: string }>
@@ -161,7 +163,7 @@ function toNpcVisibility(visibility: WorldVisibility): string {
 }
 
 function toLocationVisibility(visibility: WorldVisibility): string {
-  return visibility === 'master_only' ? 'master_only' : visibility === 'public' ? 'public' : 'visible'
+  return visibility === 'master_only' ? 'master_only' : visibility === 'public' ? 'public' : 'known'
 }
 
 function toWorldbuildingVisibility(visibility: WorldVisibility): WorldVisibility {
@@ -260,6 +262,8 @@ export default function MasterPanel() {
   const [worldImportReport, setWorldImportReport] = React.useState<WorldImportReport | null>(null)
   const [worldPrepSummary, setWorldPrepSummary] = React.useState<WorldPrepSummary>({
     memory: [],
+    locations: [],
+    npcs: [],
     items: [],
     factions: [],
     quests: [],
@@ -361,6 +365,18 @@ export default function MasterPanel() {
         .order('created_at', { ascending: false })
         .limit(8),
       supabase
+        .from('locations')
+        .select('id, name, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase
+        .from('npcs')
+        .select('id, name, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase
         .from('items')
         .select('id, name, visibility, created_at')
         .eq('campaign_id', campaignId)
@@ -378,10 +394,12 @@ export default function MasterPanel() {
         .eq('campaign_id', campaignId)
         .order('created_at', { ascending: false })
         .limit(6),
-    ]).then(([memory, items, factions, quests]) => {
+    ]).then(([memory, locations, npcs, items, factions, quests]) => {
       if (!active) return
       setWorldPrepSummary({
         memory: (memory.data as WorldPrepSummary['memory']) || [],
+        locations: (locations.data as WorldPrepSummary['locations']) || [],
+        npcs: (npcs.data as WorldPrepSummary['npcs']) || [],
         items: (items.data as WorldPrepSummary['items']) || [],
         factions: (factions.data as WorldPrepSummary['factions']) || [],
         quests: (quests.data as WorldPrepSummary['quests']) || [],
@@ -396,7 +414,7 @@ export default function MasterPanel() {
   async function refreshWorldPrepSummary() {
     if (!campaignId) return
     const supabase = createClient()
-    const [memory, items, factions, quests] = await Promise.all([
+    const [memory, locations, npcs, items, factions, quests] = await Promise.all([
       supabase
         .from('campaign_memory')
         .select('id, title, memory_type, visibility, created_at')
@@ -404,6 +422,18 @@ export default function MasterPanel() {
         .in('source_type', ['world_import', 'world_preparation'])
         .order('created_at', { ascending: false })
         .limit(8),
+      supabase
+        .from('locations')
+        .select('id, name, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase
+        .from('npcs')
+        .select('id, name, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
       supabase
         .from('items')
         .select('id, name, visibility, created_at')
@@ -426,6 +456,8 @@ export default function MasterPanel() {
 
     setWorldPrepSummary({
       memory: (memory.data as WorldPrepSummary['memory']) || [],
+      locations: (locations.data as WorldPrepSummary['locations']) || [],
+      npcs: (npcs.data as WorldPrepSummary['npcs']) || [],
       items: (items.data as WorldPrepSummary['items']) || [],
       factions: (factions.data as WorldPrepSummary['factions']) || [],
       quests: (quests.data as WorldPrepSummary['quests']) || [],
@@ -1447,6 +1479,11 @@ export default function MasterPanel() {
                     <option value="party">Grupo</option>
                     <option value="public">Público</option>
                   </select>
+                  {manualType === "location" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Para locais, "Grupo" será salvo como `known` no banco.
+                    </p>
+                  )}
                 </div>
                 <Button onClick={handleManualWorldCreate} className="w-full rounded-full h-12 bg-primary">
                   Salvar no Mundo
@@ -1797,6 +1834,7 @@ function WorldImportReportPanel({ report, campaignId }: { report: WorldImportRep
 
 function WorldPrepSummaryPanel({ summary, campaignId }: { summary: WorldPrepSummary; campaignId: string }) {
   const hasContent = summary.memory.length > 0 || summary.items.length > 0 || summary.factions.length > 0 || summary.quests.length > 0
+    || summary.locations.length > 0 || summary.npcs.length > 0
 
   return (
     <Card id="world-prep-registry" className="bg-card/30 border-white/5 p-6 space-y-5">
@@ -1826,8 +1864,10 @@ function WorldPrepSummaryPanel({ summary, campaignId }: { summary: WorldPrepSumm
       )}
 
       {hasContent && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
           <WorldPrepList title="Memória" items={summary.memory.map((item) => ({ id: item.id, title: item.title, meta: `${item.memory_type} - ${item.visibility}` }))} />
+          <WorldPrepList title="Locais" items={summary.locations.map((item) => ({ id: item.id, title: item.name, meta: item.visibility }))} />
+          <WorldPrepList title="NPCs" items={summary.npcs.map((item) => ({ id: item.id, title: item.name, meta: item.visibility }))} />
           <WorldPrepList title="Itens" items={summary.items.map((item) => ({ id: item.id, title: item.name, meta: item.visibility }))} />
           <WorldPrepList title="Facções" items={summary.factions.map((item) => ({ id: item.id, title: item.name, meta: item.visibility }))} />
           <WorldPrepList title="Missões" items={summary.quests.map((item) => ({ id: item.id, title: item.title, meta: item.visibility }))} />
