@@ -38,11 +38,13 @@ import { createClient } from "@/lib/supabase/client"
 import { getCharacterTheme } from "@/lib/themes"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 
 export default function CampaignLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { id: campaignId } = useParams() as { id: string };
   const { user } = useUser();
+  const [membershipStatus, setMembershipStatus] = React.useState<string | null>(null);
 
   // Personagem ativo (para tema visual e rodapé)
   const [activeChar, setActiveChar] = React.useState<{
@@ -57,6 +59,16 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
     if (!user || !campaignId) return;
     let active = true;
     const supabase = createClient();
+
+    supabase
+      .from('campaign_members')
+      .select('status')
+      .eq('campaign_id', campaignId)
+      .eq('user_id', user.uid)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setMembershipStatus(data?.status || 'none');
+      });
 
     supabase
       .from('characters')
@@ -79,6 +91,27 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
   }, [activeChar]);
 
   const charPhoto = activeChar?.avatar_url || `https://picsum.photos/seed/${activeChar?.id || 'default'}/300/300`;
+
+  if (user && membershipStatus && membershipStatus !== 'active') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8 bg-background">
+        <div className="max-w-xl rounded-3xl border border-primary/20 bg-card/70 p-10 text-center space-y-6">
+          <Hourglass className="h-12 w-12 text-primary mx-auto" />
+          <h1 className="text-4xl font-display font-bold text-primary">
+            {membershipStatus === 'pending' ? 'Aguardando aprovação' : 'Acesso indisponível'}
+          </h1>
+          <p className="text-muted-foreground font-heading italic text-lg">
+            {membershipStatus === 'pending'
+              ? 'O mestre ainda precisa aprovar sua entrada antes da Mesa Viva.'
+              : 'Seu vínculo com esta campanha não está ativo.'}
+          </p>
+          <Button asChild className="rounded-full bg-primary px-8">
+            <Link href="/dashboard">Voltar ao Dashboard</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   const playerItems = [
     { icon: MessageSquare, label: "Mesa Viva", href: `/campaign/${campaignId}/mesa-viva` },

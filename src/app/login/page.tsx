@@ -18,6 +18,12 @@ export default function LoginPage() {
   const [loading, setLoading] = React.useState(false)
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
+  const [nextUrl, setNextUrl] = React.useState("/dashboard")
+
+  React.useEffect(() => {
+    const next = new URLSearchParams(window.location.search).get("next")
+    if (next?.startsWith("/")) setNextUrl(next)
+  }, [])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -26,7 +32,7 @@ export default function LoginPage() {
       const supabase = createClient()
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      router.push("/dashboard")
+      router.push(nextUrl)
       router.refresh()
     } catch (error: any) {
       toast({
@@ -87,7 +93,7 @@ export default function LoginPage() {
           </form>
           <CardFooter className="flex justify-center border-t border-white/5 p-6">
             <p className="text-sm text-muted-foreground font-ui">
-              Novo por aqui? <Link href="/signup" className="text-accent font-bold hover:underline">Crie sua conta</Link>
+              Novo por aqui? <Link href={`/signup?next=${encodeURIComponent(nextUrl)}`} className="text-accent font-bold hover:underline">Crie sua conta</Link>
             </p>
           </CardFooter>
         </Card>

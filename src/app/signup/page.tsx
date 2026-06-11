@@ -17,12 +17,18 @@ export default function SignupPage() {
   const { toast } = useToast()
 
   const [loading, setLoading] = React.useState(false)
+  const [nextUrl, setNextUrl] = React.useState("/onboarding")
   const [formData, setFormData] = React.useState({
     name: "",
     email: "",
     password: "",
     confirmPassword: ""
   })
+
+  React.useEffect(() => {
+    const next = new URLSearchParams(window.location.search).get("next")
+    if (next?.startsWith("/")) setNextUrl(next)
+  }, [])
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
@@ -48,7 +54,7 @@ export default function SignupPage() {
       })
       if (error) throw error
 
-      router.push("/onboarding")
+      router.push(nextUrl)
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -66,7 +72,7 @@ export default function SignupPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/dashboard`
+          redirectTo: `${window.location.origin}${nextUrl}`
         }
       })
       if (error) throw error
@@ -166,7 +172,7 @@ export default function SignupPage() {
           </form>
           <CardFooter className="flex justify-center border-t border-white/5 p-6 text-center">
             <p className="text-sm text-muted-foreground font-ui">
-              Já tem uma conta? <Link href="/login" className="text-primary font-bold hover:underline">Fazer login</Link>
+              Já tem uma conta? <Link href={`/login?next=${encodeURIComponent(nextUrl)}`} className="text-primary font-bold hover:underline">Fazer login</Link>
             </p>
           </CardFooter>
         </Card>

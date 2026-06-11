@@ -39,6 +39,9 @@ import {
   Map as MapIcon,
   FileText,
   KeyRound,
+  Copy,
+  RefreshCw,
+  UserPlus,
 } from "lucide-react"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
@@ -60,6 +63,7 @@ type CampaignSummary = {
   tone: string | null
   owner_id: string
   ai_enabled: boolean
+  invite_code: string | null
 }
 
 type CampaignSettingsRow = {
@@ -96,6 +100,15 @@ type ApprovalRequest = {
   requested_by: string | null
   created_at: string
   payload: Record<string, any> | null
+}
+
+type PendingMember = {
+  id: string
+  user_id: string
+  role: string
+  status: string
+  joined_at: string
+  profiles: { display_name: string; avatar_url: string | null }[] | { display_name: string; avatar_url: string | null } | null
 }
 
 type SessionMessageRow = {
@@ -261,6 +274,7 @@ export default function MasterPanel() {
   const [campaign, setCampaign] = React.useState<CampaignSummary | null>(null)
   const [campaignSettings, setCampaignSettings] = React.useState<CampaignSettingsRow | null>(null)
   const [pendingCharacters, setPendingCharacters] = React.useState<PendingCharacter[]>([])
+  const [pendingMembers, setPendingMembers] = React.useState<PendingMember[]>([])
   const [approvalRequests, setApprovalRequests] = React.useState<ApprovalRequest[]>([])
   const [aiSuggestions, setAiSuggestions] = React.useState<AiSuggestion[]>([])
   const [sessions, setSessions] = React.useState<SessionRow[]>([])
@@ -269,6 +283,8 @@ export default function MasterPanel() {
   const [groqConfigured, setGroqConfigured] = React.useState<boolean | null>(null)
   const [isTestingAI, setIsTestingAI] = React.useState(false)
   const [aiTestResult, setAiTestResult] = React.useState<{ ok: boolean; message: string } | null>(null)
+  const [isRegeneratingInvite, setIsRegeneratingInvite] = React.useState(false)
+  const [appOrigin, setAppOrigin] = React.useState("")
   const [manualType, setManualType] = React.useState<ManualWorldType>("lore")
   const [manualForm, setManualForm] = React.useState({
     title: "",
@@ -311,13 +327,17 @@ export default function MasterPanel() {
   const [isCreatingQuickItem, setIsCreatingQuickItem] = React.useState(false)
 
   React.useEffect(() => {
+    setAppOrigin(window.location.origin)
+  }, [])
+
+  React.useEffect(() => {
     if (!campaignId) return
     let active = true
     const supabase = createClient()
 
     supabase
       .from('campaigns')
-      .select('id, name, tone, owner_id, ai_enabled')
+      .select('id, name, tone, owner_id, ai_enabled, invite_code')
       .eq('id', campaignId)
       .maybeSingle()
       .then(({ data }) => {
@@ -381,6 +401,21 @@ export default function MasterPanel() {
           toast({ variant: "destructive", title: "Erro ao Carregar Solicitações", description: error.message })
         }
         setApprovalRequests((data as ApprovalRequest[]) || [])
+      })
+
+    supabase
+      .from('campaign_members')
+      .select('id, user_id, role, status, joined_at, profiles(display_name, avatar_url)')
+      .eq('campaign_id', campaignId)
+      .eq('status', 'pending')
+      .eq('role', 'player')
+      .order('joined_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Convites", description: error.message })
+        }
+        setPendingMembers((data as PendingMember[]) || [])
       })
 
     supabase
@@ -709,6 +744,50 @@ export default function MasterPanel() {
     toast({
       title: status === 'approved' ? "Solicitação Aprovada" : "Solicitação Rejeitada",
       description: "A decisão foi registrada no cânone da campanha."
+    })
+  }
+
+  async function handleCopyInvite() {
+    if (!campaign?.invite_code) {
+      toast({ variant: "destructive", title: "Convite indisponível", description: "Regere o convite antes de copiar o link." })
+      return
+    }
+
+    const inviteUrl = `${window.location.origin}/join/${campaign.invite_code}`
+    await navigator.clipboard.writeText(inviteUrl)
+    toast({ title: "Convite copiado", description: "Envie este link para seus jogadores." })
+  }
+
+  async function handleRegenerateInvite() {
+    if (!campaignId) return
+    setIsRegeneratingInvite(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase.rpc('regenerate_campaign_invite', { target_campaign_id: campaignId })
+      if (error) throw error
+      setCampaign((prev) => prev ? { ...prev, invite_code: data as string } : prev)
+      toast({ title: "Convite regenerado", description: "Links antigos foram invalidados." })
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro ao Regenerar Convite", description: error.message })
+    } finally {
+      setIsRegeneratingInvite(false)
+    }
+  }
+
+  async function handleResolvePendingMember(memberId: string, status: 'active' | 'rejected') {
+    const supabase = createClient()
+    const fn = status === 'active' ? 'approve_campaign_member' : 'reject_campaign_member'
+    const { error } = await supabase.rpc(fn, { target_member_id: memberId })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Resolver Entrada", description: error.message })
+      return
+    }
+
+    setPendingMembers((prev) => prev.filter((member) => member.id !== memberId))
+    toast({
+      title: status === 'active' ? "Jogador Aprovado" : "Entrada Rejeitada",
+      description: status === 'active' ? "O jogador agora pode acessar a campanha." : "A solicitação foi rejeitada.",
     })
   }
 
@@ -1466,12 +1545,54 @@ export default function MasterPanel() {
         </TabsList>
 
         <TabsContent value="approvals" className="space-y-10">
+          <Card className="bg-primary/5 border-primary/20 p-6">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+              <div className="space-y-2">
+                <h3 className="font-display font-bold text-2xl flex items-center gap-3 text-primary">
+                  <UserPlus className="h-6 w-6" /> Convidar Jogadores
+                </h3>
+                <p className="text-sm text-muted-foreground font-heading italic">
+                  Quem tiver este link poderá solicitar entrada como jogador. Regenerar invalida links antigos.
+                </p>
+              </div>
+              <div className="flex flex-col md:flex-row gap-3 xl:min-w-[560px]">
+                <Input
+                  readOnly
+                  value={campaign?.invite_code ? `${appOrigin}/join/${campaign.invite_code}` : "Convite ainda não gerado"}
+                  className="bg-background/50 font-mono text-xs"
+                />
+                <Button variant="outline" onClick={handleCopyInvite} disabled={!campaign?.invite_code} className="rounded-full border-primary/30">
+                  <Copy className="h-4 w-4 mr-2" /> Copiar
+                </Button>
+                <Button onClick={handleRegenerateInvite} disabled={isRegeneratingInvite} className="rounded-full bg-primary">
+                  {isRegeneratingInvite ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Regenerar
+                </Button>
+              </div>
+            </div>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
             <section className="space-y-6">
               <h3 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-50 font-ui flex items-center">
                 <Database className="mr-2 h-4 w-4" /> Solicitações de Jogadores
               </h3>
               <div className="space-y-4">
+                {pendingMembers.map((member) => {
+                  const profile = Array.isArray(member.profiles) ? member.profiles[0] : member.profiles
+                  return (
+                    <ApprovalCard
+                      key={member.id}
+                      icon={<UserPlus className="h-4 w-4" />}
+                      type="Entrada na Campanha"
+                      title={profile?.display_name || `Jogador ${member.user_id.slice(0, 8)}`}
+                      desc="Solicitou entrada por link de convite. Será adicionado como jogador."
+                      time="Pendente"
+                      onApprove={() => handleResolvePendingMember(member.id, 'active')}
+                      onReject={() => handleResolvePendingMember(member.id, 'rejected')}
+                    />
+                  )
+                })}
                 {pendingCharacters?.map((char: any) => (
                   <ApprovalCard 
                     key={char.id}
@@ -1495,7 +1616,7 @@ export default function MasterPanel() {
                     onReject={() => handleResolveApproval(request.id, 'rejected')}
                   />
                 ))}
-                {pendingCharacters?.length === 0 && approvalRequests.length === 0 && (
+                {pendingMembers.length === 0 && pendingCharacters?.length === 0 && approvalRequests.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
                     Nenhuma solicitação aguardando no portão.
                   </div>

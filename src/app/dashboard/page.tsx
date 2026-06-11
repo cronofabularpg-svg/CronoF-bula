@@ -42,6 +42,14 @@ type Campaign = {
   status: string
 }
 
+type PendingCampaignInvite = {
+  id: string
+  status: string
+  role: string
+  joined_at: string
+  campaigns: Campaign[] | Campaign | null
+}
+
 type CharacterOption = {
   id: string
   name: string
@@ -102,6 +110,7 @@ export default function Dashboard() {
   const { toast } = useToast();
 
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([]);
+  const [pendingInvites, setPendingInvites] = React.useState<PendingCampaignInvite[]>([]);
   const [campaignsLoading, setCampaignsLoading] = React.useState(true);
   const [isStartingSolo, setIsStartingSolo] = React.useState(false);
 
@@ -133,16 +142,33 @@ export default function Dashboard() {
     let active = true;
     const supabase = createClient();
 
-    supabase
-      .from('campaigns')
-      .select('id, owner_id, name, system_key, tone, status')
-      .order('created_at', { ascending: false })
-      .then(({ data, error }) => {
+    Promise.all([
+      supabase
+        .from('campaign_members')
+        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status)')
+        .eq('user_id', user.uid)
+        .eq('status', 'active')
+        .order('joined_at', { ascending: false }),
+      supabase
+        .from('campaign_members')
+        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status)')
+        .eq('user_id', user.uid)
+        .eq('status', 'pending')
+        .order('joined_at', { ascending: false }),
+    ]).then(([activeRes, pendingRes]) => {
         if (!active) return;
-        if (error) {
-          toast({ variant: "destructive", title: "Erro ao Carregar", description: error.message });
+        if (activeRes.error || pendingRes.error) {
+          toast({
+            variant: "destructive",
+            title: "Erro ao Carregar",
+            description: activeRes.error?.message || pendingRes.error?.message,
+          });
         }
-        setCampaigns((data as Campaign[]) || []);
+        const activeCampaigns = ((activeRes.data as PendingCampaignInvite[]) || [])
+          .map((membership) => Array.isArray(membership.campaigns) ? membership.campaigns[0] : membership.campaigns)
+          .filter(Boolean) as Campaign[]
+        setCampaigns(activeCampaigns);
+        setPendingInvites((pendingRes.data as PendingCampaignInvite[]) || []);
         setCampaignsLoading(false);
       });
 
@@ -396,6 +422,34 @@ export default function Dashboard() {
           </Button>
         </div>
       </header>
+
+      {pendingInvites.length > 0 && (
+        <section className="space-y-6">
+          <h2 className="text-2xl font-display font-bold flex items-center gap-3 text-accent">
+            <Hourglass className="h-6 w-6" /> Convites Pendentes
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {pendingInvites.map((invite) => {
+              const campaign = Array.isArray(invite.campaigns) ? invite.campaigns[0] : invite.campaigns
+              return (
+                <Card key={invite.id} className="bg-card/40 border-accent/20">
+                  <CardHeader>
+                    <CardTitle className="font-display text-2xl">{campaign?.name || "Campanha"}</CardTitle>
+                    <CardDescription className="font-heading italic">
+                      Solicitação enviada. Aguarde aprovação do mestre para acessar a Mesa Viva.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Badge variant="outline" className="border-accent/30 text-accent uppercase tracking-widest">
+                      Pendente
+                    </Badge>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
         <div className="xl:col-span-2 space-y-10">
