@@ -135,7 +135,7 @@ type PendingLevelUp = {
     current_hp: number | null
     proficiency_bonus: number | null
   } | null
-  profiles: { display_name: string }[] | { display_name: string } | null
+  requester: { display_name: string; avatar_url: string | null }[] | { display_name: string; avatar_url: string | null } | null
 }
 
 type SessionMessageRow = {
@@ -457,7 +457,7 @@ export default function MasterPanel() {
 
     supabase
       .from('character_level_ups')
-      .select('id, campaign_id, character_id, requested_by, from_level, to_level, status, proposed_changes, created_at, characters(name, level, max_hp, current_hp, proficiency_bonus), profiles(display_name)')
+      .select('id, campaign_id, character_id, requested_by, from_level, to_level, status, proposed_changes, created_at, characters(name, level, max_hp, current_hp, proficiency_bonus), requester:profiles!character_level_ups_requested_by_fkey(display_name, avatar_url)')
       .eq('campaign_id', campaignId)
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
@@ -1737,7 +1737,7 @@ export default function MasterPanel() {
                 ))}
                 {pendingLevelUps.map((request) => {
                   const character = Array.isArray(request.characters) ? request.characters[0] : request.characters
-                  const profile = Array.isArray(request.profiles) ? request.profiles[0] : request.profiles
+                  const profile = Array.isArray(request.requester) ? request.requester[0] : request.requester
                   return (
                     <ApprovalCard
                       key={request.id}
