@@ -2,6 +2,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -132,12 +133,46 @@ type WorldImportProposal = {
 
 type ManualWorldType = "lore" | "npc" | "location" | "item" | "faction" | "quest" | "threat" | "secret"
 
+type ImportReportEntry = {
+  key: string
+  label: string
+  table: string
+  count: number
+  status: "success" | "skipped" | "error"
+  message?: string
+}
+
+type WorldImportReport = {
+  createdAt: string
+  entries: ImportReportEntry[]
+  sceneId?: string
+  sessionId?: string
+}
+
+type WorldPrepSummary = {
+  memory: Array<{ id: string; title: string; memory_type: string; visibility: string; created_at: string }>
+  items: Array<{ id: string; name: string; visibility: string; created_at: string }>
+  factions: Array<{ id: string; name: string; visibility: string; created_at: string }>
+  quests: Array<{ id: string; title: string; visibility: string; created_at: string }>
+}
+
 function toNpcVisibility(visibility: WorldVisibility): string {
   return visibility === 'master_only' ? 'master_only' : visibility === 'public' ? 'public' : 'visible'
 }
 
 function toLocationVisibility(visibility: WorldVisibility): string {
   return visibility === 'master_only' ? 'master_only' : visibility === 'public' ? 'public' : 'visible'
+}
+
+function toWorldbuildingVisibility(visibility: WorldVisibility): WorldVisibility {
+  return visibility === 'public' ? 'public' : visibility === 'party' ? 'party' : 'master_only'
+}
+
+function summarizeImport(entries: ImportReportEntry[]) {
+  const successes = entries.filter((entry) => entry.status === "success" && entry.count > 0)
+  const errors = entries.filter((entry) => entry.status === "error")
+  const saved = successes.reduce((sum, entry) => sum + entry.count, 0)
+  return { successes, errors, saved }
 }
 
 function buildChronicleDraft(session: SessionRow, messages: SessionMessageRow[], campaign: CampaignSummary): ChronicleDraft {
@@ -222,6 +257,13 @@ export default function MasterPanel() {
   const [selectedImports, setSelectedImports] = React.useState<Record<string, boolean>>({})
   const [isAnalyzingWorld, setIsAnalyzingWorld] = React.useState(false)
   const [isImportingWorld, setIsImportingWorld] = React.useState(false)
+  const [worldImportReport, setWorldImportReport] = React.useState<WorldImportReport | null>(null)
+  const [worldPrepSummary, setWorldPrepSummary] = React.useState<WorldPrepSummary>({
+    memory: [],
+    items: [],
+    factions: [],
+    quests: [],
+  })
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -310,10 +352,85 @@ export default function MasterPanel() {
         setLoadingSessions(false)
       })
 
+    Promise.all([
+      supabase
+        .from('campaign_memory')
+        .select('id, title, memory_type, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .in('source_type', ['world_import', 'world_preparation'])
+        .order('created_at', { ascending: false })
+        .limit(8),
+      supabase
+        .from('items')
+        .select('id, name, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase
+        .from('factions')
+        .select('id, name, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase
+        .from('quests')
+        .select('id, title, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+    ]).then(([memory, items, factions, quests]) => {
+      if (!active) return
+      setWorldPrepSummary({
+        memory: (memory.data as WorldPrepSummary['memory']) || [],
+        items: (items.data as WorldPrepSummary['items']) || [],
+        factions: (factions.data as WorldPrepSummary['factions']) || [],
+        quests: (quests.data as WorldPrepSummary['quests']) || [],
+      })
+    })
+
     return () => {
       active = false
     }
   }, [campaignId, toast])
+
+  async function refreshWorldPrepSummary() {
+    if (!campaignId) return
+    const supabase = createClient()
+    const [memory, items, factions, quests] = await Promise.all([
+      supabase
+        .from('campaign_memory')
+        .select('id, title, memory_type, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .in('source_type', ['world_import', 'world_preparation'])
+        .order('created_at', { ascending: false })
+        .limit(8),
+      supabase
+        .from('items')
+        .select('id, name, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase
+        .from('factions')
+        .select('id, name, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase
+        .from('quests')
+        .select('id, title, visibility, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+        .limit(6),
+    ])
+
+    setWorldPrepSummary({
+      memory: (memory.data as WorldPrepSummary['memory']) || [],
+      items: (items.data as WorldPrepSummary['items']) || [],
+      factions: (factions.data as WorldPrepSummary['factions']) || [],
+      quests: (quests.data as WorldPrepSummary['quests']) || [],
+    })
+  }
 
   async function handleApproveCharacter(charId: string) {
     const supabase = createClient()
@@ -502,6 +619,7 @@ export default function MasterPanel() {
 
       toast({ title: "Preparação registrada", description: "O conteúdo foi salvo no mundo da campanha." })
       setManualForm({ title: "", description: "", secondary: "", visibility: "master_only", image_url: "" })
+      await refreshWorldPrepSummary()
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro ao Salvar Preparação", description: e.message })
     }
@@ -536,6 +654,7 @@ export default function MasterPanel() {
 
       setWorldProposal(proposal)
       setSelectedImports(nextSelected)
+      setWorldImportReport(null)
       toast({ title: "Mundo estruturado", description: "Revise a proposta antes de importar." })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro na Importação", description: e.message })
@@ -558,63 +677,201 @@ export default function MasterPanel() {
 
   async function handleImportSelectedWorld() {
     if (!campaignId || !user || !worldProposal) return
+    const currentUser = user
+    const proposal = worldProposal
     setIsImportingWorld(true)
     const supabase = createClient()
     const now = new Date().toISOString()
+    const entries: ImportReportEntry[] = []
+    let createdSession: SessionRow | null = null
+    let createdSessionId: string | undefined
+    let createdSceneId: string | undefined
+
+    const addSkipped = (key: string, label: string, table: string) => {
+      entries.push({ key, label, table, count: 0, status: "skipped", message: "Nenhum cartão selecionado." })
+    }
+
+    const recordError = (key: string, label: string, table: string, error: any) => {
+      const message = error?.message || "Falha ao salvar esta categoria."
+      console.error('[world-import] erro por categoria', { campaignId, hasUser: Boolean(currentUser), key, table, message })
+      entries.push({ key, label, table, count: 0, status: "error", message })
+    }
+
+    async function insertRows(key: string, label: string, table: string, rows: Array<Record<string, any>>) {
+      if (rows.length === 0) {
+        addSkipped(key, label, table)
+        return
+      }
+
+      try {
+        const { data, error } = await supabase.from(table).insert(rows as any).select('id')
+        if (error) throw error
+        entries.push({
+          key,
+          label,
+          table,
+          count: data?.length || rows.length,
+          status: "success",
+          message: `${data?.length || rows.length} registro(s) salvo(s).`,
+        })
+      } catch (error: any) {
+        recordError(key, label, table, error)
+      }
+    }
+
+    async function createOpeningScene() {
+      if (!selectedImports.opening_scene || !proposal.opening_scene?.trim()) {
+        addSkipped("opening_scene", "Cena inicial", "sessions/scenes/scene_messages")
+        return
+      }
+
+      try {
+        let targetSession = sessions.find((session) => session.status === 'active') || null
+        if (!targetSession) {
+          const { data: session, error: sessionError } = await supabase
+            .from('sessions')
+            .insert({
+              campaign_id: campaignId,
+              title: worldImportForm.worldName ? `Sessão Inicial - ${worldImportForm.worldName}` : 'Sessão Inicial',
+              status: 'active',
+              started_at: now,
+              created_by: currentUser.uid,
+            })
+            .select('id, title, status, started_at, ended_at, created_at')
+            .single()
+
+          if (sessionError || !session) throw sessionError || new Error("A sessão inicial não foi criada.")
+          targetSession = session as SessionRow
+          createdSession = targetSession
+          createdSessionId = targetSession.id
+        }
+
+        const { data: scene, error: sceneError } = await supabase
+          .from('scenes')
+          .insert({
+            campaign_id: campaignId,
+            session_id: targetSession.id,
+            title: 'Cena Inicial',
+            visibility: 'participants',
+            status: 'active',
+            created_by: currentUser.uid,
+          })
+          .select('id')
+          .single()
+
+        if (sceneError || !scene) throw sceneError || new Error("A cena inicial não foi criada.")
+        createdSceneId = scene.id
+
+        const { error: messageError } = await supabase
+          .from('scene_messages')
+          .insert({
+            campaign_id: campaignId,
+            session_id: targetSession.id,
+            scene_id: scene.id,
+            sender_user_id: currentUser.uid,
+            character_id: null,
+            message_type: 'narration',
+            visibility: 'scene',
+            content: proposal.opening_scene,
+            metadata: { source: 'world_import', imported_at: now },
+          })
+
+        if (messageError) throw messageError
+
+        entries.push({
+          key: "opening_scene",
+          label: "Cena inicial",
+          table: "sessions/scenes/scene_messages",
+          count: 1,
+          status: "success",
+          message: targetSession === createdSession
+            ? "Sessão, cena e mensagem inicial criadas."
+            : "Cena e mensagem inicial criadas na sessão ativa.",
+        })
+      } catch (error: any) {
+        recordError("opening_scene", "Cena inicial", "sessions/scenes/scene_messages", error)
+      }
+    }
 
     try {
-      const memoryEntries: any[] = []
+      const { data: membership } = await supabase
+        .from('campaign_members')
+        .select('role')
+        .eq('campaign_id', campaignId)
+        .eq('user_id', currentUser.uid)
+        .eq('status', 'active')
+        .maybeSingle()
 
-      if (selectedImports.world_summary && worldProposal.world_summary) {
-        memoryEntries.push({
+      const isMaster = campaign?.owner_id === currentUser.uid || ['owner', 'master', 'assistant_master'].includes(membership?.role || '')
+      console.info('[world-import] import iniciado', {
+        campaignId,
+        hasUser: Boolean(currentUser),
+        isMaster,
+        selectedCounts: {
+          worldSummary: selectedImports.world_summary ? 1 : 0,
+          lore: proposal.lore_entries.filter((_, index) => selectedImports[`lore_entries.${index}`]).length,
+          locations: proposal.locations.filter((_, index) => selectedImports[`locations.${index}`]).length,
+          npcs: proposal.npcs.filter((_, index) => selectedImports[`npcs.${index}`]).length,
+          factions: proposal.factions.filter((_, index) => selectedImports[`factions.${index}`]).length,
+          items: proposal.items.filter((_, index) => selectedImports[`items.${index}`]).length,
+          quests: proposal.quests.filter((_, index) => selectedImports[`quests.${index}`]).length,
+          threats: proposal.threats.filter((_, index) => selectedImports[`threats.${index}`]).length,
+          masterSecrets: proposal.master_secrets.filter((_, index) => selectedImports[`master_secrets.${index}`]).length,
+          openingScene: selectedImports.opening_scene ? 1 : 0,
+        },
+      })
+
+      const summaryEntries = selectedImports.world_summary && proposal.world_summary.trim()
+        ? [{
           campaign_id: campaignId,
           source_type: 'world_import',
           memory_type: 'world_summary',
           title: 'Visão Geral do Mundo',
-          content: worldProposal.world_summary,
+          content: proposal.world_summary,
           visibility: 'party',
           importance: 'high',
-          created_by: user.uid,
-          approved_by: user.uid,
+          created_by: currentUser.uid,
+          approved_by: currentUser.uid,
           approved_at: now,
-        })
-      }
+        }]
+        : []
+      await insertRows("world_summary", "Visão geral do mundo", "campaign_memory", summaryEntries)
 
-      worldProposal.lore_entries.forEach((entry, index) => {
-        if (!selectedImports[`lore_entries.${index}`]) return
-        memoryEntries.push({
+      const loreEntries = proposal.lore_entries
+        .filter((_, index) => selectedImports[`lore_entries.${index}`])
+        .map((entry) => ({
           campaign_id: campaignId,
           source_type: 'world_import',
           memory_type: 'lore',
           title: entry.title,
           content: entry.content,
-          visibility: entry.visibility,
+          visibility: toWorldbuildingVisibility(entry.visibility),
           importance: 'normal',
-          created_by: user.uid,
-          approved_by: user.uid,
+          created_by: currentUser.uid,
+          approved_by: currentUser.uid,
           approved_at: now,
-        })
-      })
+        }))
+      await insertRows("lore_entries", "Lore", "campaign_memory", loreEntries)
 
-      worldProposal.threats.forEach((threat, index) => {
-        if (!selectedImports[`threats.${index}`]) return
-        memoryEntries.push({
+      const threatEntries = proposal.threats
+        .filter((_, index) => selectedImports[`threats.${index}`])
+        .map((threat) => ({
           campaign_id: campaignId,
           source_type: 'world_import',
           memory_type: 'threat',
           title: threat.title,
           content: threat.content,
-          visibility: threat.visibility,
+          visibility: toWorldbuildingVisibility(threat.visibility),
           importance: 'high',
-          created_by: user.uid,
-          approved_by: user.uid,
+          created_by: currentUser.uid,
+          approved_by: currentUser.uid,
           approved_at: now,
-        })
-      })
+        }))
+      await insertRows("threats", "Ameaças", "campaign_memory", threatEntries)
 
-      worldProposal.master_secrets.forEach((secret, index) => {
-        if (!selectedImports[`master_secrets.${index}`]) return
-        memoryEntries.push({
+      const secretEntries = proposal.master_secrets
+        .filter((_, index) => selectedImports[`master_secrets.${index}`])
+        .map((secret) => ({
           campaign_id: campaignId,
           source_type: 'world_import',
           memory_type: 'master_secret',
@@ -622,35 +879,14 @@ export default function MasterPanel() {
           content: secret.content,
           visibility: 'master_only',
           importance: 'high',
-          created_by: user.uid,
-          approved_by: user.uid,
+          created_by: currentUser.uid,
+          approved_by: currentUser.uid,
           approved_at: now,
-        })
-      })
+        }))
+      await insertRows("master_secrets", "Segredos do Mestre", "campaign_memory", secretEntries)
 
-      if (selectedImports.opening_scene && worldProposal.opening_scene) {
-        memoryEntries.push({
-          campaign_id: campaignId,
-          source_type: 'world_import',
-          memory_type: 'opening_scene',
-          title: 'Cena Inicial Sugerida',
-          content: worldProposal.opening_scene,
-          visibility: 'master_only',
-          importance: 'normal',
-          created_by: user.uid,
-          approved_by: user.uid,
-          approved_at: now,
-        })
-      }
-
-      if (memoryEntries.length > 0) {
-        const { error } = await supabase.from('campaign_memory').insert(memoryEntries)
-        if (error) throw error
-      }
-
-      const selectedNpcs = worldProposal.npcs.filter((_, index) => selectedImports[`npcs.${index}`])
-      if (selectedNpcs.length > 0) {
-        const { error } = await supabase.from('npcs').insert(selectedNpcs.map((npc) => ({
+      const selectedNpcs = proposal.npcs.filter((_, index) => selectedImports[`npcs.${index}`])
+      await insertRows("npcs", "NPCs", "npcs", selectedNpcs.map((npc) => ({
           campaign_id: campaignId,
           name: npc.name,
           role: npc.role || null,
@@ -659,73 +895,89 @@ export default function MasterPanel() {
           goals: npc.goals || null,
           secrets: npc.secrets || null,
           visibility: toNpcVisibility(npc.visibility),
-          created_by: user.uid,
+          created_by: currentUser.uid,
         })))
-        if (error) throw error
-      }
 
-      const selectedLocations = worldProposal.locations.filter((_, index) => selectedImports[`locations.${index}`])
-      if (selectedLocations.length > 0) {
-        const { error } = await supabase.from('locations').insert(selectedLocations.map((location) => ({
+      const selectedLocations = proposal.locations.filter((_, index) => selectedImports[`locations.${index}`])
+      await insertRows("locations", "Locais", "locations", selectedLocations.map((location) => ({
           campaign_id: campaignId,
           name: location.name,
           type: location.type || null,
           description: location.description || null,
           region: location.region || null,
-          image_url: location.image_url || null,
           visibility: toLocationVisibility(location.visibility),
-          created_by: user.uid,
+          created_by: currentUser.uid,
         })))
-        if (error) throw error
-      }
 
-      const selectedFactions = worldProposal.factions.filter((_, index) => selectedImports[`factions.${index}`])
-      if (selectedFactions.length > 0) {
-        const { error } = await supabase.from('factions').insert(selectedFactions.map((faction) => ({
+      const selectedFactions = proposal.factions.filter((_, index) => selectedImports[`factions.${index}`])
+      await insertRows("factions", "Facções", "factions", selectedFactions.map((faction) => ({
           campaign_id: campaignId,
           name: faction.name,
           description: faction.description || null,
           goals: faction.goals || null,
           secrets: faction.secrets || null,
           relationship_status: faction.relationship_status || null,
-          visibility: faction.visibility,
-          created_by: user.uid,
+          visibility: toWorldbuildingVisibility(faction.visibility),
+          created_by: currentUser.uid,
         })))
-        if (error) throw error
-      }
 
-      const selectedItems = worldProposal.items.filter((_, index) => selectedImports[`items.${index}`])
-      if (selectedItems.length > 0) {
-        const { error } = await supabase.from('items').insert(selectedItems.map((item) => ({
+      const selectedItems = proposal.items.filter((_, index) => selectedImports[`items.${index}`])
+      await insertRows("items", "Itens", "items", selectedItems.map((item) => ({
           campaign_id: campaignId,
           name: item.name,
           item_type: item.item_type || null,
           description: item.description || null,
           rarity: item.rarity || 'common',
-          image_url: item.image_url || null,
-          visibility: item.visibility,
-          created_by: user.uid,
+          visibility: toWorldbuildingVisibility(item.visibility),
+          created_by: currentUser.uid,
         })))
-        if (error) throw error
-      }
 
-      const selectedQuests = worldProposal.quests.filter((_, index) => selectedImports[`quests.${index}`])
-      if (selectedQuests.length > 0) {
-        const { error } = await supabase.from('quests').insert(selectedQuests.map((quest) => ({
+      const selectedQuests = proposal.quests.filter((_, index) => selectedImports[`quests.${index}`])
+      await insertRows("quests", "Missões", "quests", selectedQuests.map((quest) => ({
           campaign_id: campaignId,
           title: quest.title,
           description: quest.description || null,
+          status: quest.visibility === 'master_only' ? 'draft' : 'active',
           reward_notes: quest.reward_notes || null,
-          visibility: quest.visibility,
-          created_by: user.uid,
+          visibility: toWorldbuildingVisibility(quest.visibility),
+          created_by: currentUser.uid,
         })))
-        if (error) throw error
-      }
 
-      toast({ title: "Mundo importado", description: "Os itens selecionados foram salvos no Supabase." })
-      setWorldProposal(null)
-      setSelectedImports({})
+      await createOpeningScene()
+
+      const report: WorldImportReport = {
+        createdAt: now,
+        entries,
+        sessionId: createdSessionId,
+        sceneId: createdSceneId,
+      }
+      setWorldImportReport(report)
+      if (createdSession) setSessions((prev) => [createdSession as SessionRow, ...prev])
+      await refreshWorldPrepSummary()
+
+      const { successes, errors, saved } = summarizeImport(entries)
+      console.info('[world-import] import finalizado', {
+        campaignId,
+        hasUser: Boolean(currentUser),
+        successCategories: successes.length,
+        errorCategories: errors.length,
+        saved,
+      })
+
+      if (errors.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Importação parcial",
+          description: `${saved} registro(s) salvos. Falha em: ${errors.map((entry) => entry.label).join(', ')}.`,
+        })
+      } else {
+        toast({
+          title: "Importação concluída",
+          description: `${saved} registro(s) foram salvos no Supabase.`,
+        })
+      }
     } catch (e: any) {
+      console.error('[world-import] erro inesperado', { campaignId, hasUser: Boolean(currentUser), message: e.message })
       toast({ variant: "destructive", title: "Erro ao Importar Mundo", description: e.message })
     } finally {
       setIsImportingWorld(false)
@@ -1234,13 +1486,23 @@ export default function MasterPanel() {
             </Card>
           </div>
 
+          {worldImportReport && (
+            <WorldImportReportPanel report={worldImportReport} campaignId={campaignId} />
+          )}
+
+          <WorldPrepSummaryPanel summary={worldPrepSummary} campaignId={campaignId} />
+
           {worldProposal && (
             <Card className="bg-card/30 border-primary/20 p-8 space-y-8">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-display font-bold text-2xl text-primary">Revisar Sugestões da IA</h3>
+                  <h3 className="font-display font-bold text-2xl text-primary">
+                    {worldImportReport ? "Conteúdo importado com sucesso" : "Revisar Sugestões da IA"}
+                  </h3>
                   <p className="text-sm text-muted-foreground font-heading italic mt-2">
-                    Edite, desmarque ou importe apenas o que será salvo no Supabase.
+                    {worldImportReport
+                      ? "A importação foi registrada. Você pode gerar uma nova proposta ou revisar o relatório acima."
+                      : "Esta proposta ainda não está salva. Marque os cartões e clique em Importar Selecionados."}
                   </p>
                 </div>
                 <Button onClick={handleImportSelectedWorld} disabled={isImportingWorld} className="rounded-full h-12 bg-primary px-10">
@@ -1476,6 +1738,119 @@ function ApprovalCard({ icon, type, title, desc, onApprove, onReject }: { icon: 
 }
 
 type WorldArraySection = 'lore_entries' | 'locations' | 'npcs' | 'factions' | 'items' | 'quests' | 'threats' | 'master_secrets'
+
+function WorldImportReportPanel({ report, campaignId }: { report: WorldImportReport; campaignId: string }) {
+  const { successes, errors, saved } = summarizeImport(report.entries)
+
+  return (
+    <Card className="bg-primary/10 border-primary/30 p-6 space-y-5">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h3 className="font-display font-bold text-2xl text-primary flex items-center gap-3">
+            <CircleCheck className="h-6 w-6" /> Relatório de Importação
+          </h3>
+          <p className="text-sm text-muted-foreground font-heading italic mt-1">
+            {errors.length > 0
+              ? `${saved} registro(s) salvos com ${errors.length} categoria(s) exigindo revisão.`
+              : `Importação concluída: ${saved} registro(s) salvos.`}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" className="rounded-full border-primary/30">
+            <Link href={`/campaign/${campaignId}/npcs`}>Ver NPCs</Link>
+          </Button>
+          <Button asChild variant="outline" className="rounded-full border-primary/30">
+            <Link href={`/campaign/${campaignId}/locais`}>Ver Locais</Link>
+          </Button>
+          <Button asChild variant="outline" className="rounded-full border-primary/30">
+            <a href="#world-prep-registry">Ver Itens e Facções</a>
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {report.entries.map((entry) => (
+          <div key={entry.key} className="rounded-xl border border-white/10 bg-background/40 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-bold font-ui">{entry.label}</p>
+              <Badge
+                variant={entry.status === "error" ? "destructive" : "outline"}
+                className={entry.status === "success" ? "border-primary/30 text-primary" : ""}
+              >
+                {entry.status === "success" ? `${entry.count} salvo(s)` : entry.status === "error" ? "Erro" : "Ignorado"}
+              </Badge>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground font-mono">{entry.table}</p>
+            {entry.message && <p className="mt-2 text-xs text-muted-foreground">{entry.message}</p>}
+          </div>
+        ))}
+      </div>
+
+      {successes.length > 0 && (
+        <p className="text-xs uppercase tracking-widest text-primary/80 font-bold">
+          Conteúdo importado com sucesso.
+        </p>
+      )}
+    </Card>
+  )
+}
+
+function WorldPrepSummaryPanel({ summary, campaignId }: { summary: WorldPrepSummary; campaignId: string }) {
+  const hasContent = summary.memory.length > 0 || summary.items.length > 0 || summary.factions.length > 0 || summary.quests.length > 0
+
+  return (
+    <Card id="world-prep-registry" className="bg-card/30 border-white/5 p-6 space-y-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h3 className="font-display font-bold text-2xl flex items-center gap-3">
+            <BookMarked className="h-6 w-6 text-accent" /> Registro da Preparação
+          </h3>
+          <p className="text-sm text-muted-foreground font-heading italic mt-1">
+            Últimos conteúdos de mundo salvos fora das Crônicas oficiais.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="ghost" className="rounded-full">
+            <Link href={`/campaign/${campaignId}/npcs`}>NPCs</Link>
+          </Button>
+          <Button asChild variant="ghost" className="rounded-full">
+            <Link href={`/campaign/${campaignId}/locais`}>Locais</Link>
+          </Button>
+        </div>
+      </div>
+
+      {!hasContent && (
+        <div className="rounded-xl border border-dashed border-white/10 p-6 text-sm text-muted-foreground">
+          Nenhum conteúdo de preparação salvo ainda.
+        </div>
+      )}
+
+      {hasContent && (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <WorldPrepList title="Memória" items={summary.memory.map((item) => ({ id: item.id, title: item.title, meta: `${item.memory_type} - ${item.visibility}` }))} />
+          <WorldPrepList title="Itens" items={summary.items.map((item) => ({ id: item.id, title: item.name, meta: item.visibility }))} />
+          <WorldPrepList title="Facções" items={summary.factions.map((item) => ({ id: item.id, title: item.name, meta: item.visibility }))} />
+          <WorldPrepList title="Missões" items={summary.quests.map((item) => ({ id: item.id, title: item.title, meta: item.visibility }))} />
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function WorldPrepList({ title, items }: { title: string; items: Array<{ id: string; title: string; meta: string }> }) {
+  return (
+    <div className="space-y-3">
+      <h4 className="text-[10px] uppercase font-bold tracking-[0.25em] text-muted-foreground">{title}</h4>
+      {items.length === 0 && <p className="text-xs text-muted-foreground">Sem registros.</p>}
+      {items.map((item) => (
+        <div key={item.id} className="rounded-xl bg-white/5 border border-white/5 p-3">
+          <p className="text-sm font-bold truncate">{item.title}</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-widest mt-1">{item.meta}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function WorldSingleReview({
   id,
