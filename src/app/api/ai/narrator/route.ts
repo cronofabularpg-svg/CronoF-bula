@@ -4,11 +4,13 @@ import { callGroq, GroqError } from '@/lib/ai/groq'
 import { NARRATOR_SYSTEM_PROMPT, buildNarratorPrompt } from '@/lib/ai/prompts'
 import { getAuthenticatedUserId, logAiMessage } from '@/lib/ai/route-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { serverEnv } from '@/lib/server/env'
 
 const MODEL = 'llama-3.3-70b-versatile'
 
 export async function POST(request: Request) {
   const userId = await getAuthenticatedUserId()
+  console.log('[ai/narrator] usuário autenticado:', Boolean(userId))
   if (!userId) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
   }
@@ -34,10 +36,13 @@ export async function POST(request: Request) {
       userId,
     })
   } catch (error: any) {
+    console.error('[ai/narrator] campanha/contexto não encontrado:', error.message)
     return NextResponse.json({ error: error.message || 'Falha ao montar contexto.' }, { status: 403 })
   }
 
   const { snapshotId, isMaster, context } = aiContext
+
+  console.log('[ai/narrator] campanha encontrada:', campaignId, '| ia ativa (ai_can_narrate):', context.settings.aiCanNarrate, '| GROQ_API_KEY presente:', Boolean(serverEnv.groqApiKey))
 
   if (!context.settings.aiCanNarrate) {
     return NextResponse.json({ error: 'A narração por IA está desativada nesta campanha.' }, { status: 403 })
@@ -55,6 +60,7 @@ export async function POST(request: Request) {
       { model: MODEL }
     )
   } catch (error: any) {
+    console.error('[ai/narrator] erro ao chamar Groq:', error instanceof GroqError ? error.message : 'erro desconhecido')
     await logAiMessage({
       campaignId,
       sessionId,

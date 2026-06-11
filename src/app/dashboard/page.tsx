@@ -94,6 +94,7 @@ const DND_CLASSES = [
 ];
 
 type SoloStep = 'select' | 'existing' | 'new' | 'new-confirm'
+type SoloDialogMode = 'join' | 'solo'
 
 export default function Dashboard() {
   const { user } = useUser();
@@ -106,8 +107,10 @@ export default function Dashboard() {
 
   const [isSoloDialogOpen, setIsSoloDialogOpen] = React.useState(false)
   const [soloStep, setSoloStep] = React.useState<SoloStep>('select')
+  const [soloDialogMode, setSoloDialogMode] = React.useState<SoloDialogMode>('join')
+  const [enterAsSolo, setEnterAsSolo] = React.useState(false)
 
-  // Modo A: continuar crônica existente
+  // Selecionar campanha + personagem existentes (caminhos B e C-Mundo Existente)
   const [selectedExistingCampaignId, setSelectedExistingCampaignId] = React.useState("")
   const [existingCharacters, setExistingCharacters] = React.useState<CharacterOption[]>([])
   const [loadingExistingCharacters, setLoadingExistingCharacters] = React.useState(false)
@@ -157,8 +160,7 @@ export default function Dashboard() {
     router.refresh();
   }
 
-  function openSoloDialog() {
-    setSoloStep('select')
+  function resetEntryDialogState() {
     setSelectedExistingCampaignId("")
     setExistingCharacters([])
     setSelectedExistingCharacterId("")
@@ -171,6 +173,23 @@ export default function Dashboard() {
       characterRace: "human",
       characterClass: "fighter",
     })
+  }
+
+  // Caminho B: "Continue uma crônica onde você já participa."
+  function openJoinDialog() {
+    setSoloDialogMode('join')
+    setSoloStep('existing')
+    setEnterAsSolo(false)
+    resetEntryDialogState()
+    setIsSoloDialogOpen(true)
+  }
+
+  // Caminho C: "Jogue sozinho com o Oráculo."
+  function openSoloDialog() {
+    setSoloDialogMode('solo')
+    setSoloStep('select')
+    setEnterAsSolo(false)
+    resetEntryDialogState()
     setIsSoloDialogOpen(true)
   }
 
@@ -201,10 +220,19 @@ export default function Dashboard() {
     return () => { active = false }
   }, [selectedExistingCampaignId, user, toast])
 
-  function handleEnterExistingSolo() {
+  function handleEnterExisting() {
     if (!selectedExistingCampaignId) return
     setIsSoloDialogOpen(false)
-    router.push(`/campaign/${selectedExistingCampaignId}/mesa-viva`)
+    const suffix = enterAsSolo ? '?solo=1' : ''
+    router.push(`/campaign/${selectedExistingCampaignId}/mesa-viva${suffix}`)
+  }
+
+  function goBackFromExistingStep() {
+    if (soloDialogMode === 'solo') {
+      setSoloStep('select')
+    } else {
+      setIsSoloDialogOpen(false)
+    }
   }
 
   async function handleCreateSoloAdventure() {
@@ -237,15 +265,25 @@ export default function Dashboard() {
         .update({ ai_default_mode: 'oracle', solo_requires_approval: false })
         .eq('campaign_id', campaign.id)
 
+      let createdCharacterId: string | null = null
       if (characterName) {
-        await supabase.from('characters').insert({
-          campaign_id: campaign.id,
-          owner_user_id: user.uid,
-          name: characterName,
-          race: newAdventure.characterRace,
-          class: newAdventure.characterClass,
-          level: 1,
-        })
+        const { data: characterRow } = await supabase
+          .from('characters')
+          .insert({
+            campaign_id: campaign.id,
+            owner_user_id: user.uid,
+            name: characterName,
+            race: newAdventure.characterRace,
+            class: newAdventure.characterClass,
+            level: 1,
+          })
+          .select('id')
+          .single()
+
+        if (characterRow) {
+          createdCharacterId = characterRow.id
+          await supabase.from('character_stats').insert({ character_id: characterRow.id })
+        }
       }
 
       const { data: session, error: sessionError } = await supabase
@@ -262,7 +300,7 @@ export default function Dashboard() {
 
       if (sessionError || !session) throw sessionError || new Error("Falha ao iniciar sessão.");
 
-      const { error: sceneError } = await supabase
+      const { data: scene, error: sceneError } = await supabase
         .from('scenes')
         .insert({
           campaign_id: campaign.id,
@@ -270,9 +308,11 @@ export default function Dashboard() {
           title: "Cena Inicial",
           status: "active",
           created_by: user.uid,
-        });
+        })
+        .select('id')
+        .single();
 
-      if (sceneError) throw sceneError;
+      if (sceneError || !scene) throw sceneError || new Error("Falha ao criar cena inicial.");
 
       if (newAdventure.theme.trim()) {
         const nowIso = new Date().toISOString()
@@ -287,6 +327,41 @@ export default function Dashboard() {
           created_by: user.uid,
           approved_by: user.uid,
           approved_at: nowIso,
+        })
+      }
+
+      // Pede ao Oráculo a cena de abertura. Se a IA falhar, a campanha
+      // já foi criada normalmente — apenas avisamos que a abertura
+      // precisa ser pedida manualmente na Mesa Viva.
+      const genreName = NARRATIVE_GENRES.find((g) => g.id === newAdventure.genre)?.name || newAdventure.genre
+      const openingPrompt = `Inicie esta aventura solo. Apresente a cena de abertura para ${characterName ? `o herói ${characterName}` : 'o aventureiro'}, com tom de ${genreName}.${newAdventure.theme.trim() ? ` Premissa: ${newAdventure.theme.trim()}` : ' Crie um gancho narrativo envolvente.'}`
+
+      try {
+        const response = await fetch('/api/ai/narrator', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            campaignId: campaign.id,
+            sessionId: session.id,
+            sceneId: scene.id,
+            characterId: createdCharacterId,
+            playerAction: openingPrompt,
+            publish: true,
+          }),
+        })
+
+        if (!response.ok) {
+          toast({
+            variant: "destructive",
+            title: "Abertura não gerada",
+            description: "A IA não respondeu. Verifique GROQ_API_KEY ou configuração da campanha.",
+          })
+        }
+      } catch {
+        toast({
+          variant: "destructive",
+          title: "Abertura não gerada",
+          description: "A IA não respondeu. Verifique GROQ_API_KEY ou configuração da campanha.",
         })
       }
 
@@ -406,12 +481,30 @@ export default function Dashboard() {
 
         {/* Barra Lateral Arcana */}
         <div className="space-y-16">
+          <section className="p-10 rounded-[2rem] bg-primary/5 border border-primary/20 space-y-8 relative overflow-hidden group">
+            <ScrollText className="absolute -top-6 -right-6 h-32 w-32 text-primary opacity-5 group-hover:scale-125 group-hover:rotate-12 transition-all duration-1000" />
+            <div className="space-y-4">
+              <h3 className="text-3xl font-display font-bold text-primary">Jogar Campanha Existente</h3>
+              <p className="text-lg text-muted-foreground font-heading italic leading-relaxed opacity-70">
+                "Continue uma crônica onde você já participa."
+              </p>
+            </div>
+            <Button
+              onClick={openJoinDialog}
+              disabled={campaigns.length === 0}
+              variant="outline"
+              className="w-full border-primary/30 text-primary hover:bg-primary/10 literary-shadow rounded-2xl h-14 font-display text-[10px] tracking-widest disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Entrar em Crônica
+            </Button>
+          </section>
+
           <section className="p-10 rounded-[2rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/20 space-y-8 relative overflow-hidden group">
             <Sparkles className="absolute -top-6 -right-6 h-32 w-32 text-[#7B4FB3] opacity-5 group-hover:scale-125 group-hover:rotate-12 transition-all duration-1000" />
             <div className="space-y-4">
               <h3 className="text-3xl font-display font-bold text-primary">Jornada Solo</h3>
               <p className="text-lg text-muted-foreground font-heading italic leading-relaxed opacity-70">
-                "Não aguarde pela mesa. O Oráculo pode assumir o papel de Mestre e conduzir sua própria crônica."
+                "Jogue sozinho com o Oráculo."
               </p>
             </div>
             <Button
@@ -439,13 +532,13 @@ export default function Dashboard() {
               </DialogHeader>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
                 <button
-                  onClick={() => setSoloStep('existing')}
+                  onClick={() => { setEnterAsSolo(true); setSoloStep('existing') }}
                   className="p-8 rounded-2xl border-2 border-white/5 bg-black/20 hover:border-primary/40 hover:bg-primary/5 transition-all text-left space-y-4 group"
                 >
                   <ScrollText className="h-8 w-8 text-primary" />
-                  <h4 className="text-xl font-display font-bold group-hover:text-primary transition-colors">Continuar uma Crônica</h4>
+                  <h4 className="text-xl font-display font-bold group-hover:text-primary transition-colors">Mundo Existente</h4>
                   <p className="text-sm text-muted-foreground font-heading italic leading-relaxed">
-                    Use uma campanha onde você já é membro e seu personagem existente para uma sessão individual.
+                    Use uma campanha onde você já é membro e seu personagem existente para uma sessão individual com o Oráculo.
                   </p>
                 </button>
                 <button
@@ -453,7 +546,7 @@ export default function Dashboard() {
                   className="p-8 rounded-2xl border-2 border-white/5 bg-black/20 hover:border-primary/40 hover:bg-primary/5 transition-all text-left space-y-4 group"
                 >
                   <Wand2 className="h-8 w-8 text-primary" />
-                  <h4 className="text-xl font-display font-bold group-hover:text-primary transition-colors">Nova Aventura do Zero</h4>
+                  <h4 className="text-xl font-display font-bold group-hover:text-primary transition-colors">Aventura do Zero</h4>
                   <p className="text-sm text-muted-foreground font-heading italic leading-relaxed">
                     Descreva o tipo de aventura, seu herói e o tom narrativo. Você revisa tudo antes de criar.
                   </p>
@@ -465,9 +558,13 @@ export default function Dashboard() {
           {soloStep === 'existing' && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-3xl font-display text-primary">Continuar uma Crônica</DialogTitle>
+                <DialogTitle className="text-3xl font-display text-primary">
+                  {soloDialogMode === 'solo' ? 'Jornada Solo — Mundo Existente' : 'Jogar Campanha Existente'}
+                </DialogTitle>
                 <DialogDescription className="font-heading italic">
-                  Escolha a campanha e o personagem com quem deseja jogar.
+                  {soloDialogMode === 'solo'
+                    ? 'Escolha a campanha e o personagem para uma sessão individual com o Oráculo.'
+                    : 'Continue uma crônica onde você já participa: escolha a campanha e o personagem.'}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
@@ -521,11 +618,13 @@ export default function Dashboard() {
                 )}
               </div>
               <DialogFooter className="flex justify-between sm:justify-between">
-                <Button variant="ghost" onClick={() => setSoloStep('select')}><ChevronLeft className="mr-2 h-4 w-4" /> Voltar</Button>
+                <Button variant="ghost" onClick={goBackFromExistingStep}>
+                  <ChevronLeft className="mr-2 h-4 w-4" /> {soloDialogMode === 'solo' ? 'Voltar' : 'Cancelar'}
+                </Button>
                 <Button
                   className="bg-primary hover:bg-primary/90"
                   disabled={!selectedExistingCampaignId || (existingCharacters.length > 0 && !selectedExistingCharacterId)}
-                  onClick={handleEnterExistingSolo}
+                  onClick={handleEnterExisting}
                 >
                   Entrar na Mesa Viva <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>

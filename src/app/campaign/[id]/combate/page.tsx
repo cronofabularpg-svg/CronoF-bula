@@ -43,7 +43,7 @@ export default function Combate() {
       <div className="px-12 py-3 bg-accent/5 border-b border-accent/10 flex items-center gap-3 text-accent/70 shrink-0">
         <Construction className="h-4 w-4" />
         <p className="text-[10px] font-display uppercase font-black tracking-[0.2em]">
-          Sistema de Combate em desenvolvimento — exibindo dados de exemplo. Ações ainda não estão conectadas.
+          Modo de prévia — combate real ainda não está conectado ao banco.
         </p>
       </div>
 

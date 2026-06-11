@@ -343,9 +343,9 @@ export default function OnboardingPage() {
               <RoleCard
                 icon={<User className="h-10 w-10" />}
                 title="Sou Jogador"
-                desc="Quero criar um herói oficial do SRD e participar de uma crônica viva."
+                desc="Quero entrar em uma campanha existente ou jogar sozinho com o Oráculo."
                 active={role === 'player'}
-                onClick={() => { setRole('player'); setStep('character'); }}
+                onClick={() => router.push('/dashboard')}
               />
             </div>
           </div>

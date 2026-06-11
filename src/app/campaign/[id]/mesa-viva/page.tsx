@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -52,6 +52,7 @@ import { buildAIContext } from "@/lib/ai-context"
 
 export default function MesaViva() {
   const { id: campaignId } = useParams() as { id: string }
+  const searchParams = useSearchParams()
   const { user } = useUser()
   const { toast } = useToast()
 
@@ -60,6 +61,7 @@ export default function MesaViva() {
   const [isSoloMode, setIsSoloMode] = React.useState(false)
   const [isAiThinking, setIsAiThinking] = React.useState(false)
   const [aiSuggestion, setAiSuggestion] = React.useState<string | null>(null)
+  const [aiError, setAiError] = React.useState<string | null>(null)
   
   const [diceFormula, setDiceFormula] = React.useState('1d20')
   const [rollReason, setRollReason] = React.useState('')
@@ -112,7 +114,7 @@ export default function MesaViva() {
 
     supabase
       .from('campaign_settings')
-      .select('allow_physical_dice, allow_virtual_dice, require_roll_reason')
+      .select('allow_physical_dice, allow_virtual_dice, require_roll_reason, ai_can_narrate')
       .eq('campaign_id', campaignId)
       .maybeSingle()
       .then(({ data }) => {
@@ -144,6 +146,7 @@ export default function MesaViva() {
     allow_physical_dice: boolean
     allow_virtual_dice: boolean
     require_roll_reason: boolean
+    ai_can_narrate: boolean
   } | null>(null)
   const [loadingSession, setLoadingSession] = React.useState(true)
 
@@ -293,6 +296,15 @@ export default function MesaViva() {
   }, [campaignId, activeScene, toast])
 
   const isMaster = campaign?.owner_id === user?.uid;
+  const aiCanNarrate = diceSettings ? diceSettings.ai_can_narrate : true;
+  const aiAvailable = Boolean(campaign?.ai_enabled) && aiCanNarrate;
+
+  // Entrada vinda da Jornada Solo (dashboard) com ?solo=1: ativa o Oráculo automaticamente.
+  React.useEffect(() => {
+    if (searchParams?.get('solo') === '1' && aiAvailable && !isMaster) {
+      setIsSoloMode(true)
+    }
+  }, [searchParams, aiAvailable, isMaster])
 
   const handleSend = async (text?: string, type?: string, rollData?: any) => {
     const finalContent = text || inputValue
@@ -318,16 +330,16 @@ export default function MesaViva() {
     }
 
     if (!text) setInputValue('')
-    if (isSoloMode && !isMaster && (finalType === 'action' || finalType === 'speech')) {
+    if (aiAvailable && (finalType === 'action' || finalType === 'speech')) {
       handleAiMasterResponse(finalContent)
     }
   }
 
   const handleAiMasterResponse = async (playerAction: string, publish: boolean = false) => {
     if (!activeSession || !activeScene || !user) return
-    if (!isMaster && !myCharacter) return
     setIsAiThinking(true)
     setAiSuggestion(null)
+    setAiError(null)
     try {
       const response = await fetch('/api/ai/narrator', {
         method: 'POST',
@@ -352,8 +364,33 @@ export default function MesaViva() {
         setAiSuggestion(data.output)
       }
     } catch (e: any) {
+      setAiError("A IA não respondeu. Verifique GROQ_API_KEY ou configuração da campanha.")
       toast({ variant: "destructive", title: "Erro do Oráculo", description: e.message || "A IA encontrou uma bruma mental." })
     } finally { setIsAiThinking(false) }
+  }
+
+  const handlePublishSuggestion = async () => {
+    if (!aiSuggestion || !activeSession || !activeScene || !user) return
+    const supabase = createClient()
+    const { error } = await supabase.from('scene_messages').insert({
+      campaign_id: campaignId,
+      session_id: activeSession.id,
+      scene_id: activeScene.id,
+      sender_user_id: user.uid,
+      character_id: null,
+      message_type: 'narration',
+      visibility: 'scene',
+      content: aiSuggestion,
+      metadata: { source: 'ai-narrator' },
+    })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Publicar", description: error.message })
+      return
+    }
+
+    setAiSuggestion(null)
+    toast({ title: "Narração Publicada", description: "A sugestão do Oráculo agora é cânone da cena." })
   }
 
   const handleRollDice = async (isPhysical: boolean = false) => {
@@ -479,11 +516,11 @@ export default function MesaViva() {
             <div className="p-6 rounded-3xl bg-secondary/10 border border-secondary/20 space-y-5">
               <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.2em] text-center">Jornada Solo</p>
               <p className="text-[11px] text-muted-foreground italic text-center font-heading">
-                {campaign && !campaign.ai_enabled ? "A IA está desativada para esta campanha." : "\"O Oráculo narrará seus atos.\""}
+                {!aiAvailable ? "A IA está desativada para esta campanha." : "\"O Oráculo narrará seus atos.\""}
               </p>
               <Button
                 onClick={() => setIsSoloMode(!isSoloMode)}
-                disabled={campaign ? !campaign.ai_enabled : false}
+                disabled={!aiAvailable}
                 className={`w-full rounded-2xl h-12 transition-all font-display text-[10px] tracking-widest disabled:opacity-30 disabled:cursor-not-allowed ${isSoloMode ? 'btn-arcane' : 'border-secondary text-secondary hover:bg-secondary/10 border-2'}`}
               >
                 {isSoloMode ? "Dissipar Oráculo" : "Invocar Oráculo"}
@@ -600,11 +637,42 @@ export default function MesaViva() {
                   <div className="text-xl leading-relaxed text-foreground/80 font-heading italic">
                     {aiSuggestion}
                   </div>
+                  <div className="flex items-center gap-6">
+                    <button
+                      onClick={() => setAiSuggestion(null)}
+                      className="text-[10px] font-display uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Descartar sugestão
+                    </button>
+                    {isMaster && (
+                      <button
+                        onClick={handlePublishSuggestion}
+                        className="text-[10px] font-display uppercase tracking-widest text-primary hover:text-primary/70 transition-colors"
+                      >
+                        Publicar como narração
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            {aiError && (
+              <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
+                <div className="h-16 w-16 rounded-[1.5rem] bg-destructive/10 p-4 shrink-0 border border-destructive/40 flex items-center justify-center">
+                  <Sparkles className="h-7 w-7 text-destructive" />
+                </div>
+                <div className="space-y-4 pt-1">
+                  <p className="text-[10px] font-display uppercase font-bold text-destructive tracking-[0.4em]">
+                    O Oráculo está em silêncio
+                  </p>
+                  <div className="text-xl leading-relaxed text-foreground/80 font-heading italic">
+                    {aiError}
+                  </div>
                   <button
-                    onClick={() => setAiSuggestion(null)}
+                    onClick={() => setAiError(null)}
                     className="text-[10px] font-display uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    Descartar sugestão
+                    Dispensar aviso
                   </button>
                 </div>
               </div>
@@ -628,7 +696,7 @@ export default function MesaViva() {
                           <RitualShortcut
                             icon={<Sparkles />}
                             label={isAiThinking ? "Tecendo..." : "Pedir ao Oráculo"}
-                            disabled={!campaign?.ai_enabled || isAiThinking}
+                            disabled={!aiAvailable || isAiThinking}
                             onClick={() => handleAiMasterResponse(inputValue.trim() || 'Continue a narrativa a partir da cena atual.', true)}
                           />
                         </span>
@@ -636,6 +704,8 @@ export default function MesaViva() {
                       <TooltipContent>
                         {campaign && !campaign.ai_enabled
                           ? "A IA está desativada para esta campanha."
+                          : !aiCanNarrate
+                          ? "A narração por IA está desativada nas configurações da campanha."
                           : "A IA narra o próximo trecho e publica como cena oficial."}
                       </TooltipContent>
                     </Tooltip>

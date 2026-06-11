@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent } from "@/components/ui/card"
@@ -67,6 +67,7 @@ type Character = {
 
 export default function FichaPersonagem() {
   const { id: campaignId } = useParams() as { id: string }
+  const router = useRouter()
   const { user } = useUser()
   const { toast } = useToast()
 
@@ -89,12 +90,15 @@ export default function FichaPersonagem() {
       .select('id, name, race, class, level, status, current_hp, max_hp, armor_class, avatar_url, character_stats(*)')
       .eq('campaign_id', campaignId)
       .eq('owner_user_id', user.uid)
-      .maybeSingle()
+      .order('created_at', { ascending: false })
 
     if (error) {
       toast({ variant: "destructive", title: "Erro ao Carregar Ficha", description: error.message })
     }
-    setCharacter((data as unknown as Character) || null)
+
+    const rows = (data as unknown as Character[]) || []
+    const chosen = rows.find((row) => row.status === 'active') ?? rows[0] ?? null
+    setCharacter(chosen)
     setLoading(false)
   }, [user, campaignId, toast])
 
@@ -116,7 +120,7 @@ export default function FichaPersonagem() {
     setIsCreatingCharacter(true)
     try {
       const supabase = createClient()
-      const { error } = await supabase
+      const { data: created, error } = await supabase
         .from('characters')
         .insert({
           campaign_id: campaignId,
@@ -126,8 +130,14 @@ export default function FichaPersonagem() {
           class: newCharacter.class.trim() || null,
           level: newCharacter.level,
         })
+        .select('id')
+        .single()
 
       if (error) throw error
+
+      if (created?.id) {
+        await supabase.from('character_stats').insert({ character_id: created.id })
+      }
 
       toast({ title: "Personagem Criado!", description: `${newCharacter.name} entra nos anais desta campanha.` })
       setIsCreateCharacterOpen(false)
@@ -147,11 +157,12 @@ export default function FichaPersonagem() {
     return (
       <div className="p-20 flex flex-col items-center justify-center gap-8 text-center min-h-[60vh]">
         <div className="space-y-3">
-          <h2 className="text-3xl font-display font-black text-primary">Nenhum herói encontrado</h2>
+          <h2 className="text-3xl font-display font-black text-primary">Nenhum personagem selecionado</h2>
           <p className="text-muted-foreground italic font-heading text-xl max-w-md mx-auto">
-            Você ainda não tem um personagem nesta campanha. Crie um para começar a jogar.
+            Você ainda não tem um personagem nesta campanha. Crie um para começar a jogar ou volte ao painel.
           </p>
         </div>
+        <div className="flex gap-4">
         <Dialog open={isCreateCharacterOpen} onOpenChange={setIsCreateCharacterOpen}>
           <DialogTrigger asChild>
             <Button className="bg-primary px-10 h-12 rounded-full">Criar Personagem</Button>
@@ -206,6 +217,10 @@ export default function FichaPersonagem() {
             </div>
           </DialogContent>
         </Dialog>
+        <Button variant="outline" className="px-10 h-12 rounded-full" onClick={() => router.push('/dashboard')}>
+          Voltar ao Dashboard
+        </Button>
+        </div>
       </div>
     )
   }
@@ -234,7 +249,8 @@ export default function FichaPersonagem() {
   const sheetState = (charStats?.sheet_state && typeof charStats.sheet_state === 'object' && !Array.isArray(charStats.sheet_state))
     ? charStats.sheet_state
     : {};
-  const proficiency = Math.floor((character.level - 1) / 4) + 2;
+  const characterLevel = character.level ?? 1;
+  const proficiency = Math.floor((characterLevel - 1) / 4) + 2;
 
   const charPhoto = character.avatar_url || `https://picsum.photos/seed/${character.id}/500/500`;
 
@@ -262,8 +278,7 @@ export default function FichaPersonagem() {
     const supabase = createClient()
     const { error } = await supabase
       .from('character_stats')
-      .update({ sheet_state: nextState })
-      .eq('character_id', character.id)
+      .upsert({ character_id: character.id, sheet_state: nextState }, { onConflict: 'character_id' })
 
     if (error) {
       toast({ variant: "destructive", title: "Erro ao Salvar", description: error.message })
@@ -351,7 +366,7 @@ export default function FichaPersonagem() {
             <div className="flex items-center gap-4">
               <h1 className="text-6xl font-display font-black tracking-tighter text-primary">{character.name}</h1>
               <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-primary/30 text-primary bg-primary/5 px-4 h-6">
-                Nvl {character.level}
+                Nvl {characterLevel}
               </Badge>
               <Button
                 variant="ghost"
@@ -363,7 +378,7 @@ export default function FichaPersonagem() {
               </Button>
             </div>
             <p className="text-2xl font-heading italic text-muted-foreground mt-2 capitalize opacity-70">
-              {character.race} {character.class} • Status: {character.status === 'pending_approval' ? 'Aguardando Aprovação' : 'Ativo'}
+              {character.race || "Raça desconhecida"} {character.class || "Classe desconhecida"} • Status: {character.status === 'pending_approval' ? 'Aguardando Aprovação' : 'Ativo'}
             </p>
           </div>
         </div>
