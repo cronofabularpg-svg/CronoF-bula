@@ -1118,6 +1118,17 @@ export default function Combate() {
     await loadCombat()
   }
 
+  // Mestre alterna o campo de batalha para o modo Zonas Narrativas, preservando
+  // a configuração de grid (caso queira voltar depois). Se ainda não houver
+  // zonas criadas, abre o modal de criação de zonas.
+  async function handleUseZones() {
+    if (!combat) return
+    await handleSetBattlefieldMode('zones', combat.battlefield_config ?? {})
+    if (zones.length === 0) {
+      setBattlefieldOpen(true)
+    }
+  }
+
   // Abre o modal de configuração de grid pré-preenchido com a config atual
   // (usado tanto para configurar quanto para "Ajustar grid" de um combate já configurado).
   function openGridSetup() {
@@ -1469,7 +1480,6 @@ export default function Combate() {
   const battlefieldConfig = combat?.battlefield_config || null
   const isGridMode = combat?.battlefield_mode === 'grid' && !!battlefieldConfig?.width && !!battlefieldConfig?.height
   const isZonesConfigured = zones.length > 0
-  const battlefieldUnconfigured = !isGridMode && !isZonesConfigured
 
   const positionedTokens = participants.filter(p => p.grid_x !== null && p.grid_y !== null)
   const unpositionedTokens = participants.filter(p => p.grid_x === null || p.grid_y === null)
@@ -1484,42 +1494,95 @@ export default function Combate() {
 
   const campoPanel = combat && (
     <Card className="bg-card/40 border-primary/10 rounded-[2rem] p-5 space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <h2 className="font-display font-black tracking-tight text-lg flex items-center gap-2">
           <MapIcon className="h-4 w-4 text-accent" />
           Campo de Batalha
         </h2>
-        {battlefieldUnconfigured && isMaster && (
-          <div className="flex gap-2">
-            <Button onClick={() => setBattlefieldOpen(true)} variant="outline" size="sm" className="rounded-full border-accent/30 text-accent">
-              <Plus className="h-3 w-3 mr-1" />
-              Zonas Narrativas
-            </Button>
-            <Button onClick={openGridSetup} variant="outline" size="sm" className="rounded-full border-primary/30 text-primary">
-              <Grid3x3 className="h-3 w-3 mr-1" />
-              Grid Tático D&D
-            </Button>
-          </div>
-        )}
+        <Badge
+          variant="outline"
+          className={`text-[10px] uppercase tracking-widest ${isGridMode ? 'border-primary/40 text-primary' : 'border-accent/40 text-accent'}`}
+        >
+          Modo: {isGridMode ? 'Grid Tático D&D' : 'Zonas Narrativas'}
+        </Badge>
       </div>
 
-      {battlefieldUnconfigured ? (
-        <p className="text-sm text-muted-foreground font-heading italic">
-          {isMaster
-            ? "Nenhum campo de batalha definido ainda. Escolha \"Zonas Narrativas\" (modelo rápido) ou \"Grid Tático D&D\"."
-            : "O mestre ainda não definiu o campo de batalha."}
-        </p>
-      ) : isGridMode ? (
+      <p className="text-xs text-muted-foreground font-heading italic">
+        {isGridMode
+          ? 'Você está usando grid tático. 1 célula = 5ft / 1,5m.'
+          : 'Você está usando zonas narrativas. Ideal para combate rápido.'}
+      </p>
+
+      {isMaster && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={handleUseZones}
+            variant={!isGridMode ? 'default' : 'outline'}
+            size="sm"
+            className="rounded-full border-accent/30"
+          >
+            <MapPin className="h-3 w-3 mr-1" />
+            Usar Zonas
+          </Button>
+          <Button
+            onClick={openGridSetup}
+            variant={isGridMode ? 'default' : 'outline'}
+            size="sm"
+            className="rounded-full border-primary/30"
+          >
+            <Grid3x3 className="h-3 w-3 mr-1" />
+            Usar Grid Tático
+          </Button>
+          {isGridMode ? (
+            <>
+              <Button onClick={openGridSetup} variant="outline" size="sm" className="rounded-full border-primary/30 text-primary">
+                <Grid3x3 className="h-3 w-3 mr-1" />
+                Ajustar Grid
+              </Button>
+              <R2ImageUpload
+                campaignId={campaignId}
+                usageType="battlefield_map"
+                visibility="party"
+                label="Imagem de Fundo"
+                mode="direct"
+                entityType="combat"
+                entityId={combat.id}
+                onUploaded={handleBattlefieldImageUploaded}
+              />
+            </>
+          ) : (
+            <Button onClick={() => setBattlefieldOpen(true)} variant="outline" size="sm" className="rounded-full border-accent/30 text-accent">
+              <Plus className="h-3 w-3 mr-1" />
+              Criar/Editar Zonas
+            </Button>
+          )}
+        </div>
+      )}
+
+      {isGridMode ? (
         <>
+          {isMaster && !battlefieldConfig?.backgroundImageUrl && (
+            <p className="text-xs text-accent font-heading italic">
+              Grid tático ativo. Adicione uma imagem de fundo para usar como mapa de batalha.
+            </p>
+          )}
+
           <BattlefieldGrid
             config={battlefieldConfig!}
             participants={positionedTokens}
+            unpositionedParticipants={unpositionedTokens}
             avatarByParticipantId={participantAvatars}
             isMaster={isMaster}
             selectedTokenId={selectedGridTokenId}
             onSelectToken={setSelectedGridTokenId}
             onMoveToken={(x, y) => selectedGridTokenId && handleMoveParticipantGrid(selectedGridTokenId, x, y)}
           />
+
+          {unpositionedTokens.length > 0 && (
+            <p className="text-xs text-muted-foreground font-heading italic">
+              Participantes sem posição no grid. Mestre deve posicionar.
+            </p>
+          )}
 
           {isMaster && unpositionedTokens.length > 0 && (
             <div className="space-y-1">
@@ -1538,6 +1601,9 @@ export default function Combate() {
                   </Button>
                 ))}
               </div>
+              <p className="text-xs text-accent font-heading italic">
+                Selecione um participante e clique em uma célula para posicionar.
+              </p>
             </div>
           )}
 
@@ -1574,28 +1640,6 @@ export default function Combate() {
             </div>
           )}
 
-          {isMaster && (
-            <div className="space-y-2">
-              <div className="space-y-1">
-                <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Imagem de fundo (opcional)</p>
-                <R2ImageUpload
-                  campaignId={campaignId}
-                  usageType="battlefield_map"
-                  visibility="party"
-                  label="Adicionar imagem de fundo"
-                  mode="direct"
-                  entityType="combat"
-                  entityId={combat.id}
-                  onUploaded={handleBattlefieldImageUploaded}
-                />
-              </div>
-              <Button onClick={openGridSetup} variant="outline" size="sm" className="rounded-full border-primary/30 text-primary">
-                <Grid3x3 className="h-3 w-3 mr-1" />
-                Ajustar grid
-              </Button>
-            </div>
-          )}
-
           <div className="text-[10px] text-muted-foreground font-heading italic space-y-1">
             <p>Grid {battlefieldConfig?.width}x{battlefieldConfig?.height} — 1 célula = 5 ft / 1,5 m.</p>
             <p>O mestre valida deslocamento, terreno difícil e alcance.</p>
@@ -1604,8 +1648,13 @@ export default function Combate() {
             )}
           </div>
         </>
-      ) : (
+      ) : isZonesConfigured ? (
         <>
+          {isMaster && (
+            <p className="text-xs text-primary font-heading italic">
+              Este combate usa zonas narrativas. Para usar mapa com imagem e quadrados, clique em "Usar Grid Tático".
+            </p>
+          )}
           <div
             className="relative w-full h-72 md:h-96 rounded-[1.5rem] border border-primary/10 overflow-hidden bg-gradient-to-br from-primary/5 via-black/40 to-accent/5"
             style={combat.metadata?.battlefield_image_url ? {
@@ -1672,12 +1721,17 @@ export default function Combate() {
 
           <div className="text-[10px] text-muted-foreground font-heading italic space-y-1">
             <p>Movimento sugerido: 1 zona por deslocamento. O mestre decide o resultado.</p>
-            <p>Imagem de campo de batalha será adicionada em fase futura.</p>
             {isMaster && (
               <p>Clique em um participante no mapa para gerenciar/mover (modal "Gerenciar").</p>
             )}
           </div>
         </>
+      ) : (
+        <p className="text-sm text-muted-foreground font-heading italic">
+          {isMaster
+            ? 'Nenhuma zona criada ainda. Clique em "Criar/Editar Zonas" para montar o campo com zonas narrativas, ou em "Usar Grid Tático" para um mapa com imagem e quadrados.'
+            : "O mestre ainda não definiu o campo de batalha."}
+        </p>
       )}
     </Card>
   )
@@ -2688,6 +2742,7 @@ function ParticipantCard({
 function BattlefieldGrid({
   config,
   participants,
+  unpositionedParticipants = [],
   avatarByParticipantId,
   isMaster,
   selectedTokenId,
@@ -2696,6 +2751,7 @@ function BattlefieldGrid({
 }: {
   config: BattlefieldConfig
   participants: Participant[]
+  unpositionedParticipants?: Participant[]
   avatarByParticipantId: Record<string, string | null>
   isMaster: boolean
   selectedTokenId: string | null
@@ -2764,49 +2820,55 @@ function BattlefieldGrid({
         ))}
       </div>
 
-      {participants.map((p) => {
-        const isEnemy = p.participant_type === 'enemy'
-        const isSelected = selectedTokenId === p.id
-        const conditionCount = p.conditions?.length ?? 0
-        const avatarUrl = avatarByParticipantId[p.id]
-        return (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => isMaster && onSelectToken(isSelected ? null : p.id)}
-            disabled={!isMaster}
-            style={{
-              left: `${((p.grid_x ?? 0) / width) * 100}%`,
-              top: `${((p.grid_y ?? 0) / height) * 100}%`,
-              width: `${(p.token_size / width) * 100}%`,
-              height: `${(p.token_size / height) * 100}%`,
-            }}
-            className={`absolute flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-full border-2 p-0.5 text-[9px] font-heading leading-tight transition-shadow ${
-              isEnemy ? 'border-destructive/80 bg-destructive/60' : 'border-amber-400/80 bg-amber-900/40'
-            } ${isSelected ? 'ring-2 ring-accent oracle-glow' : ''} ${isMaster ? 'cursor-pointer' : 'cursor-default'}`}
-            title={p.name}
-          >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt={p.name} className="absolute inset-0 h-full w-full object-cover" />
-            ) : (
-              <span className="text-center font-black text-white">
-                {p.name.slice(0, 2).toUpperCase()}
-              </span>
-            )}
-            <span className="relative z-10 mt-auto w-full truncate rounded-sm bg-black/60 text-center text-white">
-              {p.name}
-            </span>
-            {(p.current_hp !== null || p.max_hp !== null) && (
-              <span className="relative z-10 rounded-sm bg-black/60 px-0.5 text-white/80">
-                {p.current_hp ?? '—'}/{p.max_hp ?? '—'}
-              </span>
-            )}
-            {conditionCount > 0 && (
-              <span className="relative z-10 rounded-sm bg-black/60 px-0.5 text-[8px] text-white/70">{conditionCount} cond.</span>
-            )}
-          </button>
-        )
-      })}
+      {participants.map((p) => renderToken(p, p.grid_x ?? 0, p.grid_y ?? 0, false))}
+
+      {unpositionedParticipants.map((p, index) =>
+        renderToken(p, index % width, 0, true)
+      )}
     </div>
   )
+
+  function renderToken(p: Participant, gridX: number, gridY: number, isVirtual: boolean) {
+    const isEnemy = p.participant_type === 'enemy'
+    const isSelected = selectedTokenId === p.id
+    const conditionCount = p.conditions?.length ?? 0
+    const avatarUrl = avatarByParticipantId[p.id]
+    return (
+      <button
+        key={p.id}
+        type="button"
+        onClick={() => isMaster && onSelectToken(isSelected ? null : p.id)}
+        disabled={!isMaster}
+        style={{
+          left: `${(gridX / width) * 100}%`,
+          top: `${(gridY / height) * 100}%`,
+          width: `${(p.token_size / width) * 100}%`,
+          height: `${(p.token_size / height) * 100}%`,
+        }}
+        className={`absolute flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-full border-2 p-0.5 text-[9px] font-heading leading-tight transition-shadow ${
+          isEnemy ? 'border-destructive/80 bg-destructive/60' : 'border-amber-400/80 bg-amber-900/40'
+        } ${isVirtual ? 'opacity-50 border-dashed' : ''} ${isSelected ? 'ring-2 ring-accent oracle-glow' : ''} ${isMaster ? 'cursor-pointer' : 'cursor-default'}`}
+        title={isVirtual ? `${p.name} (sem posição — clique para selecionar e posicionar)` : p.name}
+      >
+        {avatarUrl ? (
+          <img src={avatarUrl} alt={p.name} className="absolute inset-0 h-full w-full object-cover" />
+        ) : (
+          <span className="text-center font-black text-white">
+            {p.name.slice(0, 2).toUpperCase()}
+          </span>
+        )}
+        <span className="relative z-10 mt-auto w-full truncate rounded-sm bg-black/60 text-center text-white">
+          {p.name}
+        </span>
+        {(p.current_hp !== null || p.max_hp !== null) && (
+          <span className="relative z-10 rounded-sm bg-black/60 px-0.5 text-white/80">
+            {p.current_hp ?? '—'}/{p.max_hp ?? '—'}
+          </span>
+        )}
+        {conditionCount > 0 && (
+          <span className="relative z-10 rounded-sm bg-black/60 px-0.5 text-[8px] text-white/70">{conditionCount} cond.</span>
+        )}
+      </button>
+    )
+  }
 }
