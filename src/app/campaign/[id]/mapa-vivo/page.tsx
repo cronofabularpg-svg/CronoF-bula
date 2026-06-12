@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
 
 export default function MapaVivo() {
   const { id: campaignId } = useParams() as { id: string }
@@ -104,7 +105,7 @@ export default function MapaVivo() {
 
       const { data: locationData, error: locationError } = await supabase
         .from('locations')
-        .select('id, name, type, description, visibility, status')
+        .select('id, name, type, description, visibility, status, image_url')
         .eq('campaign_id', campaignId)
         .order('created_at', { ascending: false })
 
@@ -437,7 +438,7 @@ export default function MapaVivo() {
           status: 'active',
           created_by: user.uid,
         })
-        .select('id, name, type, description, visibility, status')
+        .select('id, name, type, description, visibility, status, image_url')
         .single()
 
       if (error) throw error
@@ -451,6 +452,24 @@ export default function MapaVivo() {
     } finally {
       setIsCreatingLocation(false)
     }
+  }
+
+  async function handleLocationImageUploaded(mediaAsset: MediaAsset) {
+    if (!activeNode || !mediaAsset.public_url) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('locations')
+      .update({ image_url: mediaAsset.public_url })
+      .eq('id', activeNode.id)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao salvar imagem", description: error.message })
+      return
+    }
+
+    setLocations((prev) => prev.map((loc) => loc.id === activeNode.id ? { ...loc, image_url: mediaAsset.public_url } : loc))
+    setActiveNode((prev: any) => prev ? { ...prev, image_url: mediaAsset.public_url } : prev)
+    toast({ title: "Imagem do local atualizada" })
   }
 
   return (
@@ -628,7 +647,11 @@ export default function MapaVivo() {
         {activeNode && !isTraveling && (
           <div className="absolute top-8 right-8 w-80 rounded-3xl bg-card/90 backdrop-blur-2xl border border-accent/20 literary-shadow animate-in slide-in-from-right-8 duration-500 overflow-hidden">
              <div className="relative h-40">
-               <img src={`https://picsum.photos/seed/${activeNode.id}/400/200`} alt={activeNode.name} className="object-cover w-full h-full opacity-40" />
+               {activeNode.image_url ? (
+                 <img src={activeNode.image_url} alt={activeNode.name} className="object-cover w-full h-full opacity-70" />
+               ) : (
+                 <img src={`https://picsum.photos/seed/${activeNode.id}/400/200`} alt={activeNode.name} className="object-cover w-full h-full opacity-40" />
+               )}
                <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
                <Button variant="ghost" size="icon" className="absolute top-2 right-2 text-white/50" onClick={() => setActiveNode(null)}>
                  <ChevronRight className="h-4 w-4" />
@@ -639,7 +662,16 @@ export default function MapaVivo() {
                <p className="text-xs text-muted-foreground font-heading italic leading-relaxed">
                  {activeNode.description || 'Um local envolto em névoas e mistérios.'}
                </p>
-               <Button 
+               {isMaster && (
+                 <R2ImageUpload
+                   campaignId={campaignId}
+                   usageType="location_image"
+                   visibility="party"
+                   label="Definir imagem do local"
+                   onUploaded={handleLocationImageUploaded}
+                 />
+               )}
+               <Button
                  className="w-full py-6 rounded-xl bg-primary hover:bg-primary/90 font-bold uppercase tracking-widest text-[11px]"
                  onClick={() => handleMoveGroup(activeNode.id, activeNode.name)}
                >

@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
+import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
 import {
   Swords,
   Skull,
@@ -51,6 +52,7 @@ import {
   Activity,
   X,
   Info,
+  Grid3x3,
 } from "lucide-react"
 
 // ----------------------------------------------------------------------------
@@ -78,6 +80,15 @@ type CombatMetadata = {
   battlefield_image_url?: string
 }
 
+type BattlefieldConfig = {
+  width?: number
+  height?: number
+  cellUnit?: string
+  cellMeters?: number
+  physicalCellCm?: number
+  backgroundImageUrl?: string | null
+}
+
 type Combat = {
   id: string
   campaign_id: string
@@ -88,6 +99,8 @@ type Combat = {
   round_number: number
   current_turn_index: number
   metadata: CombatMetadata | null
+  battlefield_mode: "zones" | "grid"
+  battlefield_config: BattlefieldConfig | null
 }
 
 type Participant = {
@@ -105,6 +118,9 @@ type Participant = {
   conditions: Condition[] | null
   metadata: ParticipantMetadata | null
   current_zone_id: string | null
+  grid_x: number | null
+  grid_y: number | null
+  token_size: number
 }
 
 type CombatZone = {
@@ -216,6 +232,17 @@ const ABILITIES: { key: string; label: string }[] = [
   { key: "INT", label: "Inteligência (INT)" },
   { key: "WIS", label: "Sabedoria (WIS)" },
   { key: "CHA", label: "Carisma (CHA)" },
+]
+
+// Grid Tático D&D: 1 célula = 5 ft / 1,5 m (1 quadrado físico = 2,5 cm).
+const DEFAULT_GRID_WIDTH = 24
+const DEFAULT_GRID_HEIGHT = 18
+
+const TOKEN_SIZES: { value: number; label: string }[] = [
+  { value: 1, label: "1x1 — Pequeno/Médio" },
+  { value: 2, label: "2x2 — Grande" },
+  { value: 3, label: "3x3 — Enorme" },
+  { value: 4, label: "4x4 — Colossal" },
 ]
 
 type ZoneTemplateDef = { name: string; x: number; y: number; description?: string }
@@ -467,6 +494,9 @@ export default function Combate() {
   const [concentrationActive, setConcentrationActive] = React.useState(false)
   const [concentrationSpell, setConcentrationSpell] = React.useState("")
   const [moveZoneId, setMoveZoneId] = React.useState("")
+  const [tokenSize, setTokenSize] = React.useState("1")
+  const [gridMoveX, setGridMoveX] = React.useState("")
+  const [gridMoveY, setGridMoveY] = React.useState("")
   const [actionSubmitting, setActionSubmitting] = React.useState(false)
 
   const [turnSubmitting, setTurnSubmitting] = React.useState(false)
@@ -493,10 +523,19 @@ export default function Combate() {
   const [saveResult, setSaveResult] = React.useState<number | null>(null)
   const [saveSubmitting, setSaveSubmitting] = React.useState(false)
 
-  // Campo de batalha: criação rápida por modelo
+  // Campo de batalha: criação rápida por modelo (zonas) ou configuração de grid
   const [battlefieldOpen, setBattlefieldOpen] = React.useState(false)
   const [battlefieldTemplate, setBattlefieldTemplate] = React.useState(BATTLEFIELD_TEMPLATES[0].key)
   const [battlefieldSubmitting, setBattlefieldSubmitting] = React.useState(false)
+
+  // Grid Tático D&D
+  const [gridSetupOpen, setGridSetupOpen] = React.useState(false)
+  const [gridWidthInput, setGridWidthInput] = React.useState(String(DEFAULT_GRID_WIDTH))
+  const [gridHeightInput, setGridHeightInput] = React.useState(String(DEFAULT_GRID_HEIGHT))
+  const [gridSetupSubmitting, setGridSetupSubmitting] = React.useState(false)
+  const [selectedGridTokenId, setSelectedGridTokenId] = React.useState<string | null>(null)
+  const [measureTokenA, setMeasureTokenA] = React.useState("")
+  const [measureTokenB, setMeasureTokenB] = React.useState("")
 
   const loadCombat = React.useCallback(async () => {
     if (!campaignId) return
@@ -504,7 +543,7 @@ export default function Combate() {
 
     const { data: combatData } = await supabase
       .from('combats')
-      .select('id, campaign_id, session_id, scene_id, title, status, round_number, current_turn_index, metadata')
+      .select('id, campaign_id, session_id, scene_id, title, status, round_number, current_turn_index, metadata, battlefield_mode, battlefield_config')
       .eq('campaign_id', campaignId)
       .eq('status', 'active')
       .order('created_at', { ascending: false })
@@ -516,7 +555,7 @@ export default function Combate() {
     if (combatData) {
       const { data: participantsData } = await supabase
         .from('combat_participants')
-        .select('id, character_id, npc_id, name, participant_type, initiative, armor_class, current_hp, max_hp, turn_order, status, conditions, metadata, current_zone_id')
+        .select('id, character_id, npc_id, name, participant_type, initiative, armor_class, current_hp, max_hp, turn_order, status, conditions, metadata, current_zone_id, grid_x, grid_y, token_size')
         .eq('combat_id', combatData.id)
         .order('turn_order', { ascending: true })
 
@@ -853,6 +892,9 @@ export default function Combate() {
     setConcentrationActive(!!concentration?.active)
     setConcentrationSpell(concentration?.spell ?? "")
     setMoveZoneId(participant.current_zone_id ?? "")
+    setTokenSize(String(participant.token_size ?? 1))
+    setGridMoveX(participant.grid_x !== null ? String(participant.grid_x) : "")
+    setGridMoveY(participant.grid_y !== null ? String(participant.grid_y) : "")
   }
 
   async function handleApplyDamage() {
@@ -1009,6 +1051,102 @@ export default function Combate() {
       return
     }
     await loadCombat()
+  }
+
+  // Mestre define o modo do campo de batalha (zonas ou grid) e sua configuração.
+  async function handleSetBattlefieldMode(mode: "zones" | "grid", config: BattlefieldConfig = {}) {
+    if (!combat) return
+    const supabase = createClient()
+    const { error } = await supabase.rpc('set_combat_battlefield', {
+      target_combat_id: combat.id,
+      mode,
+      config,
+    })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao configurar campo de batalha", description: error.message })
+      return
+    }
+    await loadCombat()
+  }
+
+  async function handleSetupGrid() {
+    const width = Math.max(1, Math.min(60, parseInt(gridWidthInput, 10) || DEFAULT_GRID_WIDTH))
+    const height = Math.max(1, Math.min(60, parseInt(gridHeightInput, 10) || DEFAULT_GRID_HEIGHT))
+
+    setGridSetupSubmitting(true)
+    await handleSetBattlefieldMode('grid', {
+      width,
+      height,
+      cellUnit: '5ft',
+      cellMeters: 1.5,
+      physicalCellCm: 2.5,
+      backgroundImageUrl: combat?.battlefield_config?.backgroundImageUrl ?? null,
+    })
+    setGridSetupSubmitting(false)
+    setGridSetupOpen(false)
+  }
+
+  // Mestre move um token para uma célula do grid (clique no mapa ou input numérico).
+  async function handleMoveParticipantGrid(participantId: string, x: number, y: number) {
+    const supabase = createClient()
+    const { error } = await supabase.rpc('move_combat_participant_grid', {
+      target_participant_id: participantId,
+      target_x: x,
+      target_y: y,
+    })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao mover token", description: error.message })
+      return
+    }
+    await loadCombat()
+  }
+
+  async function handleMoveParticipantGridFromModal() {
+    if (!manageParticipant) return
+    const x = parseInt(gridMoveX, 10)
+    const y = parseInt(gridMoveY, 10)
+    if (isNaN(x) || isNaN(y) || x < 0 || y < 0) {
+      toast({ variant: "destructive", title: "Posição inválida", description: "Informe coordenadas X e Y válidas (a partir de 0)." })
+      return
+    }
+
+    setActionSubmitting(true)
+    await handleMoveParticipantGrid(manageParticipant.id, x, y)
+    setActionSubmitting(false)
+  }
+
+  // Tamanho do token (1x1 a 4x4) — apenas mestre, sem evento de cena.
+  async function handleSetTokenSize() {
+    if (!manageParticipant) return
+
+    setActionSubmitting(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('combat_participants')
+      .update({ token_size: parseInt(tokenSize, 10) || 1 })
+      .eq('id', manageParticipant.id)
+    setActionSubmitting(false)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao salvar tamanho do token", description: error.message })
+      return
+    }
+    await loadCombat()
+  }
+
+  // Salva a imagem de fundo do grid em battlefield_config (fase futura: recorte/calibração).
+  async function handleBattlefieldImageUploaded(mediaAsset: MediaAsset) {
+    if (!combat) return
+    await handleSetBattlefieldMode('grid', {
+      width: combat.battlefield_config?.width ?? DEFAULT_GRID_WIDTH,
+      height: combat.battlefield_config?.height ?? DEFAULT_GRID_HEIGHT,
+      cellUnit: combat.battlefield_config?.cellUnit ?? '5ft',
+      cellMeters: combat.battlefield_config?.cellMeters ?? 1.5,
+      physicalCellCm: combat.battlefield_config?.physicalCellCm ?? 2.5,
+      backgroundImageUrl: mediaAsset.public_url,
+    })
   }
 
   // Ação do turno: apenas declara/registra; não aplica nenhum efeito automaticamente.
@@ -1261,27 +1399,134 @@ export default function Combate() {
   }
 
   // ---- Painel: Campo de Batalha -------------------------------------------
+  const battlefieldConfig = combat?.battlefield_config || null
+  const isGridMode = combat?.battlefield_mode === 'grid' && !!battlefieldConfig?.width && !!battlefieldConfig?.height
+  const isZonesConfigured = zones.length > 0
+  const battlefieldUnconfigured = !isGridMode && !isZonesConfigured
+
+  const positionedTokens = participants.filter(p => p.grid_x !== null && p.grid_y !== null)
+  const unpositionedTokens = participants.filter(p => p.grid_x === null || p.grid_y === null)
+
+  const measureA = positionedTokens.find(p => p.id === measureTokenA)
+  const measureB = positionedTokens.find(p => p.id === measureTokenB)
+  let measureResult: { cells: number; feet: number; meters: number } | null = null
+  if (measureA && measureB && measureA.id !== measureB.id) {
+    const cells = Math.max(Math.abs((measureA.grid_x ?? 0) - (measureB.grid_x ?? 0)), Math.abs((measureA.grid_y ?? 0) - (measureB.grid_y ?? 0)))
+    measureResult = { cells, feet: cells * 5, meters: cells * (battlefieldConfig?.cellMeters ?? 1.5) }
+  }
+
   const campoPanel = combat && (
     <Card className="bg-card/40 border-primary/10 rounded-[2rem] p-5 space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h2 className="font-display font-black tracking-tight text-lg flex items-center gap-2">
           <MapIcon className="h-4 w-4 text-accent" />
           Campo de Batalha
         </h2>
-        {zones.length === 0 && isMaster && (
-          <Button onClick={() => setBattlefieldOpen(true)} variant="outline" size="sm" className="rounded-full border-accent/30 text-accent">
-            <Plus className="h-3 w-3 mr-1" />
-            Criar Campo de Batalha
-          </Button>
+        {battlefieldUnconfigured && isMaster && (
+          <div className="flex gap-2">
+            <Button onClick={() => setBattlefieldOpen(true)} variant="outline" size="sm" className="rounded-full border-accent/30 text-accent">
+              <Plus className="h-3 w-3 mr-1" />
+              Zonas Narrativas
+            </Button>
+            <Button onClick={() => setGridSetupOpen(true)} variant="outline" size="sm" className="rounded-full border-primary/30 text-primary">
+              <Grid3x3 className="h-3 w-3 mr-1" />
+              Grid Tático D&D
+            </Button>
+          </div>
         )}
       </div>
 
-      {zones.length === 0 ? (
+      {battlefieldUnconfigured ? (
         <p className="text-sm text-muted-foreground font-heading italic">
           {isMaster
-            ? "Nenhuma zona definida ainda. Use \"Criar Campo de Batalha\" para escolher um modelo rápido."
+            ? "Nenhum campo de batalha definido ainda. Escolha \"Zonas Narrativas\" (modelo rápido) ou \"Grid Tático D&D\"."
             : "O mestre ainda não definiu o campo de batalha."}
         </p>
+      ) : isGridMode ? (
+        <>
+          <BattlefieldGrid
+            config={battlefieldConfig!}
+            participants={positionedTokens}
+            isMaster={isMaster}
+            selectedTokenId={selectedGridTokenId}
+            onSelectToken={setSelectedGridTokenId}
+            onMoveToken={(x, y) => selectedGridTokenId && handleMoveParticipantGrid(selectedGridTokenId, x, y)}
+          />
+
+          {isMaster && unpositionedTokens.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Sem posição no grid</p>
+              <div className="flex flex-wrap gap-2">
+                {unpositionedTokens.map((p) => (
+                  <Button
+                    key={p.id}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSelectedGridTokenId(p.id)}
+                    className={`rounded-full text-[10px] ${selectedGridTokenId === p.id ? 'border-accent text-accent' : 'border-primary/20'}`}
+                  >
+                    {selectedGridTokenId === p.id ? `Clique numa célula: ${p.name}` : `Posicionar ${p.name}`}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {positionedTokens.length >= 2 && (
+            <div className="space-y-2 rounded-xl border border-primary/10 bg-black/20 p-3">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Medir Distância</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Select value={measureTokenA} onValueChange={setMeasureTokenA}>
+                  <SelectTrigger className="bg-black/30 border-primary/20 text-xs">
+                    <SelectValue placeholder="Token A" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {positionedTokens.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={measureTokenB} onValueChange={setMeasureTokenB}>
+                  <SelectTrigger className="bg-black/30 border-primary/20 text-xs">
+                    <SelectValue placeholder="Token B" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {positionedTokens.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {measureResult && (
+                <p className="text-sm font-display font-bold text-accent text-center">
+                  {measureResult.cells} célula{measureResult.cells !== 1 ? 's' : ''} · {measureResult.feet} ft · {measureResult.meters.toFixed(1)} m
+                </p>
+              )}
+            </div>
+          )}
+
+          {isMaster && (
+            <div className="space-y-1">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Imagem de fundo (opcional)</p>
+              <R2ImageUpload
+                campaignId={campaignId}
+                usageType="battlefield_map"
+                visibility="party"
+                label="Adicionar imagem de fundo"
+                onUploaded={handleBattlefieldImageUploaded}
+              />
+            </div>
+          )}
+
+          <div className="text-[10px] text-muted-foreground font-heading italic space-y-1">
+            <p>Grid {battlefieldConfig?.width}x{battlefieldConfig?.height} — 1 célula = 5 ft / 1,5 m.</p>
+            <p>O mestre valida deslocamento, terreno difícil e alcance.</p>
+            {isMaster && (
+              <p>Clique em um token para selecioná-lo e depois em uma célula para movê-lo.</p>
+            )}
+          </div>
+        </>
       ) : (
         <>
           <div
@@ -1909,6 +2154,41 @@ export default function Combate() {
                 </div>
               </>
             )}
+
+            {isGridMode && (
+              <>
+                <Separator className="bg-primary/10" />
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 text-accent"><Grid3x3 className="h-4 w-4" /> Posição no Grid</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input type="number" min={0} value={gridMoveX} onChange={(e) => setGridMoveX(e.target.value)} placeholder="X (0-índice)" className="bg-black/30 border-primary/20" />
+                    <Input type="number" min={0} value={gridMoveY} onChange={(e) => setGridMoveY(e.target.value)} placeholder="Y (0-índice)" className="bg-black/30 border-primary/20" />
+                  </div>
+                  <Button onClick={handleMoveParticipantGridFromModal} disabled={actionSubmitting} variant="outline" className="w-full border-accent/40 text-accent">
+                    Mover no Grid
+                  </Button>
+                </div>
+              </>
+            )}
+
+            <Separator className="bg-primary/10" />
+
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-primary"><Grid3x3 className="h-4 w-4" /> Tamanho do Token</Label>
+              <Select value={tokenSize} onValueChange={setTokenSize}>
+                <SelectTrigger className="bg-black/30 border-primary/20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TOKEN_SIZES.map(t => (
+                    <SelectItem key={t.value} value={String(t.value)}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button onClick={handleSetTokenSize} disabled={actionSubmitting} variant="outline" className="w-full border-primary/40 text-primary">
+                Salvar Tamanho do Token
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -2082,6 +2362,37 @@ export default function Combate() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de configuração do Grid Tático D&D */}
+      <Dialog open={gridSetupOpen} onOpenChange={setGridSetupOpen}>
+        <DialogContent className="max-w-md bg-[#0b0e1c] border-primary/20">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl text-primary flex items-center gap-2">
+              <Grid3x3 className="h-5 w-5" /> Grid Tático D&D
+            </DialogTitle>
+            <DialogDescription>
+              1 célula = 5 ft / 1,5 m (1 quadrado físico = 2,5 cm). Padrão: 24x18 células.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Largura (células)</Label>
+              <Input type="number" min={1} max={60} value={gridWidthInput} onChange={(e) => setGridWidthInput(e.target.value)} className="bg-black/30 border-primary/20" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Altura (células)</Label>
+              <Input type="number" min={1} max={60} value={gridHeightInput} onChange={(e) => setGridHeightInput(e.target.value)} className="bg-black/30 border-primary/20" />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={handleSetupGrid} disabled={gridSetupSubmitting} className="btn-ritual rounded-full px-8">
+              {gridSetupSubmitting ? "Configurando..." : "Configurar Grid"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -2152,6 +2463,16 @@ function ParticipantCard({
         </div>
       )}
 
+      {participant.grid_x !== null && participant.grid_y !== null && (
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-heading">
+          <Grid3x3 className="h-3 w-3 shrink-0" />
+          <span className="truncate">
+            Grid [{participant.grid_x},{participant.grid_y}]
+            {participant.token_size > 1 ? ` · ${participant.token_size}x${participant.token_size}` : ''}
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-1">
         <Badge variant="outline" className="text-[10px] border-primary/20">
           {STATUS_LABEL[participant.status] || participant.status}
@@ -2197,5 +2518,91 @@ function ParticipantCard({
         </Button>
       )}
     </Card>
+  )
+}
+
+function BattlefieldGrid({
+  config,
+  participants,
+  isMaster,
+  selectedTokenId,
+  onSelectToken,
+  onMoveToken,
+}: {
+  config: BattlefieldConfig
+  participants: Participant[]
+  isMaster: boolean
+  selectedTokenId: string | null
+  onSelectToken: (id: string | null) => void
+  onMoveToken: (x: number, y: number) => void
+}) {
+  const width = config.width ?? DEFAULT_GRID_WIDTH
+  const height = config.height ?? DEFAULT_GRID_HEIGHT
+  const backgroundImageUrl = config.backgroundImageUrl
+
+  const cells: { x: number; y: number }[] = []
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      cells.push({ x, y })
+    }
+  }
+
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-2xl border border-primary/20"
+      style={{
+        aspectRatio: `${width} / ${height}`,
+        backgroundColor: '#0b0e1c',
+        backgroundImage: backgroundImageUrl ? `url(${backgroundImageUrl})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      <div
+        className="absolute inset-0 grid"
+        style={{ gridTemplateColumns: `repeat(${width}, 1fr)`, gridTemplateRows: `repeat(${height}, 1fr)` }}
+      >
+        {cells.map(({ x, y }) => (
+          <button
+            key={`${x}-${y}`}
+            type="button"
+            onClick={() => onMoveToken(x, y)}
+            disabled={!isMaster || !selectedTokenId}
+            className="border border-white/5 transition-colors hover:bg-primary/10 disabled:cursor-default"
+            aria-label={`Célula ${x},${y}`}
+          />
+        ))}
+      </div>
+
+      {participants.map((p) => {
+        const isEnemy = p.participant_type === 'enemy'
+        const isSelected = selectedTokenId === p.id
+        const conditionCount = p.conditions?.length ?? 0
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => isMaster && onSelectToken(isSelected ? null : p.id)}
+            disabled={!isMaster}
+            style={{
+              left: `${((p.grid_x ?? 0) / width) * 100}%`,
+              top: `${((p.grid_y ?? 0) / height) * 100}%`,
+              width: `${(p.token_size / width) * 100}%`,
+              height: `${(p.token_size / height) * 100}%`,
+            }}
+            className={`absolute flex flex-col items-center justify-center gap-0.5 rounded-md border-2 p-0.5 text-[9px] font-heading leading-tight transition-shadow ${
+              isEnemy ? 'border-destructive/70 bg-destructive/60' : 'border-primary/70 bg-primary/60'
+            } ${isSelected ? 'ring-2 ring-accent oracle-glow' : ''} ${isMaster ? 'cursor-pointer' : 'cursor-default'}`}
+            title={p.name}
+          >
+            <span className="w-full truncate text-center font-black text-white">{p.name}</span>
+            <span className="text-white/80">{p.current_hp ?? '—'}/{p.max_hp ?? '—'}</span>
+            {conditionCount > 0 && (
+              <span className="text-[8px] text-white/70">{conditionCount} cond.</span>
+            )}
+          </button>
+        )
+      })}
+    </div>
   )
 }
