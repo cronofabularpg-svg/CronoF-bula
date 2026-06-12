@@ -53,6 +53,7 @@ import {
   X,
   Info,
   Grid3x3,
+  AlertTriangle,
 } from "lucide-react"
 
 // ----------------------------------------------------------------------------
@@ -176,6 +177,10 @@ type ManualEnemy = {
 type SelectedCombatant = {
   selected: boolean
   initiative: string
+  // TAREFA 4: preenchimento manual quando a ficha do personagem está incompleta.
+  overrideCurrentHp?: string
+  overrideMaxHp?: string
+  overrideArmorClass?: string
 }
 
 // ----------------------------------------------------------------------------
@@ -795,6 +800,10 @@ export default function Combate() {
         character_id: characterId,
         participant_type: 'character',
         initiative: sel.initiative ? parseInt(sel.initiative, 10) : null,
+        // TAREFA 4: usados apenas se a ficha do personagem não tiver PV/CA definidos.
+        current_hp: sel.overrideCurrentHp ? parseInt(sel.overrideCurrentHp, 10) : null,
+        max_hp: sel.overrideMaxHp ? parseInt(sel.overrideMaxHp, 10) : null,
+        armor_class: sel.overrideArmorClass ? parseInt(sel.overrideArmorClass, 10) : null,
       })
     }
 
@@ -1805,28 +1814,81 @@ export default function Combate() {
                     <div className="space-y-2">
                       <Label className="text-primary uppercase text-[10px] tracking-widest">Personagens</Label>
                       <div className="space-y-2">
-                        {campaignCharacters.map((c) => (
-                          <div key={c.id} className="flex items-center gap-3 rounded-xl border border-primary/10 p-3">
-                            <Checkbox
-                              checked={!!selectedCharacters[c.id]?.selected}
-                              onCheckedChange={(checked) => setSelectedCharacters(prev => ({
-                                ...prev,
-                                [c.id]: { selected: !!checked, initiative: prev[c.id]?.initiative || "" },
-                              }))}
-                            />
-                            <span className="flex-1 font-heading">{c.name}</span>
-                            <Input
-                              type="number"
-                              placeholder="Iniciativa"
-                              value={selectedCharacters[c.id]?.initiative || ""}
-                              onChange={(e) => setSelectedCharacters(prev => ({
-                                ...prev,
-                                [c.id]: { selected: prev[c.id]?.selected || false, initiative: e.target.value },
-                              }))}
-                              className="w-28 bg-black/30 border-primary/20"
-                            />
-                          </div>
-                        ))}
+                        {campaignCharacters.map((c) => {
+                          const sel = selectedCharacters[c.id]
+                          const incomplete = c.max_hp === null || c.current_hp === null || c.armor_class === null
+                          return (
+                            <div key={c.id} className="rounded-xl border border-primary/10 p-3 space-y-2">
+                              <div className="flex items-center gap-3">
+                                <Checkbox
+                                  checked={!!sel?.selected}
+                                  onCheckedChange={(checked) => setSelectedCharacters(prev => ({
+                                    ...prev,
+                                    [c.id]: { ...prev[c.id], selected: !!checked, initiative: prev[c.id]?.initiative || "" },
+                                  }))}
+                                />
+                                <span className="flex-1 font-heading">{c.name}</span>
+                                {incomplete && (
+                                  <Badge variant="outline" className="border-amber-500/40 text-amber-400 bg-amber-500/10 text-[9px] uppercase tracking-widest gap-1">
+                                    <AlertTriangle className="h-3 w-3" /> Ficha incompleta
+                                  </Badge>
+                                )}
+                                <Input
+                                  type="number"
+                                  placeholder="Iniciativa"
+                                  value={sel?.initiative || ""}
+                                  onChange={(e) => setSelectedCharacters(prev => ({
+                                    ...prev,
+                                    [c.id]: { ...prev[c.id], selected: prev[c.id]?.selected || false, initiative: e.target.value },
+                                  }))}
+                                  className="w-28 bg-black/30 border-primary/20"
+                                />
+                              </div>
+                              {incomplete && sel?.selected && (
+                                <div className="space-y-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                                  <p className="text-[10px] text-amber-300/90">
+                                    Personagem com ficha incompleta. Preencha PV/CA manualmente para este combate ou peça ao jogador para usar &quot;Configurar Ficha Inicial&quot; na Ficha.
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    <Input
+                                      type="number"
+                                      placeholder="PV atual"
+                                      value={sel?.overrideCurrentHp || ""}
+                                      onChange={(e) => setSelectedCharacters(prev => ({
+                                        ...prev,
+                                        [c.id]: { ...prev[c.id], overrideCurrentHp: e.target.value },
+                                      }))}
+                                      className="bg-black/30 border-amber-500/20"
+                                      disabled={c.current_hp !== null}
+                                    />
+                                    <Input
+                                      type="number"
+                                      placeholder="PV máximo"
+                                      value={sel?.overrideMaxHp || ""}
+                                      onChange={(e) => setSelectedCharacters(prev => ({
+                                        ...prev,
+                                        [c.id]: { ...prev[c.id], overrideMaxHp: e.target.value },
+                                      }))}
+                                      className="bg-black/30 border-amber-500/20"
+                                      disabled={c.max_hp !== null}
+                                    />
+                                    <Input
+                                      type="number"
+                                      placeholder="CA"
+                                      value={sel?.overrideArmorClass || ""}
+                                      onChange={(e) => setSelectedCharacters(prev => ({
+                                        ...prev,
+                                        [c.id]: { ...prev[c.id], overrideArmorClass: e.target.value },
+                                      }))}
+                                      className="bg-black/30 border-amber-500/20"
+                                      disabled={c.armor_class !== null}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
                   )}

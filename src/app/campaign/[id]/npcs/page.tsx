@@ -11,22 +11,24 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { 
-  Users, 
-  UserPlus, 
-  Search, 
-  Edit2, 
-  Skull
+import {
+  Users,
+  UserPlus,
+  Search,
+  Edit2,
+  Skull,
+  ImagePlus
 } from "lucide-react"
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogTrigger,
   DialogFooter
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
+import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
 
 export default function NPCManager() {
   const { id: campaignId } = useParams() as { id: string }
@@ -125,6 +127,24 @@ export default function NPCManager() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleUpdateNpcImage(npcId: string, mediaAsset: MediaAsset) {
+    if (!mediaAsset.public_url) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('npcs')
+      .update({ image_url: mediaAsset.public_url })
+      .eq('id', npcId)
+      .eq('campaign_id', campaignId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Atualizar Imagem", description: error.message })
+      return
+    }
+
+    setNpcs((prev) => prev.map((npc) => npc.id === npcId ? { ...npc, image_url: mediaAsset.public_url } : npc))
+    toast({ title: "Imagem Atualizada" })
   }
 
   async function handleKillNPC(npcId: string, npcName: string) {
@@ -231,9 +251,9 @@ export default function NPCManager() {
           filteredNpcs.map((npc: any) => (
             <Card key={npc.id} className={`bg-card/30 border-white/5 hover:border-accent/30 transition-all group overflow-hidden ${npc.status === 'dead' ? 'grayscale opacity-60' : ''}`}>
               <div className="relative h-48 bg-muted">
-                <img 
-                  src={`https://picsum.photos/seed/${npc.id}/400/300`} 
-                  alt={npc.name} 
+                <img
+                  src={npc.image_url || `https://picsum.photos/seed/${npc.id}/400/300`}
+                  alt={npc.name}
                   className="object-cover w-full h-full opacity-60 group-hover:opacity-80 transition-opacity"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
@@ -243,6 +263,27 @@ export default function NPCManager() {
                   </Badge>
                   <Badge variant="outline" className="text-[9px] bg-background/50 uppercase tracking-widest">{npc.role}</Badge>
                 </div>
+                {isMaster && (
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="icon" variant="ghost" className="absolute bottom-3 right-3 bg-background/70 border border-white/10 rounded-full h-9 w-9">
+                        <ImagePlus className="h-4 w-4" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="bg-card border-accent/30">
+                      <DialogHeader>
+                        <DialogTitle className="text-xl font-display">Token/Imagem de {npc.name}</DialogTitle>
+                      </DialogHeader>
+                      <R2ImageUpload
+                        campaignId={campaignId}
+                        usageType="npc_token"
+                        visibility={npc.visibility === 'master_only' ? 'master_only' : 'party'}
+                        label="Adicionar token/imagem"
+                        onUploaded={(asset) => handleUpdateNpcImage(npc.id, asset)}
+                      />
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
               <CardHeader>
                 <CardTitle className="text-2xl font-display flex justify-between items-center">

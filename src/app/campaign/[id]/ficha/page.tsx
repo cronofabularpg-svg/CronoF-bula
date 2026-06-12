@@ -36,18 +36,23 @@ import {
   TrendingUp,
   Loader2,
   BookMarked,
+  AlertTriangle,
+  CheckCircle2,
+  Wand2,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Slider } from "@/components/ui/slider"
+import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
+import { CharacterSetupWizard } from "./character-setup-wizard"
 
 type CharacterStats = {
-  strength: number
-  dexterity: number
-  constitution: number
-  intelligence: number
-  wisdom: number
-  charisma: number
+  strength: number | null
+  dexterity: number | null
+  constitution: number | null
+  intelligence: number | null
+  wisdom: number | null
+  charisma: number | null
   saving_throws: string[] | null
   skills: Record<string, unknown> | null
   sheet_state: {
@@ -159,6 +164,8 @@ export default function FichaPersonagem() {
   const [isLevelUpOpen, setIsLevelUpOpen] = React.useState(false)
   const [isRequestingLevelUp, setIsRequestingLevelUp] = React.useState(false)
 
+  const [isSetupWizardOpen, setIsSetupWizardOpen] = React.useState(false)
+
   const loadExtras = React.useCallback(async (characterId: string) => {
     const supabase = createClient()
 
@@ -176,9 +183,10 @@ export default function FichaPersonagem() {
         .order('created_at', { ascending: true }),
       supabase
         .from('character_items')
-        .select('id, quantity, notes, items(id, name, item_type, rarity, description, properties)')
+        .select('id, quantity, notes, items!inner(id, name, item_type, rarity, description, properties)')
         .eq('character_id', characterId)
-        .eq('equipped', true),
+        .eq('equipped', true)
+        .neq('items.item_type', 'journal'),
       supabase
         .from('character_level_ups')
         .select('id, from_level, to_level, status, proposed_changes, created_at')
@@ -377,6 +385,12 @@ export default function FichaPersonagem() {
 
   const charPhoto = character.avatar_url || `https://picsum.photos/seed/${character.id}/500/500`;
 
+  // TAREFA 1/3: detecta ficha incompleta para exibir banner/badges e bloquear combate sem dados.
+  const ATTRIBUTE_KEYS: (keyof CharacterStats)[] = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+  const combatIncomplete = character.current_hp === null || character.max_hp === null || character.armor_class === null || character.speed === null || character.proficiency_bonus === null
+  const attributesIncomplete = !charStats || ATTRIBUTE_KEYS.some((key) => charStats![key] === null)
+  const sheetIncomplete = combatIncomplete || attributesIncomplete || !character.class || !character.race
+
   async function handleUpdatePhoto() {
     if (!character) return
     const supabase = createClient()
@@ -391,6 +405,24 @@ export default function FichaPersonagem() {
     }
 
     setCharacter({ ...character, avatar_url: photoUrlInput })
+    toast({ title: "Retrato Atualizado", description: "Sua nova aparência foi gravada nos anais." })
+    setIsEditingPhoto(false)
+  }
+
+  async function handleAvatarUploaded(mediaAsset: MediaAsset) {
+    if (!character || !mediaAsset.public_url) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('characters')
+      .update({ avatar_url: mediaAsset.public_url })
+      .eq('id', character.id)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro na Invocação", description: error.message })
+      return
+    }
+
+    setCharacter({ ...character, avatar_url: mediaAsset.public_url })
     toast({ title: "Retrato Atualizado", description: "Sua nova aparência foi gravada nos anais." })
     setIsEditingPhoto(false)
   }
@@ -549,14 +581,24 @@ export default function FichaPersonagem() {
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label className="text-[10px] uppercase font-bold tracking-widest">Link da Imagem</Label>
+                    <Label className="text-[10px] uppercase font-bold tracking-widest">Alterar Imagem do Personagem</Label>
+                    <R2ImageUpload
+                      campaignId={campaignId}
+                      usageType="character_avatar"
+                      visibility="party"
+                      label="Alterar imagem do personagem"
+                      onUploaded={handleAvatarUploaded}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-bold tracking-widest">Ou Link da Imagem</Label>
                     <Input
                       placeholder="https://..."
                       value={photoUrlInput}
                       onChange={e => setPhotoUrlUrlInput(e.target.value)}
                     />
                   </div>
-                  <p className="text-[10px] text-muted-foreground italic">Use um link público de imagem (Unsplash, Pinterest, etc).</p>
+                  <p className="text-[10px] text-muted-foreground italic">Use um link público de imagem (Unsplash, Pinterest, etc) ou envie um arquivo.</p>
                 </div>
                 <div className="flex justify-end gap-3">
                   <Button variant="ghost" onClick={() => setIsEditingPhoto(false)}>Cancelar</Button>
@@ -580,6 +622,15 @@ export default function FichaPersonagem() {
               >
                 <Star className={`mr-2 h-4 w-4 ${sheetState.hasInspiration ? 'fill-current' : ''}`} /> Inspiração
               </Button>
+              {sheetIncomplete ? (
+                <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-amber-500/40 text-amber-400 bg-amber-500/10 px-4 h-6 gap-1.5">
+                  <AlertTriangle className="h-3 w-3" /> Configuração Inicial Pendente
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-emerald-500/40 text-emerald-400 bg-emerald-500/10 px-4 h-6 gap-1.5">
+                  <CheckCircle2 className="h-3 w-3" /> Pronto para Combate
+                </Badge>
+              )}
             </div>
             <p className="text-2xl font-heading italic text-muted-foreground mt-2 capitalize opacity-70">
               {character.race || "Raça desconhecida"} {character.class || "Classe desconhecida"} • Status: {character.status === 'pending_approval' ? 'Aguardando Aprovação' : 'Ativo'}
@@ -600,6 +651,52 @@ export default function FichaPersonagem() {
           </div>
         </div>
       </header>
+
+      {/* TAREFA 1/3: banner de ficha incompleta */}
+      {sheetIncomplete && (
+        <section className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-display font-bold text-amber-300">Ficha incompleta — configurar personagem</p>
+              <p className="text-sm text-muted-foreground font-heading italic mt-1">
+                {combatIncomplete
+                  ? "Faltam dados de combate (PV, CA, deslocamento ou proficiência). Ficha incompleta para combate."
+                  : "Complete raça, classe e atributos para liberar a ficha completa."}
+              </p>
+            </div>
+          </div>
+          <Button onClick={() => setIsSetupWizardOpen(true)} className="bg-amber-500 hover:bg-amber-600 text-black font-display gap-2 shrink-0">
+            <Wand2 className="h-4 w-4" /> Configurar Ficha Inicial
+          </Button>
+        </section>
+      )}
+
+      <CharacterSetupWizard
+        open={isSetupWizardOpen}
+        onOpenChange={setIsSetupWizardOpen}
+        character={{
+          id: character.id,
+          name: character.name,
+          race: character.race,
+          class: character.class,
+          background: character.background,
+          alignment: character.alignment,
+          level: characterLevel,
+        }}
+        charStats={charStats}
+        combat={{
+          current_hp: character.current_hp,
+          max_hp: character.max_hp,
+          armor_class: character.armor_class,
+          speed: character.speed,
+          proficiency_bonus: character.proficiency_bonus,
+        }}
+        onCompleted={async () => {
+          setLoading(true)
+          await loadCharacter()
+        }}
+      />
 
       {/* Bloco: Identidade */}
       <section className="space-y-6">

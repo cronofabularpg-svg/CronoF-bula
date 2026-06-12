@@ -49,6 +49,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import { buildBasicChronicle, hasChronicleSourceData, type ChronicleSourceCombat, type ChronicleSourceDiceRoll, type ChronicleSourceEvent } from "@/lib/chronicles/build-basic-chronicle"
 
 type PendingCharacter = {
   id: string
@@ -144,6 +145,30 @@ type SessionMessageRow = {
   message_type: string
   content: string
   characters: { name: string }[] | { name: string } | null
+}
+
+type SessionEventRow = {
+  id: string
+  scene_id: string | null
+  event_type: string
+  content: string | null
+}
+
+type SessionDiceRollRow = {
+  id: string
+  scene_id: string | null
+  formula: string | null
+  total: number | null
+  reason: string | null
+  characters: { name: string }[] | { name: string } | null
+}
+
+type SessionCombatRow = {
+  id: string
+  scene_id: string | null
+  title: string
+  round_number: number
+  combat_participants: { name: string }[] | null
 }
 
 type ChronicleDraft = {
@@ -246,40 +271,36 @@ function summarizeImport(entries: ImportReportEntry[]) {
   return { successes, errors, saved }
 }
 
-function buildChronicleDraft(session: SessionRow, messages: SessionMessageRow[], campaign: CampaignSummary): ChronicleDraft {
-  const speakerNames = Array.from(new Set(
-    messages.map((m) => Array.isArray(m.characters) ? m.characters[0]?.name : m.characters?.name).filter(Boolean) as string[]
-  ))
-  const notableLines = messages
-    .filter((m) => m.content.trim().length > 0)
-    .slice(0, 5)
-    .map((m) => m.content.trim())
-
-  const summaryBase = notableLines.length > 0
-    ? notableLines.join(" ")
-    : `A sessão ${session.title} transcorreu sem registros suficientes para um resumo detalhado.`
-
-  const title = `${session.title} - ${campaign.name}`
-  const publicContent = summaryBase
-  const masterNotes = `Rascunho local gerado a partir de ${messages.length} mensagens.`
-  const highlightWords = messages
-    .flatMap((m) => m.content.split(/\s+/))
-    .filter((word) => /item|rel[ií]quia|segredo|portal|mapa/i.test(word))
-    .slice(0, 6)
+function buildChronicleDraft(
+  session: SessionRow,
+  messages: SessionMessageRow[],
+  events: SessionEventRow[],
+  diceRolls: SessionDiceRollRow[],
+  combats: SessionCombatRow[],
+  campaign: CampaignSummary
+): ChronicleDraft {
+  const draft = buildBasicChronicle({
+    sessionTitle: session.title,
+    campaignName: campaign.name,
+    messages,
+    events: events as ChronicleSourceEvent[],
+    diceRolls: diceRolls as ChronicleSourceDiceRoll[],
+    combats: combats.map((c) => ({ ...c, combat_participants: c.combat_participants ?? [] })) as ChronicleSourceCombat[],
+  })
 
   return {
     id: "",
     sessionId: session.id,
-    title,
-    summary: summaryBase,
-    public_content: publicContent,
-    master_notes: masterNotes,
-    npcsEncountered: speakerNames,
-    highlights: notableLines,
-    itemsGained: highlightWords,
-    visibility: "party",
+    title: draft.title,
+    summary: draft.summary,
+    public_content: draft.public_content,
+    master_notes: draft.master_notes,
+    npcsEncountered: draft.npcsEncountered,
+    highlights: draft.highlights,
+    itemsGained: draft.itemsGained,
+    visibility: draft.visibility,
     status: "draft",
-    sceneId: messages[0]?.scene_id ?? null,
+    sceneId: draft.sceneId,
   }
 }
 
@@ -1486,21 +1507,51 @@ export default function MasterPanel() {
     try {
       const supabase = createClient()
 
-      const { data: messagesData, error } = await supabase
-        .from('scene_messages')
-        .select('id, scene_id, content, message_type, characters(name)')
-        .eq('session_id', session.id)
-        .order('created_at', { ascending: true })
+      const [
+        { data: messagesData, error: messagesError },
+        { data: eventsData, error: eventsError },
+        { data: diceRollsData, error: diceRollsError },
+        { data: combatsData, error: combatsError },
+      ] = await Promise.all([
+        supabase
+          .from('scene_messages')
+          .select('id, scene_id, content, message_type, characters(name)')
+          .eq('session_id', session.id)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('scene_events')
+          .select('id, scene_id, event_type, content')
+          .eq('session_id', session.id)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('dice_rolls')
+          .select('id, scene_id, formula, total, reason, characters(name)')
+          .eq('session_id', session.id)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('combats')
+          .select('id, scene_id, title, round_number, combat_participants(name)')
+          .eq('session_id', session.id)
+          .eq('status', 'ended'),
+      ])
 
-      if (error) throw error
+      if (messagesError) throw messagesError
+      if (eventsError) throw eventsError
+      if (diceRollsError) throw diceRollsError
+      if (combatsError) throw combatsError
 
-      if (!messagesData || messagesData.length === 0) {
+      const messages = (messagesData || []) as SessionMessageRow[]
+      const events = (eventsData || []) as SessionEventRow[]
+      const diceRolls = (diceRollsData || []) as SessionDiceRollRow[]
+      const combats = (combatsData || []) as SessionCombatRow[]
+
+      if (!hasChronicleSourceData({ messages, events, diceRolls, combats })) {
         toast({ variant: "destructive", title: "Sessão Vazia", description: "Não há registros suficientes para resumir." })
         setIsSummarizing(false)
         return
       }
 
-      const draft = buildChronicleDraft(session, messagesData as SessionMessageRow[], campaign)
+      const draft = buildChronicleDraft(session, messages, events, diceRolls, combats, campaign)
       const { data: chronicle, error: chronicleError } = await supabase
         .from('chronicles')
         .insert({

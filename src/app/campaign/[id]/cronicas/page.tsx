@@ -3,22 +3,27 @@
 
 import * as React from "react"
 import { useParams } from "next/navigation"
+import Link from "next/link"
+import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { 
-  ScrollText, 
-  Calendar, 
-  Users, 
-  Package, 
-  Sparkles, 
+import {
+  ScrollText,
+  Calendar,
+  Users,
+  Package,
+  Sparkles,
   ChevronRight,
   BookOpen,
   Search,
   Sword,
   ShieldCheck,
-  History
+  History,
+  Wand2,
+  FileClock,
+  Landmark
 } from "lucide-react"
 
 type ChronicleRow = {
@@ -35,36 +40,102 @@ type ChronicleRow = {
   approved_at: string | null
 }
 
+type CanonEventRow = {
+  id: string
+  event_type: string
+  title: string
+  content: string | null
+  importance: string
+  created_at: string
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Rascunho",
+  pending: "Pendente",
+  approved: "Crônica Oficial",
+}
+
 export default function Cronicas() {
   const { id: campaignId } = useParams() as { id: string }
+  const { user } = useUser()
   const [chronicles, setChronicles] = React.useState<ChronicleRow[]>([])
   const [loading, setLoading] = React.useState(true)
   const [selectedChronicle, setSelectedChronicle] = React.useState<ChronicleRow | null>(null)
   const [searchTerm, setSearchTerm] = React.useState("")
+  const [isMaster, setIsMaster] = React.useState(false)
+  const [canonEvents, setCanonEvents] = React.useState<CanonEventRow[]>([])
+  const [loadingCanonEvents, setLoadingCanonEvents] = React.useState(false)
 
   React.useEffect(() => {
-    if (!campaignId) return
+    if (!campaignId || !user) return
     let active = true
+    const userId = user.uid
     const supabase = createClient()
 
+    async function load() {
+      setLoading(true)
+
+      const [{ data: campaign }, { data: member }, { data, error }] = await Promise.all([
+        supabase.from('campaigns').select('owner_id').eq('id', campaignId).maybeSingle(),
+        supabase
+          .from('campaign_members')
+          .select('role')
+          .eq('campaign_id', campaignId)
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .maybeSingle(),
+        supabase.rpc('get_campaign_chronicles', { target_campaign_id: campaignId }),
+      ])
+
+      if (!active) return
+
+      setIsMaster(campaign?.owner_id === userId || ['owner', 'master', 'assistant_master'].includes(member?.role || ''))
+
+      if (error) {
+        setLoading(false)
+        return
+      }
+
+      const rows = (data as ChronicleRow[]) || []
+      setChronicles(rows)
+      setSelectedChronicle(rows.find((c) => c.status === 'approved') || rows[0] || null)
+      setLoading(false)
+    }
+
+    load()
+
+    return () => {
+      active = false
+    }
+  }, [campaignId, user])
+
+  React.useEffect(() => {
+    if (!selectedChronicle) {
+      setCanonEvents([])
+      return
+    }
+    let active = true
+    const supabase = createClient()
+    setLoadingCanonEvents(true)
+
     supabase
-      .rpc('get_campaign_chronicles', { target_campaign_id: campaignId })
+      .from('canon_events')
+      .select('id, event_type, title, content, importance, created_at')
+      .eq('chronicle_id', selectedChronicle.id)
+      .order('created_at', { ascending: true })
       .then(({ data, error }) => {
         if (!active) return
-        if (error) {
-          setLoading(false)
-          return
-        }
-        const rows = (data as ChronicleRow[]) || []
-        setChronicles(rows)
-        setSelectedChronicle(rows[0] || null)
-        setLoading(false)
+        setCanonEvents(error ? [] : (data as CanonEventRow[]) || [])
+        setLoadingCanonEvents(false)
       })
 
     return () => {
       active = false
     }
-  }, [campaignId])
+  }, [selectedChronicle])
+
+  const approvedChronicles = chronicles.filter((c) => c.status === 'approved')
+  const draftChronicles = chronicles.filter((c) => c.status !== 'approved')
 
   return (
     <div className="h-screen flex flex-col bg-[#050711] text-[#FFF6E5]">
@@ -78,16 +149,31 @@ export default function Cronicas() {
             <p className="text-[10px] font-display uppercase font-black tracking-[0.3em] opacity-40 mt-2">O Registro Imortal da Jornada</p>
           </div>
         </div>
-        <div className="relative w-80">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 opacity-30 text-primary" />
-          <input
-            placeholder="Buscar verdades canônicas..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-12 pr-6 py-4 bg-black/40 border-primary/20 rounded-2xl text-sm font-heading italic focus:ring-primary focus:border-primary/40 outline-none transition-all"
-          />
+        <div className="flex items-center gap-4">
+          <div className="relative w-80">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 opacity-30 text-primary" />
+            <input
+              placeholder="Buscar verdades canônicas..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-6 py-4 bg-black/40 border-primary/20 rounded-2xl text-sm font-heading italic focus:ring-primary focus:border-primary/40 outline-none transition-all"
+            />
+          </div>
+          {isMaster && (
+            <Button asChild className="bg-primary text-black hover:bg-primary/90 rounded-2xl h-14 px-6 font-display gap-2 shrink-0">
+              <Link href={`/campaign/${campaignId}/master`}>
+                <Wand2 className="h-4 w-4" /> Gerar Crônica
+              </Link>
+            </Button>
+          )}
         </div>
       </header>
+
+      <div className="px-10 py-4 border-b border-primary/10 bg-black/20 flex flex-wrap gap-x-10 gap-y-2 text-[10px] font-heading italic opacity-50 shrink-0">
+        <span><strong className="text-primary not-italic">Crônica:</strong> registro oficial, aprovado pelo mestre.</span>
+        <span><strong className="text-primary not-italic">Mesa Viva:</strong> acontecimentos da sessão em tempo real (aba Mesa Viva).</span>
+        <span><strong className="text-primary not-italic">Diário:</strong> memórias pessoais do personagem (Inventário, na Ficha).</span>
+      </div>
 
       <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
         {/* Índice de Sessões - Estilo Sumário de Livro */}
@@ -100,32 +186,71 @@ export default function Cronicas() {
             <div className="p-6 space-y-4">
               {loading ? (
                 <div className="p-20 text-center italic font-heading text-xl opacity-30 animate-pulse">Lendo os anais...</div>
-              ) : chronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).map((chron) => (
-                <button
-                  key={chron.id}
-                  onClick={() => setSelectedChronicle(chron)}
-                  className={`w-full p-6 rounded-2xl text-left transition-all duration-500 group border-2 ${
-                    selectedChronicle?.id === chron.id 
-                    ? 'bg-primary/10 border-primary shadow-arcane' 
-                    : 'bg-black/20 border-white/5 hover:border-primary/30 hover:bg-primary/5'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-[9px] font-code opacity-40 tracking-widest">{new Date(chron.created_at).toLocaleDateString('pt-BR')}</span>
-                    <Badge className="bg-primary/10 text-primary border-primary/20 text-[7px] uppercase font-black px-2 py-0.5">{chron.status}</Badge>
-                  </div>
-                  <h4 className="font-display font-bold text-lg leading-tight group-hover:text-primary transition-colors">{chron.title}</h4>
-                </button>
-              ))}
-              {!loading && chronicles.length === 0 && (
-                <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40">
-                  "A história ainda não foi escrita nas estrelas."
-                </div>
-              )}
-              {!loading && chronicles.length > 0 && chronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).length === 0 && (
-                <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40">
-                  Nenhuma crônica corresponde à busca.
-                </div>
+              ) : (
+                <>
+                  {approvedChronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).map((chron) => (
+                    <button
+                      key={chron.id}
+                      onClick={() => setSelectedChronicle(chron)}
+                      className={`w-full p-6 rounded-2xl text-left transition-all duration-500 group border-2 ${
+                        selectedChronicle?.id === chron.id
+                        ? 'bg-primary/10 border-primary shadow-arcane'
+                        : 'bg-black/20 border-white/5 hover:border-primary/30 hover:bg-primary/5'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="text-[9px] font-code opacity-40 tracking-widest">{new Date(chron.created_at).toLocaleDateString('pt-BR')}</span>
+                        <Badge className="bg-primary/10 text-primary border-primary/20 text-[7px] uppercase font-black px-2 py-0.5">{STATUS_LABELS[chron.status] || chron.status}</Badge>
+                      </div>
+                      <h4 className="font-display font-bold text-lg leading-tight group-hover:text-primary transition-colors">{chron.title}</h4>
+                    </button>
+                  ))}
+
+                  {approvedChronicles.length === 0 && (
+                    <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40 space-y-6">
+                      <p>"Nenhuma crônica oficial foi aprovada ainda."</p>
+                      {isMaster && (
+                        <Button asChild className="bg-primary text-black hover:bg-primary/90 rounded-2xl gap-2">
+                          <Link href={`/campaign/${campaignId}/master`}>
+                            <Wand2 className="h-4 w-4" /> Gerar primeira crônica
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {approvedChronicles.length > 0 && approvedChronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).length === 0 && (
+                    <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40">
+                      Nenhuma crônica corresponde à busca.
+                    </div>
+                  )}
+
+                  {isMaster && draftChronicles.length > 0 && (
+                    <div className="pt-6 space-y-4">
+                      <div className="flex items-center gap-3 px-2 opacity-50">
+                        <FileClock className="h-4 w-4 text-amber-400" />
+                        <span className="text-[10px] font-display uppercase font-black tracking-[0.2em] text-amber-400">Rascunhos (apenas mestre)</span>
+                      </div>
+                      {draftChronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).map((chron) => (
+                        <button
+                          key={chron.id}
+                          onClick={() => setSelectedChronicle(chron)}
+                          className={`w-full p-6 rounded-2xl text-left transition-all duration-500 group border-2 ${
+                            selectedChronicle?.id === chron.id
+                            ? 'bg-amber-500/10 border-amber-500/40'
+                            : 'bg-black/20 border-amber-500/10 hover:border-amber-500/30 hover:bg-amber-500/5'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="text-[9px] font-code opacity-40 tracking-widest">{new Date(chron.created_at).toLocaleDateString('pt-BR')}</span>
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-400 text-[7px] uppercase font-black px-2 py-0.5">{STATUS_LABELS[chron.status] || chron.status}</Badge>
+                          </div>
+                          <h4 className="font-display font-bold text-lg leading-tight group-hover:text-amber-400 transition-colors">{chron.title}</h4>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </ScrollArea>
@@ -137,10 +262,18 @@ export default function Cronicas() {
              {selectedChronicle ? (
                <div className="max-w-5xl mx-auto p-12 md:p-32 space-y-24 animate-in fade-in slide-in-from-bottom-12 duration-1000">
                   <header className="space-y-10 text-center">
-                    <div className="canon-seal w-fit mx-auto">Verdade Canônica</div>
+                    <div className="canon-seal w-fit mx-auto">{selectedChronicle.status === 'approved' ? 'Verdade Canônica' : `${STATUS_LABELS[selectedChronicle.status] || selectedChronicle.status} — aguardando aprovação`}</div>
                     <h2 className="text-7xl md:text-9xl font-display font-black tracking-tighter text-primary drop-shadow-[0_0_20px_rgba(200,162,74,0.2)]">
                       {selectedChronicle.title}
                     </h2>
+                    {selectedChronicle.status !== 'approved' && isMaster && (
+                      <p className="text-sm font-heading italic opacity-50">
+                        Este rascunho ainda não foi publicado.{' '}
+                        <Link href={`/campaign/${campaignId}/master`} className="text-primary underline">
+                          Revisar no Portal do Mestre
+                        </Link>
+                      </p>
+                    )}
                     <div className="flex justify-center items-center gap-10 opacity-40">
                       <div className="flex items-center gap-3">
                         <Calendar className="h-5 w-5 text-primary" />
@@ -192,12 +325,31 @@ export default function Cronicas() {
                           </h3>
                           <div className="flex flex-wrap gap-4">
                             <Badge variant="outline" className="border-primary/30 text-primary font-display text-[10px] tracking-widest px-4 py-2 hover:bg-primary/5 transition-all cursor-default">
-                              {selectedChronicle.status}
+                              {STATUS_LABELS[selectedChronicle.status] || selectedChronicle.status}
                             </Badge>
                           </div>
                        </div>
                     </div>
                   </div>
+
+                  {canonEvents.length > 0 && (
+                    <div className="space-y-10 pt-10 border-t border-primary/10">
+                       <h3 className="text-[10px] font-display uppercase font-black tracking-[0.4em] text-primary flex items-center gap-4">
+                         <Landmark className="h-5 w-5" /> Eventos Canônicos Relacionados
+                       </h3>
+                       <ul className="space-y-8">
+                         {canonEvents.map((event) => (
+                           <li key={event.id} className="flex gap-6 items-start group">
+                             <div className="mt-2 h-2 w-2 rounded-full bg-primary shadow-gold group-hover:scale-150 transition-transform shrink-0" />
+                             <div>
+                               <p className="text-xl font-heading italic opacity-70 group-hover:opacity-100 transition-opacity leading-relaxed">{event.title}</p>
+                               {event.content && <p className="text-base font-heading opacity-50 mt-2 leading-relaxed">{event.content}</p>}
+                             </div>
+                           </li>
+                         ))}
+                       </ul>
+                    </div>
+                  )}
 
                   {selectedChronicle.master_notes && (
                     <div className="p-12 rounded-[2.5rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/30 space-y-6 relative overflow-hidden oracle-glow">

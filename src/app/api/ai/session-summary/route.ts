@@ -4,6 +4,7 @@ import { callGroq, GroqError } from '@/lib/ai/groq'
 import { SESSION_SUMMARY_SYSTEM_PROMPT, buildSessionSummaryPrompt } from '@/lib/ai/prompts'
 import { getAuthenticatedUserId, logAiMessage } from '@/lib/ai/route-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildBasicChronicle, hasChronicleSourceData, type ChronicleSourceCombat, type ChronicleSourceDiceRoll, type ChronicleSourceEvent, type ChronicleSourceMessage } from '@/lib/chronicles/build-basic-chronicle'
 
 const MODEL = 'llama-3.3-70b-versatile'
 const MAX_LOG_MESSAGES = 200
@@ -29,6 +30,26 @@ function describeMessage(row: any): string {
     default:
       return `${author || 'Alguém'} diz: ${row.content}`
   }
+}
+
+function describeEvent(row: any): string | null {
+  const content = row.content?.trim()
+  if (!content) return null
+  return `Evento (${row.event_type}): ${content}`
+}
+
+function describeDiceRoll(row: any): string | null {
+  if (row.total === null || row.total === undefined) return null
+  const author = Array.isArray(row.characters) ? row.characters[0]?.name : row.characters?.name
+  const formula = row.formula ? ` (${row.formula})` : ''
+  const reason = row.reason ? ` — ${row.reason}` : ''
+  return `${author || 'Alguém'} rolou${formula}: resultado ${row.total}${reason}.`
+}
+
+function describeCombat(row: any): string {
+  const participants = (row.combat_participants || []).map((p: any) => p.name).filter(Boolean)
+  const participantsLabel = participants.length > 0 ? participants.join(', ') : 'combatentes não identificados'
+  return `Combate "${row.title}" foi travado e encerrado após ${row.round_number} rodada(s), envolvendo ${participantsLabel}.`
 }
 
 function parseSummaryJson(raw: string): SessionSummaryJson {
@@ -87,25 +108,127 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient()
 
-  const { data: messageRows, error: messagesError } = await supabase
-    .from('scene_messages')
-    .select('scene_id, message_type, content, created_at, characters(name)')
-    .eq('session_id', sessionId)
-    .order('created_at', { ascending: true })
-    .limit(MAX_LOG_MESSAGES)
+  const [
+    { data: messageRows, error: messagesError },
+    { data: eventRows, error: eventsError },
+    { data: diceRows, error: diceRowsError },
+    { data: combatRows, error: combatRowsError },
+  ] = await Promise.all([
+    supabase
+      .from('scene_messages')
+      .select('scene_id, message_type, content, created_at, characters(name)')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true })
+      .limit(MAX_LOG_MESSAGES),
+    supabase
+      .from('scene_events')
+      .select('scene_id, event_type, content, created_at')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('dice_rolls')
+      .select('scene_id, formula, total, reason, created_at, characters(name)')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('combats')
+      .select('scene_id, title, round_number, combat_participants(name)')
+      .eq('session_id', sessionId)
+      .eq('status', 'ended'),
+  ])
 
-  if (messagesError) {
-    return NextResponse.json({ error: messagesError.message }, { status: 500 })
+  if (messagesError) return NextResponse.json({ error: messagesError.message }, { status: 500 })
+  if (eventsError) return NextResponse.json({ error: eventsError.message }, { status: 500 })
+  if (diceRowsError) return NextResponse.json({ error: diceRowsError.message }, { status: 500 })
+  if (combatRowsError) return NextResponse.json({ error: combatRowsError.message }, { status: 500 })
+
+  const messages = messageRows || []
+  const events = eventRows || []
+  const diceRolls = diceRows || []
+  const combats = combatRows || []
+
+  if (!hasChronicleSourceData({
+    messages: messages as unknown as ChronicleSourceMessage[],
+    events: events as unknown as ChronicleSourceEvent[],
+    diceRolls: diceRolls as unknown as ChronicleSourceDiceRoll[],
+    combats: combats.map((c) => ({ ...c, combat_participants: c.combat_participants ?? [] })) as unknown as ChronicleSourceCombat[],
+  })) {
+    return NextResponse.json({ error: 'Sessão vazia: não há registros para resumir.' }, { status: 400 })
   }
 
-  if (!messageRows || messageRows.length === 0) {
-    return NextResponse.json({ error: 'Sessão vazia: não há mensagens para resumir.' }, { status: 400 })
-  }
-
-  const sessionLog = messageRows.map(describeMessage)
-  const firstSceneId: string | null = messageRows[0]?.scene_id ?? null
+  const sessionLog = [
+    ...messages.map(describeMessage),
+    ...events.map(describeEvent).filter((line): line is string => Boolean(line)),
+    ...combats.map(describeCombat),
+    ...diceRolls.map(describeDiceRoll).filter((line): line is string => Boolean(line)),
+  ]
+  const firstSceneId: string | null = messages[0]?.scene_id ?? events[0]?.scene_id ?? combats[0]?.scene_id ?? diceRolls[0]?.scene_id ?? null
 
   const prompt = buildSessionSummaryPrompt(context, sessionLog)
+
+  // Caso o Cronista (IA) falhe, geramos uma crônica básica concatenando os
+  // registros da sessão. O rascunho continua aguardando aprovação do mestre.
+  async function buildFallbackDraft(errorMessage: string) {
+    await logAiMessage({
+      campaignId,
+      sessionId,
+      userId: userId as string,
+      taskKey: 'session_summary',
+      mode: 'session_summary',
+      model: MODEL,
+      inputSummary: `Resumo da sessão (${sessionLog.length} registros)`,
+      contextSnapshotId: snapshotId,
+      status: 'failed',
+      errorMessage,
+    })
+
+    const basic = buildBasicChronicle({
+      sessionTitle: context.session?.title || 'Sessão sem título',
+      campaignName: context.campaign.name,
+      messages: messages as unknown as ChronicleSourceMessage[],
+      events: events as unknown as ChronicleSourceEvent[],
+      diceRolls: diceRolls as unknown as ChronicleSourceDiceRoll[],
+      combats: combats.map((c) => ({ ...c, combat_participants: c.combat_participants ?? [] })) as unknown as ChronicleSourceCombat[],
+    })
+
+    const { data: chronicle, error: chronicleError } = await supabase
+      .from('chronicles')
+      .insert({
+        campaign_id: campaignId,
+        session_id: sessionId,
+        title: basic.title,
+        summary: basic.summary,
+        public_content: basic.public_content,
+        master_notes: `${basic.master_notes} (O Cronista IA não respondeu; este é um rascunho básico.)`,
+        status: 'draft',
+        visibility: basic.visibility,
+        created_by: userId,
+      })
+      .select('id')
+      .single()
+
+    if (chronicleError || !chronicle) {
+      return NextResponse.json({ error: chronicleError?.message || 'Falha ao criar rascunho da crônica.' }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      draft: {
+        id: chronicle.id,
+        sessionId,
+        sceneId: basic.sceneId,
+        title: basic.title,
+        summary: basic.summary,
+        public_content: basic.public_content,
+        master_notes: basic.master_notes,
+        npcsEncountered: basic.npcsEncountered,
+        highlights: basic.highlights,
+        itemsGained: basic.itemsGained,
+        visibility: basic.visibility,
+        status: 'draft',
+      },
+      aiFallback: true,
+    })
+  }
 
   let rawOutput: string
   try {
@@ -117,20 +240,7 @@ export async function POST(request: Request) {
       { model: MODEL, jsonResponse: true, maxTokens: 2048 }
     )
   } catch (error: any) {
-    await logAiMessage({
-      campaignId,
-      sessionId,
-      userId,
-      taskKey: 'session_summary',
-      mode: 'session_summary',
-      model: MODEL,
-      inputSummary: `Resumo da sessão (${sessionLog.length} mensagens)`,
-      contextSnapshotId: snapshotId,
-      status: 'failed',
-      errorMessage: error instanceof GroqError ? error.message : 'Erro desconhecido ao chamar a IA.',
-    })
-
-    return NextResponse.json({ error: 'O Cronista não respondeu. Tente novamente.' }, { status: 502 })
+    return buildFallbackDraft(error instanceof GroqError ? error.message : 'Erro desconhecido ao chamar a IA.')
   }
 
   const draft = parseSummaryJson(rawOutput)
@@ -142,7 +252,7 @@ export async function POST(request: Request) {
     taskKey: 'session_summary',
     mode: 'session_summary',
     model: MODEL,
-    inputSummary: `Resumo da sessão (${sessionLog.length} mensagens)`,
+    inputSummary: `Resumo da sessão (${sessionLog.length} registros)`,
     output: rawOutput,
     contextSnapshotId: snapshotId,
     status: 'completed',
