@@ -215,6 +215,11 @@ export default function MapaVivo() {
             <p className="text-xs text-muted-foreground font-heading italic leading-relaxed mt-3 line-clamp-3">
               {loc.description || 'Nenhum detalhe registrado ainda.'}
             </p>
+            {loc.image_url && (
+              <div className="mt-3 h-20 w-full rounded-lg overflow-hidden border border-white/10">
+                <img src={loc.image_url} alt={loc.name} className="w-full h-full object-cover opacity-70" />
+              </div>
+            )}
           </button>
         ))}
       </div>
@@ -668,6 +673,9 @@ export default function MapaVivo() {
                    usageType="location_image"
                    visibility="party"
                    label="Definir imagem do local"
+                   mode="direct"
+                   entityType="location"
+                   entityId={activeNode.id}
                    onUploaded={handleLocationImageUploaded}
                  />
                )}

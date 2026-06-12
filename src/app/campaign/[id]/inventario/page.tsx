@@ -35,6 +35,7 @@ type ItemRow = {
   rarity: string | null
   visibility: string | null
   properties: Record<string, any> | null
+  image_url: string | null
 }
 
 type CharacterItem = {
@@ -132,7 +133,7 @@ export default function Inventario() {
 
     const { data: items, error } = await supabase
       .from("character_items")
-      .select("id, quantity, equipped, notes, item_id, items(id, name, item_type, description, rarity, visibility, properties)")
+      .select("id, quantity, equipped, notes, item_id, items(id, name, item_type, description, rarity, visibility, properties, image_url)")
       .eq("character_id", character.id)
       .order("created_at", { ascending: true })
 
@@ -317,6 +318,11 @@ export default function Inventario() {
               {inspectItem?.description || "Sem descrição registrada."}
             </DialogDescription>
           </DialogHeader>
+          {inspectItem?.image_url && (
+            <div className="w-full rounded-lg overflow-hidden border border-white/10">
+              <img src={inspectItem.image_url} alt={inspectItem.name} className="w-full max-h-80 object-contain" />
+            </div>
+          )}
           {inspectItem?.properties && Object.keys(inspectItem.properties).length > 0 && (
             <div className="flex flex-wrap gap-2 pt-1">
               {Object.entries(inspectItem.properties).map(([key, value]) => (
@@ -402,6 +408,11 @@ function ItemCard({
 
   return (
     <Card className="bg-card/30 border-white/5 p-5 space-y-3">
+      {item.image_url && (
+        <div className="h-32 w-full rounded-lg overflow-hidden border border-white/10">
+          <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-display font-bold text-lg">{item.name}</h3>

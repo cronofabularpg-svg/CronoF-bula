@@ -49,6 +49,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
 import { buildBasicChronicle, hasChronicleSourceData, type ChronicleSourceCombat, type ChronicleSourceDiceRoll, type ChronicleSourceEvent } from "@/lib/chronicles/build-basic-chronicle"
 
 type PendingCharacter = {
@@ -236,6 +237,7 @@ type CampaignItem = {
   rarity: string | null
   visibility: WorldVisibility
   created_at: string
+  image_url: string | null
 }
 
 type CampaignCharacterOption = {
@@ -556,7 +558,7 @@ export default function MasterPanel() {
 
     supabase
       .from('items')
-      .select('id, name, item_type, description, rarity, visibility, created_at')
+      .select('id, name, item_type, description, rarity, visibility, created_at, image_url')
       .eq('campaign_id', campaignId)
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
@@ -619,7 +621,7 @@ export default function MasterPanel() {
     const supabase = createClient()
     const { data, error } = await supabase
       .from('items')
-      .select('id, name, item_type, description, rarity, visibility, created_at')
+      .select('id, name, item_type, description, rarity, visibility, created_at, image_url')
       .eq('campaign_id', campaignId)
       .order('created_at', { ascending: false })
 
@@ -1014,6 +1016,7 @@ export default function MasterPanel() {
           name: manualForm.title,
           role: manualForm.secondary || null,
           description: manualForm.description || null,
+          image_url: manualForm.image_url || null,
           visibility: toNpcVisibility(manualForm.visibility),
           created_by: user.uid,
         })
@@ -1984,10 +1987,15 @@ export default function MasterPanel() {
                   <Label className="text-[10px] uppercase font-bold tracking-widest">Descrição</Label>
                   <Textarea value={manualForm.description} onChange={e => setManualForm({...manualForm, description: e.target.value})} className="min-h-[130px]" />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] uppercase font-bold tracking-widest">Image URL manual</Label>
-                  <Input value={manualForm.image_url} onChange={e => setManualForm({...manualForm, image_url: e.target.value})} placeholder="Upload de imagens será ativado na fase de mídia." />
-                </div>
+                {(manualType === "location" || manualType === "item" || manualType === "npc") && (
+                  <div className="space-y-2">
+                    <Label className="text-[10px] uppercase font-bold tracking-widest">Image URL manual (opcional)</Label>
+                    <Input value={manualForm.image_url} onChange={e => setManualForm({...manualForm, image_url: e.target.value})} placeholder="Cole uma URL de imagem ou deixe em branco." />
+                    <p className="text-[11px] text-muted-foreground">
+                      Após salvar, você também pode enviar uma imagem diretamente pelo card do item/local/NPC.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label className="text-[10px] uppercase font-bold tracking-widest">Visibilidade</Label>
                   <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm" value={manualForm.visibility} onChange={e => setManualForm({...manualForm, visibility: e.target.value as WorldVisibility})}>
@@ -2048,6 +2056,7 @@ export default function MasterPanel() {
           <ItemsInventoryPanel
             items={campaignItems}
             characters={campaignCharacters}
+            campaignId={campaignId}
             onDeliver={(item) => {
               setDeliverItem(item)
               setDeliverForm({ characterId: "", quantity: "1", notes: "" })
@@ -2055,6 +2064,9 @@ export default function MasterPanel() {
             onQuickCreate={(key) => {
               setQuickCreateKey(key)
               setQuickCreateVisibility(SPECIAL_ITEM_PRESETS[key].defaultVisibility)
+            }}
+            onItemImageUploaded={(itemId, mediaAsset) => {
+              setCampaignItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, image_url: mediaAsset.public_url } : it)))
             }}
             isCreatingQuickItem={isCreatingQuickItem}
           />
@@ -2626,14 +2638,18 @@ const ITEM_VISIBILITY_LABEL: Record<string, string> = {
 function ItemsInventoryPanel({
   items,
   characters,
+  campaignId,
   onDeliver,
   onQuickCreate,
+  onItemImageUploaded,
   isCreatingQuickItem,
 }: {
   items: CampaignItem[]
   characters: CampaignCharacterOption[]
+  campaignId: string
   onDeliver: (item: CampaignItem) => void
   onQuickCreate: (key: SpecialItemKey) => void
+  onItemImageUploaded: (itemId: string, mediaAsset: MediaAsset) => void
   isCreatingQuickItem: boolean
 }) {
   return (
@@ -2678,26 +2694,43 @@ function ItemsInventoryPanel({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {items.map((item) => (
               <div key={item.id} className="rounded-xl bg-white/5 border border-white/5 p-4 flex items-start justify-between gap-4">
-                <div className="space-y-1 min-w-0">
-                  <p className="text-sm font-bold truncate">{item.name}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {item.item_type && (
-                      <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-white/10 text-muted-foreground">
-                        {item.item_type}
-                      </Badge>
-                    )}
-                    {item.rarity && (
-                      <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-accent/30 text-accent">
-                        {item.rarity}
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-secondary/30 text-secondary">
-                      {ITEM_VISIBILITY_LABEL[item.visibility] || item.visibility}
-                    </Badge>
-                  </div>
-                  {item.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+                <div className="flex items-start gap-3 min-w-0">
+                  {item.image_url && (
+                    <div className="h-14 w-14 rounded-lg overflow-hidden border border-white/10 shrink-0">
+                      <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                    </div>
                   )}
+                  <div className="space-y-1 min-w-0">
+                    <p className="text-sm font-bold truncate">{item.name}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {item.item_type && (
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-white/10 text-muted-foreground">
+                          {item.item_type}
+                        </Badge>
+                      )}
+                      {item.rarity && (
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-accent/30 text-accent">
+                          {item.rarity}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-secondary/30 text-secondary">
+                        {ITEM_VISIBILITY_LABEL[item.visibility] || item.visibility}
+                      </Badge>
+                    </div>
+                    {item.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+                    )}
+                    <R2ImageUpload
+                      campaignId={campaignId}
+                      usageType="item_image"
+                      visibility="party"
+                      label={item.image_url ? "Trocar imagem" : "Adicionar imagem"}
+                      mode="direct"
+                      entityType="item"
+                      entityId={item.id}
+                      onUploaded={(mediaAsset) => onItemImageUploaded(item.id, mediaAsset)}
+                    />
+                  </div>
                 </div>
                 <Button
                   type="button"

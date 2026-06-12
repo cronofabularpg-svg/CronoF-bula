@@ -645,6 +645,9 @@ export default function FichaPersonagem() {
                       usageType="character_avatar"
                       visibility="party"
                       label="Alterar imagem do personagem"
+                      mode="direct"
+                      entityType="character"
+                      entityId={character.id}
                       onUploaded={handleAvatarUploaded}
                     />
                   </div>

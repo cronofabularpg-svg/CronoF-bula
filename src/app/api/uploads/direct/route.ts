@@ -31,6 +31,7 @@ const ENTITY_UPDATE_USAGE_TYPES: Record<string, string> = {
   character_avatar: 'character',
   location_image: 'location',
   battlefield_map: 'combat',
+  item_image: 'item',
 }
 
 /**
@@ -155,6 +156,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Combate não encontrado nesta campanha.' }, { status: 404 })
       }
       entity = { table: 'combats', id: combat.id }
+    } else if (entityType === 'item') {
+      const { data: item } = await supabase.from('items').select('id, campaign_id').eq('id', entityId).maybeSingle()
+      if (!item || item.campaign_id !== campaignId) {
+        return NextResponse.json({ error: 'Item não encontrado nesta campanha.' }, { status: 404 })
+      }
+      entity = { table: 'items', id: item.id }
     }
   }
 
@@ -213,10 +220,12 @@ export async function POST(request: Request) {
       const { data: combat } = await supabase.from('combats').select('battlefield_config').eq('id', entity.id).maybeSingle()
       const battlefieldConfig = { ...(combat?.battlefield_config ?? {}), backgroundImageUrl: publicUrl }
       await supabase.from('combats').update({ battlefield_config: battlefieldConfig }).eq('id', entity.id)
+    } else if (entity.table === 'items') {
+      await supabase.from('items').update({ image_url: publicUrl }).eq('id', entity.id)
     }
   }
 
   console.log('[uploads/direct] ok', { storageKey, mediaAssetId: asset.id })
 
-  return NextResponse.json({ mediaAsset: asset })
+  return NextResponse.json({ ok: true, mediaAsset: asset, publicUrl })
 }

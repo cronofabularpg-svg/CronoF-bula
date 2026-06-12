@@ -39,7 +39,7 @@ type Props = {
   mode?: "presigned" | "direct" | "auto"
   // Quando informados, o upload direto pelo servidor também atualiza a
   // entidade correspondente (npcs.image_url, characters.avatar_url, etc.).
-  entityType?: "npc" | "character" | "location" | "combat"
+  entityType?: "npc" | "character" | "location" | "combat" | "item"
   entityId?: string
 }
 

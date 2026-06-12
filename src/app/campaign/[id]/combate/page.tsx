@@ -88,6 +88,9 @@ type BattlefieldConfig = {
   cellMeters?: number
   physicalCellCm?: number
   backgroundImageUrl?: string | null
+  backgroundFit?: "contain" | "cover"
+  gridOpacity?: number
+  showGrid?: boolean
 }
 
 type Combat = {
@@ -537,10 +540,14 @@ export default function Combate() {
   const [gridSetupOpen, setGridSetupOpen] = React.useState(false)
   const [gridWidthInput, setGridWidthInput] = React.useState(String(DEFAULT_GRID_WIDTH))
   const [gridHeightInput, setGridHeightInput] = React.useState(String(DEFAULT_GRID_HEIGHT))
+  const [gridFitInput, setGridFitInput] = React.useState<"contain" | "cover">("contain")
+  const [gridOpacityInput, setGridOpacityInput] = React.useState("50")
+  const [gridShowGridInput, setGridShowGridInput] = React.useState(true)
   const [gridSetupSubmitting, setGridSetupSubmitting] = React.useState(false)
   const [selectedGridTokenId, setSelectedGridTokenId] = React.useState<string | null>(null)
   const [measureTokenA, setMeasureTokenA] = React.useState("")
   const [measureTokenB, setMeasureTokenB] = React.useState("")
+  const [participantAvatars, setParticipantAvatars] = React.useState<Record<string, string | null>>({})
 
   const loadCombat = React.useCallback(async () => {
     if (!campaignId) return
@@ -564,7 +571,38 @@ export default function Combate() {
         .eq('combat_id', combatData.id)
         .order('turn_order', { ascending: true })
 
-      setParticipants((participantsData as Participant[]) || [])
+      const participantsList = (participantsData as Participant[]) || []
+      setParticipants(participantsList)
+
+      const characterIds = participantsList.filter(p => p.character_id).map(p => p.character_id as string)
+      const npcIds = participantsList.filter(p => p.npc_id).map(p => p.npc_id as string)
+      const avatarMap: Record<string, string | null> = {}
+
+      if (characterIds.length > 0) {
+        const { data: charAvatars } = await supabase
+          .from('characters')
+          .select('id, avatar_url')
+          .in('id', characterIds)
+        for (const c of (charAvatars as { id: string; avatar_url: string | null }[]) || []) {
+          for (const p of participantsList.filter(p => p.character_id === c.id)) {
+            avatarMap[p.id] = c.avatar_url
+          }
+        }
+      }
+
+      if (npcIds.length > 0) {
+        const { data: npcAvatars } = await supabase
+          .from('npcs')
+          .select('id, image_url')
+          .in('id', npcIds)
+        for (const n of (npcAvatars as { id: string; image_url: string | null }[]) || []) {
+          for (const p of participantsList.filter(p => p.npc_id === n.id)) {
+            avatarMap[p.id] = n.image_url
+          }
+        }
+      }
+
+      setParticipantAvatars(avatarMap)
 
       const { data: zonesData } = await supabase
         .from('combat_zones')
@@ -595,6 +633,7 @@ export default function Combate() {
       }
     } else {
       setParticipants([])
+      setParticipantAvatars({})
       setZones([])
       setZoneLinks([])
       setSceneEvents([])
@@ -1079,9 +1118,22 @@ export default function Combate() {
     await loadCombat()
   }
 
+  // Abre o modal de configuração de grid pré-preenchido com a config atual
+  // (usado tanto para configurar quanto para "Ajustar grid" de um combate já configurado).
+  function openGridSetup() {
+    const cfg = combat?.battlefield_config
+    setGridWidthInput(String(cfg?.width ?? DEFAULT_GRID_WIDTH))
+    setGridHeightInput(String(cfg?.height ?? DEFAULT_GRID_HEIGHT))
+    setGridFitInput(cfg?.backgroundFit ?? 'contain')
+    setGridOpacityInput(String(Math.round((cfg?.gridOpacity ?? 0.5) * 100)))
+    setGridShowGridInput(cfg?.showGrid ?? true)
+    setGridSetupOpen(true)
+  }
+
   async function handleSetupGrid() {
     const width = Math.max(1, Math.min(60, parseInt(gridWidthInput, 10) || DEFAULT_GRID_WIDTH))
     const height = Math.max(1, Math.min(60, parseInt(gridHeightInput, 10) || DEFAULT_GRID_HEIGHT))
+    const opacityPercent = Math.max(0, Math.min(100, parseInt(gridOpacityInput, 10) || 50))
 
     setGridSetupSubmitting(true)
     await handleSetBattlefieldMode('grid', {
@@ -1091,6 +1143,9 @@ export default function Combate() {
       cellMeters: 1.5,
       physicalCellCm: 2.5,
       backgroundImageUrl: combat?.battlefield_config?.backgroundImageUrl ?? null,
+      backgroundFit: gridFitInput,
+      gridOpacity: opacityPercent / 100,
+      showGrid: gridShowGridInput,
     })
     setGridSetupSubmitting(false)
     setGridSetupOpen(false)
@@ -1155,6 +1210,9 @@ export default function Combate() {
       cellMeters: combat.battlefield_config?.cellMeters ?? 1.5,
       physicalCellCm: combat.battlefield_config?.physicalCellCm ?? 2.5,
       backgroundImageUrl: mediaAsset.public_url,
+      backgroundFit: combat.battlefield_config?.backgroundFit ?? 'contain',
+      gridOpacity: combat.battlefield_config?.gridOpacity ?? 0.5,
+      showGrid: combat.battlefield_config?.showGrid ?? true,
     })
   }
 
@@ -1437,7 +1495,7 @@ export default function Combate() {
               <Plus className="h-3 w-3 mr-1" />
               Zonas Narrativas
             </Button>
-            <Button onClick={() => setGridSetupOpen(true)} variant="outline" size="sm" className="rounded-full border-primary/30 text-primary">
+            <Button onClick={openGridSetup} variant="outline" size="sm" className="rounded-full border-primary/30 text-primary">
               <Grid3x3 className="h-3 w-3 mr-1" />
               Grid Tático D&D
             </Button>
@@ -1456,6 +1514,7 @@ export default function Combate() {
           <BattlefieldGrid
             config={battlefieldConfig!}
             participants={positionedTokens}
+            avatarByParticipantId={participantAvatars}
             isMaster={isMaster}
             selectedTokenId={selectedGridTokenId}
             onSelectToken={setSelectedGridTokenId}
@@ -1516,15 +1575,24 @@ export default function Combate() {
           )}
 
           {isMaster && (
-            <div className="space-y-1">
-              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Imagem de fundo (opcional)</p>
-              <R2ImageUpload
-                campaignId={campaignId}
-                usageType="battlefield_map"
-                visibility="party"
-                label="Adicionar imagem de fundo"
-                onUploaded={handleBattlefieldImageUploaded}
-              />
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Imagem de fundo (opcional)</p>
+                <R2ImageUpload
+                  campaignId={campaignId}
+                  usageType="battlefield_map"
+                  visibility="party"
+                  label="Adicionar imagem de fundo"
+                  mode="direct"
+                  entityType="combat"
+                  entityId={combat.id}
+                  onUploaded={handleBattlefieldImageUploaded}
+                />
+              </div>
+              <Button onClick={openGridSetup} variant="outline" size="sm" className="rounded-full border-primary/30 text-primary">
+                <Grid3x3 className="h-3 w-3 mr-1" />
+                Ajustar grid
+              </Button>
             </div>
           )}
 
@@ -2448,6 +2516,40 @@ export default function Combate() {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Modo da imagem</Label>
+              <Select value={gridFitInput} onValueChange={(v) => setGridFitInput(v as "contain" | "cover")}>
+                <SelectTrigger className="bg-black/30 border-primary/20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="contain">Conter (mostrar tudo)</SelectItem>
+                  <SelectItem value="cover">Preencher (cortar bordas)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Opacidade da grid</Label>
+              <Select value={gridOpacityInput} onValueChange={setGridOpacityInput}>
+                <SelectTrigger className="bg-black/30 border-primary/20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25%</SelectItem>
+                  <SelectItem value="50">50%</SelectItem>
+                  <SelectItem value="75">75%</SelectItem>
+                  <SelectItem value="100">100%</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-primary/10 bg-black/20 p-3">
+            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Mostrar linhas da grid</Label>
+            <Switch checked={gridShowGridInput} onCheckedChange={setGridShowGridInput} />
+          </div>
+
           <DialogFooter>
             <Button onClick={handleSetupGrid} disabled={gridSetupSubmitting} className="btn-ritual rounded-full px-8">
               {gridSetupSubmitting ? "Configurando..." : "Configurar Grid"}
@@ -2586,6 +2688,7 @@ function ParticipantCard({
 function BattlefieldGrid({
   config,
   participants,
+  avatarByParticipantId,
   isMaster,
   selectedTokenId,
   onSelectToken,
@@ -2593,6 +2696,7 @@ function BattlefieldGrid({
 }: {
   config: BattlefieldConfig
   participants: Participant[]
+  avatarByParticipantId: Record<string, string | null>
   isMaster: boolean
   selectedTokenId: string | null
   onSelectToken: (id: string | null) => void
@@ -2601,6 +2705,9 @@ function BattlefieldGrid({
   const width = config.width ?? DEFAULT_GRID_WIDTH
   const height = config.height ?? DEFAULT_GRID_HEIGHT
   const backgroundImageUrl = config.backgroundImageUrl
+  const backgroundFit = config.backgroundFit ?? 'contain'
+  const gridOpacity = config.gridOpacity ?? 0.5
+  const showGrid = config.showGrid ?? true
 
   const cells: { x: number; y: number }[] = []
   for (let y = 0; y < height; y++) {
@@ -2612,14 +2719,35 @@ function BattlefieldGrid({
   return (
     <div
       className="relative w-full overflow-hidden rounded-2xl border border-primary/20"
-      style={{
-        aspectRatio: `${width} / ${height}`,
-        backgroundColor: '#0b0e1c',
-        backgroundImage: backgroundImageUrl ? `url(${backgroundImageUrl})` : undefined,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      }}
+      style={{ aspectRatio: `${width} / ${height}`, backgroundColor: '#0b0e1c' }}
     >
+      {backgroundImageUrl && (
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `url(${backgroundImageUrl})`,
+            backgroundSize: backgroundFit,
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          }}
+        />
+      )}
+
+      {showGrid && (
+        <div
+          className="absolute inset-0 grid pointer-events-none"
+          style={{
+            gridTemplateColumns: `repeat(${width}, 1fr)`,
+            gridTemplateRows: `repeat(${height}, 1fr)`,
+            opacity: gridOpacity,
+          }}
+        >
+          {cells.map(({ x, y }) => (
+            <div key={`${x}-${y}`} className="border border-white/20" />
+          ))}
+        </div>
+      )}
+
       <div
         className="absolute inset-0 grid"
         style={{ gridTemplateColumns: `repeat(${width}, 1fr)`, gridTemplateRows: `repeat(${height}, 1fr)` }}
@@ -2630,7 +2758,7 @@ function BattlefieldGrid({
             type="button"
             onClick={() => onMoveToken(x, y)}
             disabled={!isMaster || !selectedTokenId}
-            className="border border-white/5 transition-colors hover:bg-primary/10 disabled:cursor-default"
+            className="transition-colors hover:bg-primary/10 disabled:cursor-default"
             aria-label={`Célula ${x},${y}`}
           />
         ))}
@@ -2640,6 +2768,7 @@ function BattlefieldGrid({
         const isEnemy = p.participant_type === 'enemy'
         const isSelected = selectedTokenId === p.id
         const conditionCount = p.conditions?.length ?? 0
+        const avatarUrl = avatarByParticipantId[p.id]
         return (
           <button
             key={p.id}
@@ -2652,15 +2781,28 @@ function BattlefieldGrid({
               width: `${(p.token_size / width) * 100}%`,
               height: `${(p.token_size / height) * 100}%`,
             }}
-            className={`absolute flex flex-col items-center justify-center gap-0.5 rounded-md border-2 p-0.5 text-[9px] font-heading leading-tight transition-shadow ${
-              isEnemy ? 'border-destructive/70 bg-destructive/60' : 'border-primary/70 bg-primary/60'
+            className={`absolute flex flex-col items-center justify-center gap-0.5 overflow-hidden rounded-full border-2 p-0.5 text-[9px] font-heading leading-tight transition-shadow ${
+              isEnemy ? 'border-destructive/80 bg-destructive/60' : 'border-amber-400/80 bg-amber-900/40'
             } ${isSelected ? 'ring-2 ring-accent oracle-glow' : ''} ${isMaster ? 'cursor-pointer' : 'cursor-default'}`}
             title={p.name}
           >
-            <span className="w-full truncate text-center font-black text-white">{p.name}</span>
-            <span className="text-white/80">{p.current_hp ?? '—'}/{p.max_hp ?? '—'}</span>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={p.name} className="absolute inset-0 h-full w-full object-cover" />
+            ) : (
+              <span className="text-center font-black text-white">
+                {p.name.slice(0, 2).toUpperCase()}
+              </span>
+            )}
+            <span className="relative z-10 mt-auto w-full truncate rounded-sm bg-black/60 text-center text-white">
+              {p.name}
+            </span>
+            {(p.current_hp !== null || p.max_hp !== null) && (
+              <span className="relative z-10 rounded-sm bg-black/60 px-0.5 text-white/80">
+                {p.current_hp ?? '—'}/{p.max_hp ?? '—'}
+              </span>
+            )}
             {conditionCount > 0 && (
-              <span className="text-[8px] text-white/70">{conditionCount} cond.</span>
+              <span className="relative z-10 rounded-sm bg-black/60 px-0.5 text-[8px] text-white/70">{conditionCount} cond.</span>
             )}
           </button>
         )
