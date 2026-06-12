@@ -207,6 +207,10 @@ grant execute on function complete_character_initial_setup(uuid, jsonb, jsonb, j
 -- 3. Expor npcs.image_url em get_campaign_npcs (TAREFA 5 — token/imagem de NPC)
 -- ----------------------------------------------------------------------------
 
+-- O retorno (OUT params) mudou em relação à versão anterior (ganhou image_url),
+-- então create or replace não é suficiente: precisamos dropar a função antes.
+drop function if exists get_campaign_npcs(uuid);
+
 create or replace function get_campaign_npcs(target_campaign_id uuid)
 returns table (
   id uuid,
