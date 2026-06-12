@@ -1157,6 +1157,16 @@ export default function Combate() {
     setActionTargetId("")
   }, [actingParticipant?.id])
 
+  // TAREFA 2-6: ações reais da ficha do personagem que está "atuando". Estes hooks
+  // precisam ficar antes de qualquer return condicional (ex.: `if (loading) return`)
+  // para que a ordem dos hooks seja sempre a mesma entre renders (evita o erro
+  // "Rendered fewer hooks than expected" / React error #310).
+  const actingSheet = actingParticipant?.character_id ? characterSheets[actingParticipant.character_id] ?? null : null
+  const actingItems = actingParticipant?.character_id ? characterItems[actingParticipant.character_id] ?? [] : []
+  const resolvedAttacks = React.useMemo(() => buildResolvedAttacks(actingSheet, actingItems), [actingSheet, actingItems])
+  const resolvedSpells = React.useMemo(() => buildResolvedSpells(actingSheet), [actingSheet])
+  const resolvedItems = React.useMemo(() => buildResolvedItems(actingItems), [actingItems])
+
   const currentTurnZoneId = currentTurnParticipant?.current_zone_id ?? null
 
   function resetStartForm() {
@@ -2386,13 +2396,6 @@ export default function Combate() {
   )
 
   // ---- Painel: Ações ---------------------------------------------------------
-  // TAREFA 2-6: ações reais da ficha do personagem que está "atuando".
-  const actingSheet = actingParticipant?.character_id ? characterSheets[actingParticipant.character_id] ?? null : null
-  const actingItems = actingParticipant?.character_id ? characterItems[actingParticipant.character_id] ?? [] : []
-  const resolvedAttacks = React.useMemo(() => buildResolvedAttacks(actingSheet, actingItems), [actingSheet, actingItems])
-  const resolvedSpells = React.useMemo(() => buildResolvedSpells(actingSheet), [actingSheet])
-  const resolvedItems = React.useMemo(() => buildResolvedItems(actingItems), [actingItems])
-
   // TAREFA 3: alvos vivos (PV nulo ou > 0), com CA/PV/posição para a seleção de alvo.
   const livingTargets = participants.filter(p => p.current_hp === null || p.current_hp > 0)
 
