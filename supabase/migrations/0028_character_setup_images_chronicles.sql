@@ -207,6 +207,11 @@ grant execute on function complete_character_initial_setup(uuid, jsonb, jsonb, j
 -- 3. Expor npcs.image_url em get_campaign_npcs (TAREFA 5 — token/imagem de NPC)
 -- ----------------------------------------------------------------------------
 
+-- A coluna image_url já consta na definição de 0009 neste repositório, mas o
+-- banco em produção foi criado a partir de uma versão anterior do arquivo que
+-- não a incluía. Garantimos aqui que ela exista antes de expô-la na RPC.
+alter table npcs add column if not exists image_url text;
+
 -- O retorno (OUT params) mudou em relação à versão anterior (ganhou image_url),
 -- então create or replace não é suficiente: precisamos dropar a função antes.
 drop function if exists get_campaign_npcs(uuid);
