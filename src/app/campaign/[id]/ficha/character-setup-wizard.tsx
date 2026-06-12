@@ -17,7 +17,17 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, ChevronLeft, ChevronRight, Save } from "lucide-react"
+import { Loader2, ChevronLeft, ChevronRight, Save, RefreshCw, AlertTriangle } from "lucide-react"
+import {
+  getAbilityModifier,
+  getDefaultSpeed,
+  getHitDie,
+  getProficiencyBonus,
+  getProficiencyStartLevel,
+  getSuggestedArmorClass,
+  getSuggestedHpForLevel,
+  STANDARD_SPEEDS,
+} from "@/lib/dnd/srd-rules"
 
 // ----------------------------------------------------------------------------
 // Tipos e constantes do setup inicial (SRD básico — sem motor completo de D&D)
@@ -82,23 +92,7 @@ const SKILLS: { key: string; ability: string }[] = [
   { key: "Sobrevivência", ability: "WIS" },
 ]
 
-// Dados de vida por classe (SRD básico). Usado apenas como sugestão editável.
-const HIT_DIE_BY_CLASS: Record<string, number> = {
-  barbaro: 12,
-  guerreiro: 10,
-  paladino: 10,
-  patrulheiro: 10,
-  bardo: 8,
-  clerigo: 8,
-  druida: 8,
-  monge: 8,
-  ladino: 8,
-  bruxo: 8,
-  mago: 6,
-  feiticeiro: 6,
-}
-
-const CONJURER_CLASSES = new Set(["mago", "clerigo", "druida", "bardo", "feiticeiro", "bruxo", "paladino", "patrulheiro"])
+const CONJURER_CLASSES = new Set(["mago", "clerigo", "druida", "bardo", "feiticeiro", "bruxo", "paladino", "patrulheiro", "wizard", "cleric", "druid", "bard", "sorcerer", "warlock", "paladin", "ranger"])
 
 function normalize(value: string): string {
   return value
@@ -108,16 +102,12 @@ function normalize(value: string): string {
     .replace(/[̀-ͯ]/g, "")
 }
 
-function getHitDie(className: string): number {
-  return HIT_DIE_BY_CLASS[normalize(className)] ?? 8
-}
-
 function isConjurer(className: string): boolean {
   return CONJURER_CLASSES.has(normalize(className))
 }
 
 function calculateModifier(score: number): number {
-  return Math.floor((score - 10) / 2)
+  return getAbilityModifier(score)
 }
 
 function formatModifier(mod: number): string {
@@ -219,10 +209,12 @@ export function CharacterSetupWizard({ open, onOpenChange, character, charStats,
   const dexMod = calculateModifier(attributes.dexterity)
   const conMod = calculateModifier(attributes.constitution)
   const hitDie = getHitDie(identity.class)
-  const suggestedMaxHp = String(hitDie + conMod)
-  const suggestedAc = String(10 + dexMod)
-  const suggestedSpeed = "30"
-  const suggestedProficiency = String(Math.floor((Math.max(identity.level, 1) - 1) / 4) + 2)
+  // Sugestões SRD — recalculadas a cada render a partir de nível/raça/classe/
+  // atributos atuais. São apenas um ponto de partida editável (TAREFA 1/2).
+  const suggestedMaxHp = String(getSuggestedHpForLevel(identity.class, identity.level, conMod))
+  const suggestedAc = String(getSuggestedArmorClass({ dexMod }))
+  const suggestedSpeed = String(getDefaultSpeed(identity.race))
+  const suggestedProficiency = String(getProficiencyBonus(identity.level))
 
   const [combatForm, setCombatForm] = React.useState({
     max_hp: combat.max_hp !== null ? String(combat.max_hp) : "",
@@ -285,6 +277,50 @@ export function CharacterSetupWizard({ open, onOpenChange, character, charStats,
   }
 
   // ----------------------------------------------------------------------------
+  // TAREFA 3 — Alertas de valores fora do padrão SRD (não bloqueantes)
+  // ----------------------------------------------------------------------------
+
+  const [acknowledgeOutOfStandard, setAcknowledgeOutOfStandard] = React.useState(false)
+
+  function getSrdWarnings(): string[] {
+    const warnings: string[] = []
+
+    const proficiencyValue = Number(combatForm.proficiency_bonus)
+    const expectedProficiency = getProficiencyBonus(identity.level)
+    if (!Number.isNaN(proficiencyValue) && proficiencyValue !== expectedProficiency) {
+      const startLevel = getProficiencyStartLevel(proficiencyValue)
+      if (startLevel) {
+        warnings.push(`Proficiência +${proficiencyValue} normalmente começa no nível ${startLevel}. Para nível ${identity.level}, o SRD sugere +${expectedProficiency}.`)
+      } else {
+        warnings.push(`Proficiência +${proficiencyValue} é incomum para o nível ${identity.level} (SRD sugere +${expectedProficiency}).`)
+      }
+    }
+
+    const speedValue = Number(combatForm.speed)
+    if (!Number.isNaN(speedValue) && !STANDARD_SPEEDS.includes(speedValue)) {
+      warnings.push(`Deslocamento de ${speedValue} ft é incomum (padrão SRD: ${STANDARD_SPEEDS.join("/")} ft).`)
+    }
+
+    const acValue = Number(combatForm.armor_class)
+    const minAcWithoutArmor = 10 + dexMod
+    if (!Number.isNaN(acValue) && acValue < minAcWithoutArmor) {
+      warnings.push(`CA ${acValue} está abaixo do mínimo sem armadura (10 + DEX = ${minAcWithoutArmor}).`)
+    }
+
+    const maxHpValue = Number(combatForm.max_hp)
+    const currentHpValue = Number(combatForm.current_hp)
+    if (!Number.isNaN(currentHpValue) && !Number.isNaN(maxHpValue)) {
+      if (currentHpValue > maxHpValue) {
+        warnings.push(`PV atual (${currentHpValue}) é maior que o PV máximo (${maxHpValue}).`)
+      } else if (maxHpValue > 0 && currentHpValue < maxHpValue * 0.5) {
+        warnings.push(`PV atual (${currentHpValue}) está bem abaixo do PV máximo (${maxHpValue}) para o início da aventura.`)
+      }
+    }
+
+    return warnings
+  }
+
+  // ----------------------------------------------------------------------------
   // Navegação e validação
   // ----------------------------------------------------------------------------
 
@@ -323,6 +359,16 @@ export function CharacterSetupWizard({ open, onOpenChange, character, charStats,
     const combatError = validateStep(2)
     if (identityError || combatError) {
       toast({ variant: "destructive", title: "Campos pendentes", description: identityError || combatError || "" })
+      return
+    }
+
+    const srdWarnings = getSrdWarnings()
+    if (srdWarnings.length > 0 && !acknowledgeOutOfStandard) {
+      toast({
+        variant: "destructive",
+        title: "Valores fora do padrão SRD",
+        description: "Revise os alertas na Revisão ou marque \"Salvar mesmo fora do padrão\" para confirmar.",
+      })
       return
     }
 
@@ -528,10 +574,10 @@ export function CharacterSetupWizard({ open, onOpenChange, character, charStats,
 
           {step === 2 && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <p className="text-xs text-muted-foreground italic">Sugestões para nível 1, calculadas a partir da classe e dos atributos — são apenas um ponto de partida editável.</p>
-                <Button type="button" variant="outline" size="sm" onClick={applySuggestions} className="shrink-0 text-[10px] uppercase tracking-widest">
-                  Usar sugestão
+              <div className="flex justify-between items-center gap-4">
+                <p className="text-xs text-muted-foreground italic">Sugestões SRD calculadas a partir de nível, raça, classe e atributos — são apenas um ponto de partida editável.</p>
+                <Button type="button" variant="outline" size="sm" onClick={applySuggestions} className="shrink-0 gap-2 text-[10px] uppercase tracking-widest">
+                  <RefreshCw className="h-3.5 w-3.5" /> Recalcular sugestões SRD
                 </Button>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -697,6 +743,24 @@ export function CharacterSetupWizard({ open, onOpenChange, character, charStats,
                   <p className="text-muted-foreground">Nenhum item inicial — será adicionado depois.</p>
                 )}
               </div>
+
+              {/* TAREFA 3: alertas não bloqueantes de valores fora do padrão SRD */}
+              {getSrdWarnings().length > 0 && (
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+                  <p className="text-[9px] uppercase font-black tracking-widest text-amber-400 flex items-center gap-2">
+                    <AlertTriangle className="h-3.5 w-3.5" /> Valores fora do padrão SRD
+                  </p>
+                  <ul className="space-y-1.5">
+                    {getSrdWarnings().map((warning, idx) => (
+                      <li key={idx} className="text-xs text-amber-200/90 italic">{warning}</li>
+                    ))}
+                  </ul>
+                  <label className="flex items-center gap-3 pt-2 cursor-pointer">
+                    <Checkbox checked={acknowledgeOutOfStandard} onCheckedChange={(v) => setAcknowledgeOutOfStandard(!!v)} />
+                    <span className="text-xs font-bold text-amber-300">Salvar mesmo fora do padrão</span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
         </div>

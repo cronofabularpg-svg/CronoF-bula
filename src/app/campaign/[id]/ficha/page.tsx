@@ -45,6 +45,16 @@ import { useToast } from "@/hooks/use-toast"
 import { Slider } from "@/components/ui/slider"
 import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
 import { CharacterSetupWizard } from "./character-setup-wizard"
+import {
+  getAbilityModifier,
+  getProficiencyBonus,
+  getSuggestedArmorClass,
+  formatSpeed,
+  GRID_CELL_FT,
+  GRID_CELL_M,
+  STANDARD_SPEEDS,
+  type ArmorProperties,
+} from "@/lib/dnd/srd-rules"
 
 type CharacterStats = {
   strength: number | null
@@ -357,7 +367,7 @@ export default function FichaPersonagem() {
   }
 
   const calculateModifier = (value: number) => {
-    const mod = Math.floor((value - 10) / 2);
+    const mod = getAbilityModifier(value);
     return mod >= 0 ? `+${mod}` : mod.toString();
   };
 
@@ -381,7 +391,9 @@ export default function FichaPersonagem() {
     ? charStats.sheet_state
     : {};
   const characterLevel = character.level ?? 1;
-  const proficiency = character.proficiency_bonus ?? (Math.floor((characterLevel - 1) / 4) + 2);
+  const expectedProficiency = getProficiencyBonus(characterLevel);
+  const proficiency = character.proficiency_bonus ?? expectedProficiency;
+  const dexMod = getAbilityModifier(stats.dex);
 
   const charPhoto = character.avatar_url || `https://picsum.photos/seed/${character.id}/500/500`;
 
@@ -390,6 +402,32 @@ export default function FichaPersonagem() {
   const combatIncomplete = character.current_hp === null || character.max_hp === null || character.armor_class === null || character.speed === null || character.proficiency_bonus === null
   const attributesIncomplete = !charStats || ATTRIBUTE_KEYS.some((key) => charStats![key] === null)
   const sheetIncomplete = combatIncomplete || attributesIncomplete || !character.class || !character.race
+
+  // TAREFA 4: "Validação SRD" — alertas discretos para fichas já configuradas
+  // (sheetIncomplete = false) cujos valores divergem do esperado pelo SRD.
+  // Não bloqueia o jogo, apenas orienta o jogador/mestre a revisar.
+  const srdWarnings: string[] = []
+  if (!sheetIncomplete) {
+    if (character.proficiency_bonus !== expectedProficiency) {
+      srdWarnings.push(`Bônus de proficiência +${character.proficiency_bonus} não corresponde ao nível ${characterLevel} (SRD sugere +${expectedProficiency}).`)
+    }
+    if (character.speed !== null && !STANDARD_SPEEDS.includes(character.speed)) {
+      srdWarnings.push(`Deslocamento de ${character.speed} ft é incomum (padrão SRD: ${STANDARD_SPEEDS.join("/")} ft).`)
+    }
+    if (character.current_hp !== null && character.max_hp !== null && character.current_hp > character.max_hp) {
+      srdWarnings.push(`PV atual (${character.current_hp}) é maior que o PV máximo (${character.max_hp}).`)
+    }
+    if (character.armor_class !== null && character.armor_class < 10 + dexMod) {
+      srdWarnings.push(`CA ${character.armor_class} está abaixo do mínimo sem armadura (10 + DEX = ${10 + dexMod}).`)
+    }
+  }
+
+  // TAREFA 5: CA sugerida a partir do equipamento equipado (armor/shield) + DEX.
+  const equippedArmor = equippedItems.find((ci) => ci.item?.item_type === 'armor')?.item ?? null
+  const hasEquippedShield = equippedItems.some((ci) => ci.item?.item_type === 'shield')
+  const armorProperties = (equippedArmor?.properties as ArmorProperties) ?? null
+  const suggestedArmorClass = getSuggestedArmorClass({ dexMod, armor: armorProperties, hasShield: hasEquippedShield })
+  const armorClassDiffersFromSuggestion = character.armor_class !== null && character.armor_class !== suggestedArmorClass
 
   async function handleUpdatePhoto() {
     if (!character) return
@@ -511,6 +549,26 @@ export default function FichaPersonagem() {
     }
 
     setResources((prev) => prev.map((r) => (r.id === resource.id ? { ...r, current_value: next } : r)))
+  }
+
+  // TAREFA 5: aplica a CA sugerida (10 + DEX, ou armadura/escudo equipados)
+  // via RPC — armor_class é um campo crítico travado fora do setup inicial,
+  // então a atualização passa pela mesma escotilha de escape (0029).
+  async function handleApplySuggestedArmorClass() {
+    if (!character) return
+    const supabase = createClient()
+    const { error } = await supabase.rpc('apply_character_armor_class', {
+      target_character_id: character.id,
+      new_armor_class: suggestedArmorClass,
+    })
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Aplicar CA", description: error.message })
+      return
+    }
+
+    setCharacter({ ...character, armor_class: suggestedArmorClass })
+    toast({ title: "CA Atualizada", description: `Classe de Armadura ajustada para ${suggestedArmorClass}.` })
   }
 
   function openLevelUpDialog() {
@@ -668,6 +726,26 @@ export default function FichaPersonagem() {
           </div>
           <Button onClick={() => setIsSetupWizardOpen(true)} className="bg-amber-500 hover:bg-amber-600 text-black font-display gap-2 shrink-0">
             <Wand2 className="h-4 w-4" /> Configurar Ficha Inicial
+          </Button>
+        </section>
+      )}
+
+      {/* TAREFA 4: Validação SRD — alertas discretos para fichas já configuradas */}
+      {srdWarnings.length > 0 && (
+        <section className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-display font-bold text-amber-300">Validação SRD</p>
+              <ul className="space-y-1">
+                {srdWarnings.map((warning, idx) => (
+                  <li key={idx} className="text-sm text-muted-foreground font-heading italic">{warning}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <Button onClick={() => setIsSetupWizardOpen(true)} variant="outline" className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10 font-display gap-2 shrink-0">
+            <Wand2 className="h-4 w-4" /> Revisar Configuração
           </Button>
         </section>
       )}
@@ -846,20 +924,32 @@ export default function FichaPersonagem() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center gap-1">
                 <Shield className="h-8 w-8 text-primary mb-3" />
                 <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Defesa (CA)</span>
                 <span className="text-4xl font-display font-black text-primary">{character.armor_class ?? 10}</span>
+                {armorClassDiffersFromSuggestion && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleApplySuggestedArmorClass}
+                    className="mt-2 h-auto py-1 px-2 text-[8px] uppercase tracking-widest border-primary/30 text-primary hover:bg-primary/10"
+                  >
+                    Aplicar CA sugerida ({suggestedArmorClass})
+                  </Button>
+                )}
              </div>
              <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
                 <Zap className="h-8 w-8 text-accent mb-3" />
                 <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Iniciativa</span>
                 <span className="text-4xl font-display font-black text-accent">{Number(calculateModifier(stats.dex)) >= 0 ? `+${calculateModifier(stats.dex)}` : calculateModifier(stats.dex)}</span>
              </div>
-             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center gap-1">
                 <Footprints className="h-8 w-8 text-secondary mb-3" />
                 <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Deslocamento</span>
-                <span className="text-4xl font-display font-black text-secondary">{character.speed ?? "—"}</span>
+                <span className="text-2xl font-display font-black text-secondary">{formatSpeed(character.speed)}</span>
+                <span className="text-[8px] uppercase tracking-widest opacity-30">1 célula = {GRID_CELL_FT} ft / {GRID_CELL_M} m</span>
              </div>
              <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
                 <Star className="h-8 w-8 text-primary mb-3" />
@@ -1154,9 +1244,10 @@ function EquippedItemCard({ characterItem }: { characterItem: EquippedItem }) {
   const item = characterItem.item
   if (!item) return null
   const properties = item.properties && Object.keys(item.properties).length > 0 ? item.properties : null
+  const isCombatEquipment = item.item_type === 'armor' || item.item_type === 'shield'
 
   return (
-    <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-2">
+    <div className={`p-4 rounded-xl bg-white/5 border space-y-2 ${isCombatEquipment ? 'border-primary/30' : 'border-white/5'}`}>
       <div className="flex items-start justify-between gap-2">
         <span className="text-sm font-display font-bold">{item.name}</span>
         {characterItem.quantity > 1 && (
@@ -1164,6 +1255,11 @@ function EquippedItemCard({ characterItem }: { characterItem: EquippedItem }) {
         )}
       </div>
       <div className="flex flex-wrap gap-2">
+        {isCombatEquipment && (
+          <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-primary/30 text-primary flex items-center gap-1">
+            <Shield className="h-3 w-3" /> Equipamento de combate
+          </Badge>
+        )}
         {item.item_type && (
           <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-white/10 text-muted-foreground">
             {item.item_type}
