@@ -99,6 +99,30 @@ caminho alternativo que não depende de URL assinada nem de CORS no bucket:
   - `"auto"`: tenta o PUT assinado e, se falhar na etapa de PUT, exibe o botão
     "Tentar envio seguro pelo servidor" para repetir via `/api/uploads/direct`.
 
+## Limites recomendados
+
+O tamanho máximo de upload varia por `usageType` (ver
+`src/lib/uploads/upload-limits.ts`, usado tanto em `/api/uploads/direct`
+quanto em `/api/uploads/presign` e no componente `R2ImageUpload`):
+
+- Avatar/personagem (`character_avatar`): 10 MB
+- NPC/token (`npc_token`): 10 MB
+- Item (`item_image`): 10 MB
+- Handout (`handout`): 15 MB
+- Capa da campanha (`campaign_cover`): 15 MB
+- Mapa Vivo / cidade / mundo (`location_image`): 25 MB
+- Grid de combate (`battlefield_map`): 25 MB
+- Outros (`other`): 10 MB
+
+Recomendações para imagens de mapa:
+
+- Preferir WebP ou JPG otimizado em vez de PNG.
+- Evitar PNG gigante para mapas — comprime mal e infla o tamanho do arquivo.
+- Usar mapas entre 2000px e 4000px de largura — suficiente para a maioria das
+  mesas, sem gerar arquivos desnecessariamente grandes.
+- Se o arquivo passar de 25 MB, comprimir antes de subir (reduzir resolução
+  e/ou converter para WebP).
+
 ## Variáveis de ambiente necessárias
 
 Confirme estas variáveis no ambiente da Vercel (Production e Preview):

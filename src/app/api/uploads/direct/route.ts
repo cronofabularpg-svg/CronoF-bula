@@ -4,9 +4,9 @@ import { getAuthenticatedUserId } from '@/lib/ai/route-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isR2Configured } from '@/lib/server/env'
 import { buildR2StorageKey, getR2PublicUrl, uploadObjectToR2 } from '@/lib/server/r2'
+import { getMaxUploadSizeForUsageType } from '@/lib/uploads/upload-limits'
 
 const ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp']
-const MAX_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
 
 // usageType que só o mestre/owner da campanha pode enviar nesta fase.
 const MASTER_ONLY_USAGE_TYPES = ['battlefield_map', 'location_image', 'npc_token', 'item_image']
@@ -82,8 +82,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Tipo de arquivo não permitido. Use PNG, JPEG ou WebP.' }, { status: 400 })
   }
 
-  if (file.size > MAX_SIZE_BYTES) {
-    return NextResponse.json({ error: 'Arquivo excede o limite de 10 MB.' }, { status: 400 })
+  const maxSize = getMaxUploadSizeForUsageType(usageType)
+  if (file.size > maxSize) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'FILE_TOO_LARGE',
+        message: `Arquivo excede o limite de ${Math.round(maxSize / 1024 / 1024)} MB para este tipo de imagem.`,
+      },
+      { status: 400 }
+    )
   }
 
   const supabase = createAdminClient()

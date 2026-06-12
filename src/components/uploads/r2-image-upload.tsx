@@ -5,9 +5,9 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, Upload, ShieldAlert } from "lucide-react"
+import { formatUploadLimit, getMaxUploadSizeForUsageType } from "@/lib/uploads/upload-limits"
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"]
-const MAX_SIZE_BYTES = 10 * 1024 * 1024
 
 export type MediaAsset = {
   id: string
@@ -58,6 +58,7 @@ export function R2ImageUpload({
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
   const [fallbackFile, setFallbackFile] = useState<File | null>(null)
+  const maxSize = getMaxUploadSizeForUsageType(usageType)
 
   async function uploadDirect(file: File) {
     setLoading(true)
@@ -195,8 +196,8 @@ export function R2ImageUpload({
       return
     }
 
-    if (file.size > MAX_SIZE_BYTES) {
-      toast({ variant: "destructive", title: "Arquivo muito grande", description: "O limite é 10 MB por imagem." })
+    if (file.size > maxSize) {
+      toast({ variant: "destructive", title: "Arquivo muito grande", description: `Arquivo excede o limite de ${formatUploadLimit(maxSize)}.` })
       event.target.value = ""
       return
     }
@@ -244,7 +245,7 @@ export function R2ImageUpload({
           Tentar envio seguro pelo servidor
         </Button>
       )}
-      <p className="text-xs text-muted-foreground">PNG, JPEG ou WebP — máximo 10 MB.</p>
+      <p className="text-xs text-muted-foreground">PNG, JPEG ou WebP — máximo {formatUploadLimit(maxSize)}.</p>
       {preview && (
         <div className="relative h-24 w-40 overflow-hidden rounded-lg border border-primary/20">
           <Image src={preview} alt="Pré-visualização" fill className="object-cover" unoptimized />
