@@ -13,14 +13,14 @@ import {
   SidebarFooter,
   SidebarTrigger
 } from "@/components/ui/sidebar"
-import { 
-  MessageSquare, 
-  Map as MapIcon, 
-  Swords, 
+import {
+  MessageSquare,
+  Map as MapIcon,
+  Swords,
   User,
   ScrollText,
-  Settings, 
-  ShieldCheck, 
+  Settings,
+  ShieldCheck,
   Home,
   Hourglass,
   Users,
@@ -29,8 +29,13 @@ import {
   Database,
   MapPin,
   ChevronRight,
-  Maximize2
+  Maximize2,
+  Archive,
+  ArchiveRestore,
+  Ban,
+  Loader2,
 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
 import { usePathname, useParams } from "next/navigation"
 import { useUser } from "@/firebase"
@@ -44,7 +49,15 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
   const { id: campaignId } = useParams() as { id: string };
   const { user } = useUser();
+  const { toast } = useToast();
   const [membershipStatus, setMembershipStatus] = React.useState<string | null>(null);
+  const [campaignStatus, setCampaignStatus] = React.useState<{
+    name: string
+    owner_id: string
+    archived_at: string | null
+    deleted_at: string | null
+  } | null>(null);
+  const [isRestoringCampaign, setIsRestoringCampaign] = React.useState(false);
 
   // Personagem ativo (para tema visual e rodapé)
   const [activeChar, setActiveChar] = React.useState<{
@@ -54,6 +67,25 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
     class: string | null
     avatar_url: string | null
   } | null>(null);
+
+  React.useEffect(() => {
+    if (!campaignId) return;
+    let active = true;
+    const supabase = createClient();
+
+    supabase
+      .from('campaigns')
+      .select('name, owner_id, archived_at, deleted_at')
+      .eq('id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setCampaignStatus(data);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [campaignId]);
 
   React.useEffect(() => {
     if (!user || !campaignId) return;
@@ -91,6 +123,66 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
   }, [activeChar]);
 
   const charPhoto = activeChar?.avatar_url || null;
+  const isOwner = !!user && campaignStatus?.owner_id === user.uid;
+
+  async function handleRestoreCampaign() {
+    setIsRestoringCampaign(true)
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.rpc('restore_campaign', { p_campaign_id: campaignId })
+      if (error) throw error
+      setCampaignStatus((prev) => prev ? { ...prev, archived_at: null } : prev)
+      toast({ title: "Campanha restaurada", description: "A campanha voltou a aparecer no dashboard." })
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro ao Restaurar", description: error.message })
+    } finally {
+      setIsRestoringCampaign(false)
+    }
+  }
+
+  if (campaignStatus?.deleted_at) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8 bg-background">
+        <div className="max-w-xl rounded-3xl border border-destructive/20 bg-card/70 p-10 text-center space-y-6">
+          <Ban className="h-12 w-12 text-destructive mx-auto" />
+          <h1 className="text-4xl font-display font-bold text-destructive">Campanha excluída ou indisponível</h1>
+          <p className="text-muted-foreground font-heading italic text-lg">
+            Esta campanha não está mais disponível.
+          </p>
+          <Button asChild className="rounded-full bg-primary px-8">
+            <Link href="/dashboard">Voltar ao Dashboard</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (campaignStatus?.archived_at) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8 bg-background">
+        <div className="max-w-xl rounded-3xl border border-primary/20 bg-card/70 p-10 text-center space-y-6">
+          <Archive className="h-12 w-12 text-primary mx-auto" />
+          <h1 className="text-4xl font-display font-bold text-primary">Campanha arquivada</h1>
+          <p className="text-muted-foreground font-heading italic text-lg">
+            {isOwner
+              ? `"${campaignStatus.name}" está arquivada e oculta do dashboard. Restaure para continuar jogando.`
+              : `"${campaignStatus.name}" foi arquivada pelo mestre e está temporariamente indisponível.`}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            {isOwner && (
+              <Button onClick={handleRestoreCampaign} disabled={isRestoringCampaign} className="rounded-full bg-primary px-8">
+                {isRestoringCampaign ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArchiveRestore className="mr-2 h-4 w-4" />}
+                Restaurar Campanha
+              </Button>
+            )}
+            <Button asChild variant="outline" className="rounded-full px-8">
+              <Link href="/dashboard">Voltar ao Dashboard</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (user && membershipStatus && membershipStatus !== 'active') {
     return (

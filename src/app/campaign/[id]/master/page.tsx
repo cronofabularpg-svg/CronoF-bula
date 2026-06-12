@@ -43,6 +43,10 @@ import {
   Copy,
   RefreshCw,
   UserPlus,
+  AlertTriangle,
+  Archive,
+  ArchiveRestore,
+  Trash2,
 } from "lucide-react"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
@@ -67,6 +71,8 @@ type CampaignSummary = {
   owner_id: string
   ai_enabled: boolean
   invite_code: string | null
+  archived_at: string | null
+  deleted_at: string | null
 }
 
 type CampaignSettingsRow = {
@@ -350,6 +356,10 @@ export default function MasterPanel() {
   const [isTestingAI, setIsTestingAI] = React.useState(false)
   const [aiTestResult, setAiTestResult] = React.useState<{ ok: boolean; message: string } | null>(null)
   const [isRegeneratingInvite, setIsRegeneratingInvite] = React.useState(false)
+  const [isArchivingCampaign, setIsArchivingCampaign] = React.useState(false)
+  const [isDeleteCampaignOpen, setIsDeleteCampaignOpen] = React.useState(false)
+  const [deleteCampaignConfirmName, setDeleteCampaignConfirmName] = React.useState("")
+  const [isDeletingCampaign, setIsDeletingCampaign] = React.useState(false)
   const [appOrigin, setAppOrigin] = React.useState("")
   const [levelUpToApprove, setLevelUpToApprove] = React.useState<PendingLevelUp | null>(null)
   const [levelUpApprovalForm, setLevelUpApprovalForm] = React.useState({
@@ -412,7 +422,7 @@ export default function MasterPanel() {
 
     supabase
       .from('campaigns')
-      .select('id, name, tone, owner_id, ai_enabled, invite_code')
+      .select('id, name, tone, owner_id, ai_enabled, invite_code, archived_at, deleted_at')
       .eq('id', campaignId)
       .maybeSingle()
       .then(({ data }) => {
@@ -929,6 +939,48 @@ export default function MasterPanel() {
       toast({ variant: "destructive", title: "Erro ao Regenerar Convite", description: error.message })
     } finally {
       setIsRegeneratingInvite(false)
+    }
+  }
+
+  async function handleArchiveCampaign(action: 'archive' | 'restore') {
+    if (!campaignId) return
+    setIsArchivingCampaign(true)
+    try {
+      const supabase = createClient()
+      const fn = action === 'archive' ? 'archive_campaign' : 'restore_campaign'
+      const { error } = await supabase.rpc(fn, { p_campaign_id: campaignId })
+      if (error) throw error
+      setCampaign((prev) => prev ? { ...prev, archived_at: action === 'archive' ? new Date().toISOString() : null } : prev)
+      toast({
+        title: action === 'archive' ? "Campanha arquivada" : "Campanha restaurada",
+        description: action === 'archive'
+          ? "A campanha saiu da lista padrão do dashboard. Você pode restaurá-la quando quiser."
+          : "A campanha voltou a aparecer no dashboard.",
+      })
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro", description: error.message })
+    } finally {
+      setIsArchivingCampaign(false)
+    }
+  }
+
+  async function handleDeleteCampaign() {
+    if (!campaignId || !campaign) return
+    setIsDeletingCampaign(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.rpc('delete_campaign_soft', {
+        p_campaign_id: campaignId,
+        p_confirmation_name: deleteCampaignConfirmName,
+      })
+      if (error) throw error
+      toast({ title: "Campanha excluída", description: "A campanha foi excluída e não aparece mais no dashboard." })
+      setIsDeleteCampaignOpen(false)
+      router.push('/dashboard')
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro ao Excluir Campanha", description: error.message })
+    } finally {
+      setIsDeletingCampaign(false)
     }
   }
 
@@ -1786,6 +1838,8 @@ export default function MasterPanel() {
     }
   }
 
+  const isOwner = campaign?.owner_id === user?.uid
+
   return (
     <div className="p-10 max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700">
       <header className="flex justify-between items-center border-b pb-10 border-white/5">
@@ -2305,8 +2359,91 @@ export default function MasterPanel() {
               )}
             </Card>
           </div>
+
+          {isOwner && (
+            <Card className="bg-destructive/5 border-destructive/30 p-8 space-y-6">
+              <h3 className="font-display font-bold text-2xl flex items-center gap-3 text-destructive">
+                <AlertTriangle className="h-6 w-6" /> Zona de Perigo
+              </h3>
+              <p className="text-sm text-muted-foreground font-heading italic">
+                Estas ações afetam a visibilidade da campanha para todo o grupo. Nenhum dado de jogadores, NPCs, itens ou imagens é apagado.
+              </p>
+
+              <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 gap-4">
+                <div>
+                  <p className="font-bold text-sm">{campaign?.archived_at ? "Campanha arquivada" : "Arquivar campanha"}</p>
+                  <p className="text-xs text-muted-foreground font-heading italic mt-1">
+                    {campaign?.archived_at
+                      ? "A campanha está oculta do dashboard padrão. Você pode restaurá-la quando quiser."
+                      : "Oculta a campanha do dashboard padrão. Reversível a qualquer momento."}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/10 shrink-0"
+                  disabled={isArchivingCampaign}
+                  onClick={() => handleArchiveCampaign(campaign?.archived_at ? 'restore' : 'archive')}
+                >
+                  {isArchivingCampaign ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : campaign?.archived_at ? <ArchiveRestore className="mr-2 h-4 w-4" /> : <Archive className="mr-2 h-4 w-4" />}
+                  {campaign?.archived_at ? "Restaurar Campanha" : "Arquivar Campanha"}
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-xl bg-destructive/10 border border-destructive/20 gap-4">
+                <div>
+                  <p className="font-bold text-sm">Excluir campanha</p>
+                  <p className="text-xs text-muted-foreground font-heading italic mt-1">
+                    Remove a campanha do dashboard de todos. Os dados continuam no banco e podem ser recuperados pela equipe técnica, se necessário.
+                  </p>
+                </div>
+                <Button
+                  variant="destructive"
+                  className="shrink-0"
+                  onClick={() => { setDeleteCampaignConfirmName(""); setIsDeleteCampaignOpen(true) }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Excluir Campanha
+                </Button>
+              </div>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
+
+      {/* Modal: Excluir Campanha */}
+      <Dialog open={isDeleteCampaignOpen} onOpenChange={setIsDeleteCampaignOpen}>
+        <DialogContent className="bg-card border-destructive/30 max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-display text-destructive flex items-center gap-3">
+              <AlertTriangle className="h-6 w-6" /> Excluir campanha?
+            </DialogTitle>
+            <DialogDescription className="font-heading italic">
+              Esta ação remove "{campaign?.name}" do dashboard de todos os jogadores. Para confirmar, digite exatamente o nome da campanha abaixo.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2">
+            <Label className="text-[10px] uppercase font-bold tracking-widest">Nome da campanha</Label>
+            <Input
+              value={deleteCampaignConfirmName}
+              onChange={(e) => setDeleteCampaignConfirmName(e.target.value)}
+              placeholder={campaign?.name || ""}
+            />
+            <p className="text-[11px] text-muted-foreground">Digite: <span className="font-bold">{campaign?.name}</span></p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteCampaignOpen(false)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={isDeletingCampaign || deleteCampaignConfirmName !== campaign?.name}
+              onClick={handleDeleteCampaign}
+            >
+              {isDeletingCampaign ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Sim, excluir campanha
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal: Entregar Item a Personagem */}
       <Dialog open={Boolean(deliverItem)} onOpenChange={(open) => !open && setDeliverItem(null)}>

@@ -40,6 +40,8 @@ type Campaign = {
   tone: string | null
   status: string
   cover_image_url: string | null
+  archived_at: string | null
+  deleted_at: string | null
 }
 
 type PendingCampaignInvite = {
@@ -110,6 +112,7 @@ export default function Dashboard() {
   const { toast } = useToast();
 
   const [campaigns, setCampaigns] = React.useState<Campaign[]>([]);
+  const [showArchived, setShowArchived] = React.useState(false);
   const [pendingInvites, setPendingInvites] = React.useState<PendingCampaignInvite[]>([]);
   const [campaignsLoading, setCampaignsLoading] = React.useState(true);
   const [isStartingSolo, setIsStartingSolo] = React.useState(false);
@@ -145,13 +148,13 @@ export default function Dashboard() {
     Promise.all([
       supabase
         .from('campaign_members')
-        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status, cover_image_url)')
+        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status, cover_image_url, archived_at, deleted_at)')
         .eq('user_id', user.uid)
         .eq('status', 'active')
         .order('joined_at', { ascending: false }),
       supabase
         .from('campaign_members')
-        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status, cover_image_url)')
+        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status, cover_image_url, archived_at, deleted_at)')
         .eq('user_id', user.uid)
         .eq('status', 'pending')
         .order('joined_at', { ascending: false }),
@@ -166,7 +169,8 @@ export default function Dashboard() {
         }
         const activeCampaigns = ((activeRes.data as PendingCampaignInvite[]) || [])
           .map((membership) => Array.isArray(membership.campaigns) ? membership.campaigns[0] : membership.campaigns)
-          .filter(Boolean) as Campaign[]
+          .filter(Boolean)
+          .filter((c) => !(c as Campaign).deleted_at) as Campaign[]
         setCampaigns(activeCampaigns);
         setPendingInvites((pendingRes.data as PendingCampaignInvite[]) || []);
         setCampaignsLoading(false);
@@ -177,13 +181,27 @@ export default function Dashboard() {
     };
   }, [user, toast]);
 
-  const displayCampaigns = campaigns;
+  const archivedOwnedCount = campaigns.filter((c) => c.archived_at && c.owner_id === user?.uid).length
+  const displayCampaigns = showArchived
+    ? campaigns
+    : campaigns.filter((c) => !c.archived_at)
 
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push('/login');
     router.refresh();
+  }
+
+  async function handleRestoreCampaign(campaignId: string) {
+    const supabase = createClient();
+    const { error } = await supabase.rpc('restore_campaign', { p_campaign_id: campaignId })
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Restaurar", description: error.message })
+      return
+    }
+    setCampaigns((prev) => prev.map((c) => c.id === campaignId ? { ...c, archived_at: null } : c))
+    toast({ title: "Campanha restaurada", description: "Ela voltou a aparecer na lista padrão." })
   }
 
   function resetEntryDialogState() {
@@ -453,9 +471,21 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
         <div className="xl:col-span-2 space-y-10">
-          <h2 className="text-3xl font-display font-bold flex items-center gap-4 text-primary">
-            <BookOpen className="h-8 w-8" /> Grimórios que Eu Mestro
-          </h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-3xl font-display font-bold flex items-center gap-4 text-primary">
+              <BookOpen className="h-8 w-8" /> Grimórios que Eu Mestro
+            </h2>
+            {archivedOwnedCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowArchived((v) => !v)}
+                className="text-[10px] font-display uppercase tracking-widest text-muted-foreground hover:text-primary"
+              >
+                {showArchived ? "Ocultar Arquivadas" : `Mostrar Arquivadas (${archivedOwnedCount})`}
+              </Button>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
             {campaignsLoading ? (
@@ -485,6 +515,11 @@ export default function Dashboard() {
                           <Crown className="mr-1.5 h-3 w-3" /> Mestre
                         </Badge>
                       )}
+                      {campaign.archived_at && (
+                        <Badge variant="outline" className="border-destructive/30 text-destructive bg-black/40 font-display text-[9px] px-3 py-1 uppercase tracking-widest shadow-lg">
+                          Arquivada
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <CardHeader className="p-8 pb-4">
@@ -500,23 +535,35 @@ export default function Dashboard() {
                     </div>
                   </CardContent>
                   <CardFooter className="grid grid-cols-2 gap-6 p-8 pt-0">
-                    <Button asChild className="btn-ritual w-full h-14" variant="default">
-                      <Link href={`/campaign/${campaign.id}/mesa-viva`}>
-                        <Play className="mr-2 h-4 w-4" /> Entrar
-                      </Link>
-                    </Button>
-                    {campaign.owner_id === user?.uid ? (
-                      <Button asChild variant="ghost" className="w-full h-14 border border-white/5 hover:bg-primary/5 text-xs font-display tracking-widest">
-                        <Link href={`/campaign/${campaign.id}/master`}>
-                          <ShieldCheck className="mr-2 h-4 w-4" /> Gestão
-                        </Link>
+                    {campaign.archived_at && campaign.owner_id === user?.uid ? (
+                      <Button
+                        variant="outline"
+                        className="col-span-2 w-full h-14 border-primary/30 text-primary hover:bg-primary/10 text-xs font-display tracking-widest"
+                        onClick={() => handleRestoreCampaign(campaign.id)}
+                      >
+                        Restaurar Campanha
                       </Button>
                     ) : (
-                      <Button asChild variant="ghost" className="w-full h-14 border border-white/5 hover:bg-primary/5 text-xs font-display tracking-widest">
-                        <Link href={`/campaign/${campaign.id}/ficha`}>
-                          <UserIcon className="mr-2 h-4 w-4" /> Ficha
-                        </Link>
-                      </Button>
+                      <>
+                        <Button asChild className="btn-ritual w-full h-14" variant="default">
+                          <Link href={`/campaign/${campaign.id}/mesa-viva`}>
+                            <Play className="mr-2 h-4 w-4" /> Entrar
+                          </Link>
+                        </Button>
+                        {campaign.owner_id === user?.uid ? (
+                          <Button asChild variant="ghost" className="w-full h-14 border border-white/5 hover:bg-primary/5 text-xs font-display tracking-widest">
+                            <Link href={`/campaign/${campaign.id}/master`}>
+                              <ShieldCheck className="mr-2 h-4 w-4" /> Gestão
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button asChild variant="ghost" className="w-full h-14 border border-white/5 hover:bg-primary/5 text-xs font-display tracking-widest">
+                            <Link href={`/campaign/${campaign.id}/ficha`}>
+                              <UserIcon className="mr-2 h-4 w-4" /> Ficha
+                            </Link>
+                          </Button>
+                        )}
+                      </>
                     )}
                   </CardFooter>
                 </Card>
