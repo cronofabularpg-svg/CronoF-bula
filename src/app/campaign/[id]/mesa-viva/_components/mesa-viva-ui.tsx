@@ -417,7 +417,7 @@ export function MasterActionPanel({
           label={pendingCount > 0 ? `Publicar Sugestão (${pendingCount})` : "Publicar Sugestão"}
           onClick={onPublishSuggestion}
         />
-        <ModeButton icon={<FlagOff />} label="Finalizar Sessão" onClick={onFinalizeSession} />
+        <ModeButton icon={<FlagOff />} label="Finalizar e Gerar Rascunho de Crônica" onClick={onFinalizeSession} />
       </div>
     </div>
   )

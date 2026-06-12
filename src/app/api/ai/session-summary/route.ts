@@ -202,6 +202,13 @@ export async function POST(request: Request) {
         master_notes: `${basic.master_notes} (O Cronista IA não respondeu; este é um rascunho básico.)`,
         status: 'draft',
         visibility: basic.visibility,
+        source_type: 'live_table_ai',
+        source_label: 'Mesa Viva IA',
+        raw_notes: sessionLog.join('\n\n'),
+        metadata: {
+          generated_from: 'session_summary',
+          ai_fallback: true,
+        },
         created_by: userId,
       })
       .select('id')
@@ -270,6 +277,16 @@ export async function POST(request: Request) {
       master_notes: draft.masterSecrets,
       status: 'draft',
       visibility: 'party',
+      source_type: 'live_table_ai',
+      source_label: 'Mesa Viva IA',
+      raw_notes: sessionLog.join('\n\n'),
+      metadata: {
+        generated_from: 'session_summary',
+        ai_message_id: messageId,
+        highlights: draft.importantDecisions,
+        npcs_encountered: draft.npcsEncountered,
+        items_gained: draft.itemsGained,
+      },
       created_by: userId,
     })
     .select('id')

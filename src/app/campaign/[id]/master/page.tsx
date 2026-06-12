@@ -3,7 +3,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -103,6 +103,19 @@ type ApprovalRequest = {
   requested_by: string | null
   created_at: string
   payload: Record<string, any> | null
+}
+
+type PendingChronicle = {
+  id: string
+  title: string
+  summary: string | null
+  public_content: string | null
+  status: string
+  visibility: string
+  source_type: string | null
+  source_label: string | null
+  metadata: Record<string, any> | null
+  created_at: string
 }
 
 type PendingMember = {
@@ -308,6 +321,7 @@ function buildChronicleDraft(
 
 export default function MasterPanel() {
   const { id: campaignId } = useParams() as { id: string }
+  const router = useRouter()
   const { user } = useUser()
   const { toast } = useToast()
 
@@ -327,6 +341,7 @@ export default function MasterPanel() {
   const [pendingMembers, setPendingMembers] = React.useState<PendingMember[]>([])
   const [pendingLevelUps, setPendingLevelUps] = React.useState<PendingLevelUp[]>([])
   const [approvalRequests, setApprovalRequests] = React.useState<ApprovalRequest[]>([])
+  const [pendingChronicles, setPendingChronicles] = React.useState<PendingChronicle[]>([])
   const [aiSuggestions, setAiSuggestions] = React.useState<AiSuggestion[]>([])
   const [sessions, setSessions] = React.useState<SessionRow[]>([])
   const [loadingSessions, setLoadingSessions] = React.useState(true)
@@ -461,6 +476,20 @@ export default function MasterPanel() {
           toast({ variant: "destructive", title: "Erro ao Carregar Solicitações", description: error.message })
         }
         setApprovalRequests((data as ApprovalRequest[]) || [])
+      })
+
+    supabase
+      .from('chronicles')
+      .select('id, title, summary, public_content, status, visibility, source_type, source_label, metadata, created_at')
+      .eq('campaign_id', campaignId)
+      .in('status', ['draft', 'pending'])
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) {
+          toast({ variant: "destructive", title: "Erro ao Carregar Rascunhos", description: error.message })
+        }
+        setPendingChronicles(((data as PendingChronicle[]) || []).filter((chronicle) => chronicle.metadata?.review_status !== 'rejected'))
       })
 
     supabase
@@ -819,6 +848,61 @@ export default function MasterPanel() {
       title: status === 'approved' ? "Solicitação Aprovada" : "Solicitação Rejeitada",
       description: "A decisão foi registrada no cânone da campanha."
     })
+  }
+
+  async function handleApproveChronicleDraft(chronicle: PendingChronicle) {
+    if (!user) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('chronicles')
+      .update({
+        status: 'approved',
+        approved_by: user.uid,
+        approved_at: new Date().toISOString(),
+        metadata: {
+          ...(chronicle.metadata || {}),
+          review_status: 'approved',
+          reviewed_from: 'master_portal',
+        },
+      })
+      .eq('id', chronicle.id)
+      .eq('campaign_id', campaignId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Aprovar Crônica", description: error.message })
+      return
+    }
+
+    setPendingChronicles((prev) => prev.filter((item) => item.id !== chronicle.id))
+    toast({ title: "Crônica Oficializada", description: "O rascunho agora aparece nas Crônicas oficiais." })
+  }
+
+  async function handleRejectChronicleDraft(chronicle: PendingChronicle) {
+    if (!user) return
+    const reason = window.prompt("Motivo da rejeição (opcional):") || null
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('chronicles')
+      .update({
+        status: 'draft',
+        metadata: {
+          ...(chronicle.metadata || {}),
+          review_status: 'rejected',
+          rejection_reason: reason,
+          rejected_at: new Date().toISOString(),
+          rejected_by: user.uid,
+        },
+      })
+      .eq('id', chronicle.id)
+      .eq('campaign_id', campaignId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao Rejeitar Crônica", description: error.message })
+      return
+    }
+
+    setPendingChronicles((prev) => prev.filter((item) => item.id !== chronicle.id))
+    toast({ title: "Rascunho Rejeitado", description: "O registro foi preservado como rascunho interno." })
   }
 
   async function handleCopyInvite() {
@@ -1566,6 +1650,13 @@ export default function MasterPanel() {
           master_notes: draft.master_notes,
           status: 'draft',
           visibility: draft.visibility,
+          source_type: 'live_table_ai',
+          source_label: 'Mesa Viva IA',
+          raw_notes: messages.map((message) => message.content).join('\n\n'),
+          metadata: {
+            generated_from: 'master_session_finish',
+            session_title: session.title,
+          },
           created_by: user?.uid
         })
         .select('id')
@@ -1789,6 +1880,19 @@ export default function MasterPanel() {
                     onReject={() => handleResolveApproval(request.id, 'rejected')}
                   />
                 ))}
+                {pendingChronicles.map((chronicle) => (
+                  <ApprovalCard
+                    key={chronicle.id}
+                    icon={<ScrollText className="h-4 w-4" />}
+                    type={`Rascunho de Crônica · ${chronicle.source_label || chronicle.source_type || 'manual'}`}
+                    title={chronicle.title}
+                    desc={chronicle.summary || chronicle.public_content || "Rascunho aguardando revisão do mestre."}
+                    time="Pendente"
+                    onApprove={() => handleApproveChronicleDraft(chronicle)}
+                    onReject={() => handleRejectChronicleDraft(chronicle)}
+                    onEdit={() => router.push(`/campaign/${campaignId}/cronicas`)}
+                  />
+                ))}
                 {pendingLevelUps.map((request) => {
                   const character = Array.isArray(request.characters) ? request.characters[0] : request.characters
                   const profile = Array.isArray(request.requester) ? request.requester[0] : request.requester
@@ -1805,7 +1909,7 @@ export default function MasterPanel() {
                     />
                   )
                 })}
-                {pendingMembers.length === 0 && pendingCharacters?.length === 0 && approvalRequests.length === 0 && pendingLevelUps.length === 0 && (
+                {pendingMembers.length === 0 && pendingCharacters?.length === 0 && approvalRequests.length === 0 && pendingChronicles.length === 0 && pendingLevelUps.length === 0 && (
                   <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-xl border border-dashed border-white/10">
                     Nenhuma solicitação aguardando no portão.
                   </div>
@@ -1928,7 +2032,7 @@ export default function MasterPanel() {
                             size="sm"
                             className="border-accent/30 text-accent hover:bg-accent/10"
                           >
-                            {isSummarizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ScrollText className="mr-2 h-4 w-4" /> Finalizar & Crônica</>}
+                            {isSummarizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ScrollText className="mr-2 h-4 w-4" /> Finalizar e Gerar Rascunho</>}
                           </Button>
                         </>
                       )}
@@ -2482,7 +2586,7 @@ export default function MasterPanel() {
   );
 }
 
-function ApprovalCard({ icon, type, title, desc, onApprove, onReject }: { icon: React.ReactNode, type: string, title: string, desc: string, time: string, onApprove?: () => void, onReject?: () => void }) {
+function ApprovalCard({ icon, type, title, desc, onApprove, onReject, onEdit }: { icon: React.ReactNode, type: string, title: string, desc: string, time: string, onApprove?: () => void, onReject?: () => void, onEdit?: () => void }) {
   return (
     <Card className="bg-card/40 border-white/5 transition-all">
       <CardHeader className="p-6 pb-2">
@@ -2496,10 +2600,17 @@ function ApprovalCard({ icon, type, title, desc, onApprove, onReject }: { icon: 
         <p className="text-sm text-muted-foreground font-ui">{desc}</p>
       </CardContent>
       <div className="p-6 pt-0">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Button onClick={onApprove} className="w-full bg-primary hover:bg-primary/90 h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
-            <Check className="mr-2 h-4 w-4" /> Aprovar
-          </Button>
+        <div className={`grid grid-cols-1 gap-3 ${onEdit && onReject ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+          {onEdit && (
+            <Button onClick={onEdit} variant="outline" className="w-full border-primary/30 text-primary hover:bg-primary/10 h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
+              Editar
+            </Button>
+          )}
+          {onApprove && (
+            <Button onClick={onApprove} className="w-full bg-primary hover:bg-primary/90 h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
+              <Check className="mr-2 h-4 w-4" /> Aprovar
+            </Button>
+          )}
           {onReject && (
             <Button onClick={onReject} variant="outline" className="w-full border-destructive/30 text-destructive hover:bg-destructive/10 h-10 font-ui text-[11px] font-bold uppercase tracking-widest">
               <X className="mr-2 h-4 w-4" /> Rejeitar

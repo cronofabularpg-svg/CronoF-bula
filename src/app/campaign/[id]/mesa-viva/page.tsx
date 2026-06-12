@@ -790,11 +790,12 @@ export default function MesaViva() {
             <div className="flex flex-col">
               <h2 className="text-3xl font-display font-black text-primary flex items-center gap-3 tracking-tighter">
                 {isMaster && <ShieldCheck className="h-6 w-6 text-primary" />}
-                {activeSession.title}
+                Mesa Viva
               </h2>
+              <p className="text-sm text-muted-foreground font-heading italic mt-1">Sessão interativa com apoio da IA.</p>
               <div className="flex items-center gap-4 mt-2">
                  <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] font-display tracking-widest px-3 py-0.5">Sessão Ativa</Badge>
-                 <span className="text-[9px] text-muted-foreground font-display uppercase tracking-[0.2em] opacity-40">O tempo corre...</span>
+                 <span className="text-[9px] text-muted-foreground font-display uppercase tracking-[0.2em] opacity-40">{activeSession.title}</span>
               </div>
             </div>
           </div>
@@ -848,6 +849,10 @@ export default function MesaViva() {
              </Dialog>
           </div>
         </header>
+
+        <div className="mx-12 mt-6 rounded-2xl border border-secondary/20 bg-secondary/5 px-5 py-3 text-[11px] text-muted-foreground font-heading italic">
+          A Mesa Viva é o modo de jogo assistido pela IA. O mestre continua aprovando o que vira cânone.
+        </div>
 
         <ScrollArea className="flex-1 p-10 px-16 bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, rgba(var(--primary), 0.05) 1px, transparent 1px)', backgroundSize: '80px 80px' }}>
           <div className="max-w-5xl mx-auto space-y-16 pb-32">
@@ -1004,16 +1009,15 @@ export default function MesaViva() {
       <Dialog open={isFinalizeDialogOpen} onOpenChange={setIsFinalizeDialogOpen}>
         <DialogContent className="bg-card border-primary/30 literary-shadow max-w-md p-10 rounded-[2rem]">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl text-primary">Finalizar Sessão</DialogTitle>
+            <DialogTitle className="font-display text-2xl text-primary">Finalizar e Gerar Rascunho de Crônica</DialogTitle>
             <DialogDescription className="font-heading italic text-muted-foreground pt-2">
-              Encerrar a sessão, gerar o resumo da crônica e registrar os eventos oficiais são feitos no Painel do Mestre,
-              para preservar o registro da campanha.
+              A Mesa Viva não publica crônica oficial automaticamente. O Painel do Mestre encerra a sessão e gera um rascunho para revisão.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="pt-4 gap-3">
             <Button variant="outline" onClick={() => setIsFinalizeDialogOpen(false)} className="rounded-2xl">Voltar à Mesa</Button>
             <Button asChild className="btn-ritual rounded-2xl">
-              <a href={`/campaign/${campaignId}/master`}>Ir ao Painel do Mestre</a>
+              <a href={`/campaign/${campaignId}/master`}>Gerar Rascunho no Painel</a>
             </Button>
           </DialogFooter>
         </DialogContent>

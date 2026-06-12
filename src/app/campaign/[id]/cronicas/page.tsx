@@ -9,6 +9,12 @@ import { createClient } from "@/lib/supabase/client"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
 import {
   ScrollText,
   Calendar,
@@ -23,7 +29,9 @@ import {
   History,
   Wand2,
   FileClock,
-  Landmark
+  Landmark,
+  PenLine,
+  Loader2,
 } from "lucide-react"
 
 type ChronicleRow = {
@@ -36,6 +44,10 @@ type ChronicleRow = {
   master_notes: string | null
   status: string
   visibility: string
+  source_type: string | null
+  source_label: string | null
+  raw_notes: string | null
+  metadata: Record<string, any> | null
   created_at: string
   approved_at: string | null
 }
@@ -55,9 +67,21 @@ const STATUS_LABELS: Record<string, string> = {
   approved: "Crônica Oficial",
 }
 
+const SOURCE_OPTIONS = [
+  { value: "in_person_table", label: "Mesa Presencial" },
+  { value: "online_table", label: "Mesa Online" },
+  { value: "live_table_ai", label: "Mesa Viva IA" },
+  { value: "combat", label: "Combate" },
+  { value: "manual", label: "Evento Manual" },
+  { value: "imported", label: "Importação do Mestre" },
+]
+
+const SOURCE_LABELS: Record<string, string> = Object.fromEntries(SOURCE_OPTIONS.map((option) => [option.value, option.label]))
+
 export default function Cronicas() {
   const { id: campaignId } = useParams() as { id: string }
   const { user } = useUser()
+  const { toast } = useToast()
   const [chronicles, setChronicles] = React.useState<ChronicleRow[]>([])
   const [loading, setLoading] = React.useState(true)
   const [selectedChronicle, setSelectedChronicle] = React.useState<ChronicleRow | null>(null)
@@ -65,49 +89,59 @@ export default function Cronicas() {
   const [isMaster, setIsMaster] = React.useState(false)
   const [canonEvents, setCanonEvents] = React.useState<CanonEventRow[]>([])
   const [loadingCanonEvents, setLoadingCanonEvents] = React.useState(false)
+  const [manualDialogOpen, setManualDialogOpen] = React.useState(false)
+  const [isSavingManual, setIsSavingManual] = React.useState(false)
+  const [manualForm, setManualForm] = React.useState({
+    title: "",
+    sourceType: "in_person_table",
+    rawNotes: "",
+    visibility: "party",
+    askAi: true,
+  })
 
-  React.useEffect(() => {
+  const loadChronicles = React.useCallback(async () => {
     if (!campaignId || !user) return
-    let active = true
     const userId = user.uid
     const supabase = createClient()
+    setLoading(true)
 
-    async function load() {
-      setLoading(true)
+    const [{ data: campaign }, { data: member }, { data, error }] = await Promise.all([
+      supabase.from('campaigns').select('owner_id').eq('id', campaignId).maybeSingle(),
+      supabase
+        .from('campaign_members')
+        .select('role')
+        .eq('campaign_id', campaignId)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle(),
+      supabase.rpc('get_campaign_chronicles', { target_campaign_id: campaignId }),
+    ])
 
-      const [{ data: campaign }, { data: member }, { data, error }] = await Promise.all([
-        supabase.from('campaigns').select('owner_id').eq('id', campaignId).maybeSingle(),
-        supabase
-          .from('campaign_members')
-          .select('role')
-          .eq('campaign_id', campaignId)
-          .eq('user_id', userId)
-          .eq('status', 'active')
-          .maybeSingle(),
-        supabase.rpc('get_campaign_chronicles', { target_campaign_id: campaignId }),
-      ])
+    setIsMaster(campaign?.owner_id === userId || ['owner', 'master', 'assistant_master'].includes(member?.role || ''))
 
-      if (!active) return
-
-      setIsMaster(campaign?.owner_id === userId || ['owner', 'master', 'assistant_master'].includes(member?.role || ''))
-
-      if (error) {
-        setLoading(false)
-        return
-      }
-
-      const rows = (data as ChronicleRow[]) || []
-      setChronicles(rows)
-      setSelectedChronicle(rows.find((c) => c.status === 'approved') || rows[0] || null)
+    if (error) {
       setLoading(false)
+      toast({ variant: "destructive", title: "Erro ao carregar crônicas", description: error.message })
+      return
     }
 
-    load()
+    const rows = (data as ChronicleRow[]) || []
+    setChronicles(rows)
+    setSelectedChronicle((current) => {
+      if (current && rows.some((row) => row.id === current.id)) return rows.find((row) => row.id === current.id) || current
+      return rows.find((c) => c.status === 'approved') || rows[0] || null
+    })
+    setLoading(false)
+  }, [campaignId, toast, user])
+
+  React.useEffect(() => {
+    let active = true
+    if (active) loadChronicles()
 
     return () => {
       active = false
     }
-  }, [campaignId, user])
+  }, [loadChronicles])
 
   React.useEffect(() => {
     if (!selectedChronicle) {
@@ -136,6 +170,64 @@ export default function Cronicas() {
 
   const approvedChronicles = chronicles.filter((c) => c.status === 'approved')
   const draftChronicles = chronicles.filter((c) => c.status !== 'approved')
+  const filteredApprovedChronicles = approvedChronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase()))
+  const filteredDraftChronicles = draftChronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase()))
+
+  async function handleSaveManualChronicle(useAi: boolean) {
+    if (!campaignId || !user || !manualForm.title.trim() || !manualForm.rawNotes.trim()) {
+      toast({ variant: "destructive", title: "Campos obrigatórios", description: "Informe título e anotações da sessão." })
+      return
+    }
+
+    setIsSavingManual(true)
+    try {
+      if (useAi) {
+        const response = await fetch('/api/ai/manual-chronicle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            campaignId,
+            title: manualForm.title,
+            sourceType: manualForm.sourceType,
+            rawNotes: manualForm.rawNotes,
+            visibility: manualForm.visibility,
+          }),
+        })
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.error || 'Falha ao gerar rascunho.')
+        toast({ title: "Rascunho gerado", description: "A IA organizou as notas, mas nada foi publicado." })
+      } else {
+        const supabase = createClient()
+        const { error } = await supabase.from('chronicles').insert({
+          campaign_id: campaignId,
+          title: manualForm.title.trim(),
+          summary: manualForm.rawNotes.trim(),
+          public_content: manualForm.rawNotes.trim(),
+          master_notes: manualForm.rawNotes.trim(),
+          status: 'draft',
+          visibility: manualForm.visibility,
+          source_type: manualForm.sourceType,
+          source_label: SOURCE_LABELS[manualForm.sourceType] || 'Evento Manual',
+          raw_notes: manualForm.rawNotes.trim(),
+          metadata: {
+            manual_registration: true,
+            ai_requested: false,
+          },
+          created_by: user.uid,
+        })
+        if (error) throw error
+        toast({ title: "Rascunho salvo", description: "O registro manual aguarda aprovação do mestre." })
+      }
+
+      setManualDialogOpen(false)
+      setManualForm({ title: "", sourceType: "in_person_table", rawNotes: "", visibility: "party", askAi: true })
+      await loadChronicles()
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro ao registrar sessão", description: error.message })
+    } finally {
+      setIsSavingManual(false)
+    }
+  }
 
   return (
     <div className="h-screen flex flex-col bg-[#050711] text-[#FFF6E5]">
@@ -145,8 +237,11 @@ export default function Cronicas() {
             <ScrollText className="h-8 w-8 text-black" />
           </div>
           <div>
-            <h1 className="text-4xl font-display font-black tracking-tighter text-primary">Anais de Arvand</h1>
-            <p className="text-[10px] font-display uppercase font-black tracking-[0.3em] opacity-40 mt-2">O Registro Imortal da Jornada</p>
+            <h1 className="text-4xl font-display font-black tracking-tighter text-primary">Crônicas</h1>
+            <p className="text-[10px] font-display uppercase font-black tracking-[0.3em] opacity-40 mt-2">O registro oficial da campanha.</p>
+            <p className="text-sm text-muted-foreground font-heading italic mt-3 max-w-3xl">
+              As Crônicas guardam os acontecimentos aprovados pelo mestre, vindos de mesas presenciais, online, Mesa Viva, combates ou registros manuais.
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -160,10 +255,8 @@ export default function Cronicas() {
             />
           </div>
           {isMaster && (
-            <Button asChild className="bg-primary text-black hover:bg-primary/90 rounded-2xl h-14 px-6 font-display gap-2 shrink-0">
-              <Link href={`/campaign/${campaignId}/master`}>
-                <Wand2 className="h-4 w-4" /> Gerar Crônica
-              </Link>
+            <Button onClick={() => setManualDialogOpen(true)} className="bg-primary text-black hover:bg-primary/90 rounded-2xl h-14 px-6 font-display gap-2 shrink-0">
+              <PenLine className="h-4 w-4" /> Registrar Sessão Manual
             </Button>
           )}
         </div>
@@ -171,15 +264,15 @@ export default function Cronicas() {
 
       <div className="px-10 py-4 border-b border-primary/10 bg-black/20 flex flex-wrap gap-x-10 gap-y-2 text-[10px] font-heading italic opacity-50 shrink-0">
         <span><strong className="text-primary not-italic">Crônica:</strong> registro oficial, aprovado pelo mestre.</span>
-        <span><strong className="text-primary not-italic">Mesa Viva:</strong> acontecimentos da sessão em tempo real (aba Mesa Viva).</span>
-        <span><strong className="text-primary not-italic">Diário:</strong> memórias pessoais do personagem (Inventário, na Ficha).</span>
+        <span><strong className="text-primary not-italic">Mesa Viva:</strong> sessão interativa com IA.</span>
+        <span><strong className="text-primary not-italic">Diário:</strong> memória pessoal do personagem.</span>
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
         {/* Índice de Sessões - Estilo Sumário de Livro */}
         <aside className="w-full md:w-96 border-r border-primary/10 bg-black/20 backdrop-blur-2xl flex flex-col">
           <div className="p-8 border-b border-primary/10 flex items-center justify-between">
-             <span className="text-[10px] font-display uppercase font-black tracking-[0.2em] text-primary opacity-60">Linha do Tempo</span>
+             <span className="text-[10px] font-display uppercase font-black tracking-[0.2em] text-primary opacity-60">Crônicas Oficiais</span>
              <History className="h-4 w-4 text-primary opacity-20" />
           </div>
           <ScrollArea className="flex-1 scrollbar-hide">
@@ -188,7 +281,7 @@ export default function Cronicas() {
                 <div className="p-20 text-center italic font-heading text-xl opacity-30 animate-pulse">Lendo os anais...</div>
               ) : (
                 <>
-                  {approvedChronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).map((chron) => (
+                  {filteredApprovedChronicles.map((chron) => (
                     <button
                       key={chron.id}
                       onClick={() => setSelectedChronicle(chron)}
@@ -203,6 +296,9 @@ export default function Cronicas() {
                         <Badge className="bg-primary/10 text-primary border-primary/20 text-[7px] uppercase font-black px-2 py-0.5">{STATUS_LABELS[chron.status] || chron.status}</Badge>
                       </div>
                       <h4 className="font-display font-bold text-lg leading-tight group-hover:text-primary transition-colors">{chron.title}</h4>
+                      <p className="text-[9px] uppercase tracking-widest text-muted-foreground mt-3">
+                        {chron.source_label || SOURCE_LABELS[chron.source_type || 'manual'] || 'Registro Manual'}
+                      </p>
                     </button>
                   ))}
 
@@ -219,7 +315,7 @@ export default function Cronicas() {
                     </div>
                   )}
 
-                  {approvedChronicles.length > 0 && approvedChronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).length === 0 && (
+                  {approvedChronicles.length > 0 && filteredApprovedChronicles.length === 0 && (
                     <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40">
                       Nenhuma crônica corresponde à busca.
                     </div>
@@ -229,9 +325,9 @@ export default function Cronicas() {
                     <div className="pt-6 space-y-4">
                       <div className="flex items-center gap-3 px-2 opacity-50">
                         <FileClock className="h-4 w-4 text-amber-400" />
-                        <span className="text-[10px] font-display uppercase font-black tracking-[0.2em] text-amber-400">Rascunhos (apenas mestre)</span>
+                        <span className="text-[10px] font-display uppercase font-black tracking-[0.2em] text-amber-400">Rascunhos aguardando aprovação do mestre</span>
                       </div>
-                      {draftChronicles.filter((chron) => chron.title.toLowerCase().includes(searchTerm.trim().toLowerCase())).map((chron) => (
+                      {filteredDraftChronicles.map((chron) => (
                         <button
                           key={chron.id}
                           onClick={() => setSelectedChronicle(chron)}
@@ -246,8 +342,23 @@ export default function Cronicas() {
                             <Badge variant="outline" className="border-amber-500/40 text-amber-400 text-[7px] uppercase font-black px-2 py-0.5">{STATUS_LABELS[chron.status] || chron.status}</Badge>
                           </div>
                           <h4 className="font-display font-bold text-lg leading-tight group-hover:text-amber-400 transition-colors">{chron.title}</h4>
+                          <p className="text-[9px] uppercase tracking-widest text-muted-foreground mt-3">
+                            {chron.source_label || SOURCE_LABELS[chron.source_type || 'manual'] || 'Registro Manual'}
+                          </p>
                         </button>
                       ))}
+                    </div>
+                  )}
+
+                  {isMaster && draftChronicles.length === 0 && (
+                    <div className="pt-6 space-y-4">
+                      <div className="flex items-center gap-3 px-2 opacity-50">
+                        <FileClock className="h-4 w-4 text-amber-400" />
+                        <span className="text-[10px] font-display uppercase font-black tracking-[0.2em] text-amber-400">Rascunhos aguardando aprovação do mestre</span>
+                      </div>
+                      <div className="p-8 text-center text-muted-foreground italic bg-white/5 rounded-2xl border border-dashed border-white/10">
+                        Nenhum rascunho pendente.
+                      </div>
                     </div>
                   )}
                 </>
@@ -266,6 +377,14 @@ export default function Cronicas() {
                     <h2 className="text-7xl md:text-9xl font-display font-black tracking-tighter text-primary drop-shadow-[0_0_20px_rgba(200,162,74,0.2)]">
                       {selectedChronicle.title}
                     </h2>
+                    <div className="flex justify-center gap-3 flex-wrap">
+                      <Badge variant="outline" className="border-primary/30 text-primary font-display text-[10px] tracking-widest px-4 py-2">
+                        {selectedChronicle.source_label || SOURCE_LABELS[selectedChronicle.source_type || 'manual'] || 'Registro Manual'}
+                      </Badge>
+                      <Badge variant="outline" className="border-primary/30 text-primary font-display text-[10px] tracking-widest px-4 py-2">
+                        {STATUS_LABELS[selectedChronicle.status] || selectedChronicle.status}
+                      </Badge>
+                    </div>
                     {selectedChronicle.status !== 'approved' && isMaster && (
                       <p className="text-sm font-heading italic opacity-50">
                         Este rascunho ainda não foi publicado.{' '}
@@ -377,6 +496,103 @@ export default function Cronicas() {
           </ScrollArea>
         </main>
       </div>
+
+      <Dialog open={manualDialogOpen} onOpenChange={setManualDialogOpen}>
+        <DialogContent className="bg-card border-primary/20 literary-shadow max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-3xl text-primary flex items-center gap-3">
+              <PenLine className="h-6 w-6" /> Registrar Sessão Manual
+            </DialogTitle>
+            <DialogDescription className="font-heading italic">
+              Crie um rascunho a partir de mesa presencial, online, combate, importação ou evento manual. Nada será publicado sem aprovação do mestre.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            <div className="space-y-2">
+              <Label>Título da sessão</Label>
+              <Input
+                value={manualForm.title}
+                onChange={(e) => setManualForm((prev) => ({ ...prev, title: e.target.value }))}
+                placeholder="Ex: A queda do portão norte"
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Origem</Label>
+                <Select value={manualForm.sourceType} onValueChange={(value) => setManualForm((prev) => ({ ...prev, sourceType: value }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SOURCE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Visibilidade</Label>
+                <Select value={manualForm.visibility} onValueChange={(value) => setManualForm((prev) => ({ ...prev, visibility: value }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">public</SelectItem>
+                    <SelectItem value="party">party</SelectItem>
+                    <SelectItem value="master_only">master_only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Resumo bruto / anotações do mestre</Label>
+              <Textarea
+                value={manualForm.rawNotes}
+                onChange={(e) => setManualForm((prev) => ({ ...prev, rawNotes: e.target.value }))}
+                className="min-h-44"
+                placeholder="Cole aqui suas notas da sessão. A IA pode organizar o texto, mas o mestre ainda aprova o que vira oficial."
+              />
+            </div>
+
+            <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={manualForm.askAi}
+                onChange={(e) => setManualForm((prev) => ({ ...prev, askAi: e.target.checked }))}
+                className="mt-1"
+              />
+              <span className="text-sm font-heading italic text-muted-foreground">
+                Pedir para a IA organizar como crônica. A IA apenas sugere um rascunho; canonização continua manual.
+              </span>
+            </label>
+          </div>
+
+          <DialogFooter className="gap-3 flex-wrap">
+            <Button variant="ghost" onClick={() => setManualDialogOpen(false)} disabled={isSavingManual}>Cancelar</Button>
+            <Button
+              variant="outline"
+              onClick={() => handleSaveManualChronicle(false)}
+              disabled={isSavingManual}
+              className="border-primary/30"
+            >
+              {isSavingManual && !manualForm.askAi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Salvar Rascunho sem IA
+            </Button>
+            <Button
+              onClick={() => handleSaveManualChronicle(manualForm.askAi)}
+              disabled={isSavingManual || !manualForm.askAi}
+              className="bg-primary text-black hover:bg-primary/90"
+            >
+              {isSavingManual && manualForm.askAi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+              Gerar Rascunho
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -114,12 +114,12 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
   }
 
   const playerItems = [
-    { icon: MessageSquare, label: "Mesa Viva", href: `/campaign/${campaignId}/mesa-viva` },
+    { icon: MessageSquare, label: "Mesa Viva", tooltip: "Sessão com IA", href: `/campaign/${campaignId}/mesa-viva` },
     { icon: MapIcon, label: "Mapa Vivo", href: `/campaign/${campaignId}/mapa-vivo` },
     { icon: Swords, label: "Combate", href: `/campaign/${campaignId}/combate` },
     { icon: User, label: "Ficha", href: `/campaign/${campaignId}/ficha` },
     { icon: Package, label: "Inventário", href: `/campaign/${campaignId}/inventario` },
-    { icon: ScrollText, label: "Crônicas", href: `/campaign/${campaignId}/cronicas` },
+    { icon: ScrollText, label: "Crônicas", tooltip: "Registro oficial", href: `/campaign/${campaignId}/cronicas` },
   ];
 
   const masterItems = [
@@ -162,7 +162,7 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
                   <SidebarMenuButton 
                     asChild 
                     isActive={pathname === item.href} 
-                    tooltip={item.label}
+                    tooltip={item.tooltip || item.label}
                     className={`h-12 rounded-xl transition-all mb-1 ${pathname === item.href ? 'bg-primary/10 text-primary border-l-2 border-primary shadow-sm' : 'hover:bg-primary/5 text-muted-foreground'}`}
                   >
                     <Link href={item.href} className="flex items-center gap-3">
