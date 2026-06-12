@@ -57,6 +57,9 @@ export function R2ImageUpload({ campaignId, usageType, visibility = "party", lab
     }
 
     setLoading(true)
+    // Identifica em qual etapa o upload falhou, para dar uma mensagem de
+    // erro específica e acionável (presign / PUT no R2 / registro do asset).
+    let stage: "presign" | "put" | "complete" = "presign"
     try {
       const presignRes = await fetch("/api/uploads/presign", {
         method: "POST",
@@ -71,23 +74,29 @@ export function R2ImageUpload({ campaignId, usageType, visibility = "party", lab
         }),
       })
 
-      const presignData = await presignRes.json()
-      if (!presignRes.ok) {
-        throw new Error(presignData.error || "Falha ao preparar upload.")
+      const presignData = await presignRes.json().catch(() => null)
+      if (!presignRes.ok || !presignData) {
+        throw new Error(presignData?.error || "Falha ao preparar upload.")
       }
 
       const { uploadUrl, storageKey, publicUrl, headers } = presignData
 
+      stage = "put"
+      // Upload direto para a URL assinada do R2: sem Authorization, sem
+      // cookies (credentials: "omit"), e Content-Type igual ao mimeType
+      // usado para gerar a assinatura no presign.
       const putRes = await fetch(uploadUrl, {
         method: "PUT",
         headers,
         body: file,
+        credentials: "omit",
       })
 
       if (!putRes.ok) {
-        throw new Error("Falha ao enviar arquivo para o armazenamento.")
+        throw new Error(`Falha ao enviar arquivo para o R2 (status ${putRes.status}).`)
       }
 
+      stage = "complete"
       const completeRes = await fetch("/api/uploads/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,16 +112,22 @@ export function R2ImageUpload({ campaignId, usageType, visibility = "party", lab
         }),
       })
 
-      const completeData = await completeRes.json()
-      if (!completeRes.ok) {
-        throw new Error(completeData.error || "Falha ao registrar arquivo.")
+      const completeData = await completeRes.json().catch(() => null)
+      if (!completeRes.ok || !completeData) {
+        throw new Error(completeData?.error || "Falha ao registrar arquivo.")
       }
 
       setPreview(publicUrl)
       onUploaded(completeData.mediaAsset)
       toast({ title: "Imagem enviada", description: "O upload foi concluído com sucesso." })
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Erro no upload", description: error.message })
+      const description =
+        stage === "put"
+          ? "Falha ao enviar arquivo para o R2. Verifique CORS do bucket."
+          : stage === "complete"
+            ? "Arquivo enviado, mas falhou ao registrar mídia."
+            : error?.message || "Falha ao preparar upload."
+      toast({ variant: "destructive", title: "Erro no upload", description })
     } finally {
       setLoading(false)
       if (inputRef.current) inputRef.current.value = ""

@@ -78,6 +78,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Você só pode registrar avatares ou handouts próprios.' }, { status: 403 })
   }
 
+  // Log seguro: apenas metadados, sem chaves R2 nem dados do usuário além do
+  // necessário para diagnosticar falhas de upload em produção.
+  console.log('[uploads/complete]', {
+    campaignId,
+    usageType,
+    mimeType: mimeType ?? null,
+    sizeBytes: typeof sizeBytes === 'number' ? sizeBytes : null,
+    storageKey,
+  })
+
   const { data: asset, error } = await supabase
     .from('media_assets')
     .insert({
@@ -97,9 +107,11 @@ export async function POST(request: Request) {
     .single()
 
   if (error) {
-    console.error('[uploads/complete] erro ao registrar media_asset:', error.message)
+    console.error('[uploads/complete] erro ao registrar media_asset:', { storageKey, message: error.message })
     return NextResponse.json({ error: 'Falha ao registrar arquivo enviado.' }, { status: 500 })
   }
+
+  console.log('[uploads/complete] ok', { storageKey, mediaAssetId: asset.id })
 
   return NextResponse.json({ mediaAsset: asset })
 }

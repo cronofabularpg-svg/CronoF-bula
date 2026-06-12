@@ -83,12 +83,25 @@ export async function POST(request: Request) {
   const safeFileName = sanitizeFileName(fileName)
   const storageKey = `campaigns/${campaignId}/${usageType}/${randomUUID()}-${safeFileName}`
 
+  // Log seguro: nunca inclui access key, secret key ou a uploadUrl assinada —
+  // apenas metadados úteis para diagnosticar falhas de upload em produção.
+  console.log('[uploads/presign]', {
+    campaignId,
+    usageType,
+    mimeType,
+    sizeBytes: typeof sizeBytes === 'number' ? sizeBytes : null,
+    storageKey,
+    r2Configured: isR2Configured(),
+  })
+
   try {
     const uploadUrl = await createPresignedUploadUrl({
       key: storageKey,
       contentType: mimeType,
       expiresInSeconds: 300,
     })
+
+    console.log('[uploads/presign] ok', { storageKey, status: 200 })
 
     return NextResponse.json({
       uploadUrl,
@@ -99,7 +112,7 @@ export async function POST(request: Request) {
       },
     })
   } catch (error: any) {
-    console.error('[uploads/presign] erro ao gerar URL assinada:', error?.message)
+    console.error('[uploads/presign] erro ao gerar URL assinada:', { storageKey, message: error?.message })
     return NextResponse.json({ error: 'Falha ao gerar URL de upload.' }, { status: 502 })
   }
 }

@@ -31,10 +31,21 @@ export function getR2Client(): S3Client {
   return cachedClient
 }
 
+/**
+ * Junta a URL pública/CDN do bucket (`CLOUDFLARE_R2_PUBLIC_URL`) com a storage
+ * key de um objeto, evitando barras duplicadas (`//`) ou ausentes entre os
+ * dois (`...comcampaigns/...`) — independente de `baseUrl` terminar ou não
+ * com `/` e de `key` começar ou não com `/`.
+ */
+export function joinR2PublicUrl(baseUrl: string, key: string): string {
+  const base = baseUrl.replace(/\/+$/, '')
+  const cleanKey = key.replace(/^\/+/, '')
+  return `${base}/${cleanKey}`
+}
+
 /** Monta a URL pública de um objeto a partir da sua storage key. */
 export function getR2PublicUrl(key: string): string {
-  const base = r2Env.publicUrl.replace(/\/+$/, '')
-  return `${base}/${key}`
+  return joinR2PublicUrl(r2Env.publicUrl, key)
 }
 
 export type PresignedUploadParams = {
