@@ -60,11 +60,26 @@ const MAP_TABS: { key: MapTab; label: string }[] = [
   { key: "local_dungeon", label: "Locais/Dungeons" },
 ]
 
+const TAB_LABEL: Record<MapTab, string> = {
+  world: "Mundo",
+  region: "Regiões",
+  city: "Cidades",
+  local_dungeon: "Locais/Dungeons",
+}
+
 const SCOPE_PANEL_TITLE: Record<MapTab, string> = {
   world: "Locais do Mundo",
   region: "Locais da Região",
   city: "Locais da Cidade",
   local_dungeon: "Pontos Internos",
+}
+
+const MAP_SCOPE_LABEL: Record<MapScope, string> = {
+  world: "Mundo",
+  region: "Região",
+  city: "Cidade",
+  local: "Local",
+  dungeon: "Dungeon",
 }
 
 const MARKER_TYPE_META: Record<MapMarkerType, { label: string; icon: React.ElementType }> = {
@@ -97,9 +112,32 @@ function locationMatchesTab(loc: Location, tab: MapTab): boolean {
   return loc.map_scope === tab
 }
 
-function childTabForLocation(loc: Location): MapTab {
+// Ao "Entrar neste mapa", decide qual aba abrir por padrão: se a location já
+// tem filhos, abre na aba do escopo predominante entre eles; caso contrário,
+// usa a camada "natural" abaixo do escopo da location (cidade -> locais,
+// região -> cidades, mundo -> regiões).
+function childTabForLocation(loc: Location, allLocations: Location[]): MapTab {
+  const children = allLocations.filter((l) => l.parent_location_id === loc.id)
+
+  if (children.length > 0) {
+    const counts: Record<MapTab, number> = { world: 0, region: 0, city: 0, local_dungeon: 0 }
+    for (const child of children) {
+      const tab: MapTab = child.map_scope === "local" || child.map_scope === "dungeon" ? "local_dungeon" : (child.map_scope as MapTab)
+      counts[tab] = (counts[tab] ?? 0) + 1
+    }
+    let predominant: MapTab = "local_dungeon"
+    let max = -1
+    for (const tab of Object.keys(counts) as MapTab[]) {
+      if (counts[tab] > max) {
+        max = counts[tab]
+        predominant = tab
+      }
+    }
+    return predominant
+  }
+
   switch (loc.map_scope) {
-    case "world": return "city"
+    case "world": return "region"
     case "region": return "city"
     case "city": return "local_dungeon"
     case "local": return "local_dungeon"
@@ -241,6 +279,20 @@ export default function MapaVivo() {
   const currentTab = currentCrumb.tab
   const currentParentLocationId = currentCrumb.id
 
+  // Título da camada atual: sem local pai, mostra só o nome da aba
+  // ("Mundo", "Regiões", "Cidades", "Locais/Dungeons"); dentro de um local
+  // pai, mostra a cadeia completa ("Mundo > Hive Primus > Locais/Dungeons").
+  const pageTitle = currentParentLocationId
+    ? `Mundo > ${breadcrumbStack.slice(1).map((entry) => entry.name).join(" > ")} > ${TAB_LABEL[currentTab]}`
+    : TAB_LABEL[currentTab]
+
+  // Filtro por camada: na raiz (currentParentLocationId === null), cada aba
+  // mostra apenas locations com o map_scope correspondente e sem pai (exceto
+  // "Mundo", que agrega tudo que está na raiz). Dentro de um local pai, cada
+  // aba mostra os filhos diretos com o map_scope correspondente. Isso permite
+  // que "Hive Primus" (city, sem pai) apareça na aba Cidades da raiz, e que
+  // seus locais internos apareçam em "Locais/Dungeons" só depois de "Entrar
+  // neste mapa".
   const scopedLocations = locations.filter((location) => {
     if (currentTab === "world") {
       return location.map_scope === "world" || location.parent_location_id === null
@@ -254,10 +306,15 @@ export default function MapaVivo() {
 
   // A imagem de fundo da camada atual vem do local "pai" (quando navegando
   // para dentro de uma cidade/local) ou, na raiz do Mundo, de uma location
-  // com map_scope='world' sem pai que tenha uma imagem cadastrada.
+  // com map_scope='world' sem pai que tenha uma imagem cadastrada (a
+  // selecionada no momento, se aplicável, ou a primeira visível).
+  const worldRootImageLocation = locations.find((location) => location.map_scope === "world" && location.parent_location_id === null && !!location.image_url) ?? null
+
   const currentViewLocation = currentParentLocationId
     ? locations.find((location) => location.id === currentParentLocationId) ?? null
-    : locations.find((location) => location.map_scope === "world" && location.parent_location_id === null && !!location.image_url) ?? null
+    : (activeNode && activeNode.map_scope === "world" && activeNode.parent_location_id === null && activeNode.image_url
+        ? activeNode
+        : worldRootImageLocation)
 
   const backgroundImageUrl = currentViewLocation?.image_url ?? null
 
@@ -278,7 +335,7 @@ export default function MapaVivo() {
   function handleEnterLocation(location: Location) {
     setActiveNode(null)
     setPositioningLocationId(null)
-    setBreadcrumbStack((prev) => [...prev, { id: location.id, name: location.name, tab: childTabForLocation(location) }])
+    setBreadcrumbStack((prev) => [...prev, { id: location.id, name: location.name, tab: childTabForLocation(location, locations) }])
   }
 
   function handleGoBack() {
@@ -400,35 +457,145 @@ export default function MapaVivo() {
         {items.map((loc) => {
           const markerMeta = MARKER_TYPE_META[loc.map_marker_type] || MARKER_TYPE_META.point
           const MarkerIcon = markerMeta.icon
+          const parent = loc.parent_location_id ? locations.find((l) => l.id === loc.parent_location_id) : null
+          const hasChildren = locations.some((l) => l.parent_location_id === loc.id)
+          // "Entrar neste mapa" fica disponível se já houver imagem, filhos
+          // cadastrados, ou se o mestre quiser começar a criar filhos aqui.
+          const canEnter = !!loc.image_url || hasChildren || isMaster
+
           return (
-            <button
+            <div
               key={loc.id}
-              type="button"
-              onClick={() => setActiveNode(loc)}
-              className="w-full text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-primary/40 transition-colors"
+              className="w-full p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-primary/40 transition-colors space-y-3"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-display font-bold text-accent flex items-center gap-2">
-                    <MarkerIcon className="h-4 w-4 text-primary" /> {loc.name}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-widest mt-1">{loc.type || markerMeta.label}</p>
+              <button type="button" onClick={() => setActiveNode(loc)} className="w-full text-left">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-display font-bold text-accent flex items-center gap-2">
+                      <MarkerIcon className="h-4 w-4 text-primary" /> {loc.name}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-widest mt-1">
+                      {MAP_SCOPE_LABEL[loc.map_scope]} · {markerMeta.label}
+                      {parent && <> · em {parent.name}</>}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className={secret ? "border-destructive/30 text-destructive" : "border-primary/30 text-primary"}>
+                    {loc.visibility || 'visible'}
+                  </Badge>
                 </div>
-                <Badge variant="outline" className={secret ? "border-destructive/30 text-destructive" : "border-primary/30 text-primary"}>
-                  {loc.visibility || 'visible'}
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground font-heading italic leading-relaxed mt-3 line-clamp-3">
-                {loc.description || 'Nenhum detalhe registrado ainda.'}
-              </p>
-              {loc.image_url && (
-                <div className="mt-3 h-20 w-full rounded-lg overflow-hidden border border-white/10">
-                  <img src={loc.image_url} alt={loc.name} className="w-full h-full object-cover opacity-70" />
-                </div>
+                <p className="text-xs text-muted-foreground font-heading italic leading-relaxed mt-3 line-clamp-3">
+                  {loc.description || 'Nenhum detalhe registrado ainda.'}
+                </p>
+                {loc.image_url && (
+                  <div className="mt-3 h-20 w-full rounded-lg overflow-hidden border border-white/10">
+                    <img src={loc.image_url} alt={loc.name} className="w-full h-full object-cover opacity-70" />
+                  </div>
+                )}
+              </button>
+              {canEnter && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="w-full text-[10px] uppercase tracking-widest"
+                  onClick={() => handleEnterLocation(loc)}
+                >
+                  Entrar neste mapa <ChevronRight className="ml-1 h-3 w-3" />
+                </Button>
               )}
-            </button>
+            </div>
           )
         })}
+      </div>
+    )
+  }
+
+  // Estado vazio da camada atual: explica o que esta aba mostra e, para o
+  // mestre, oferece um caminho direto para cadastrar o primeiro ponto aqui.
+  function renderEmptyLayerState() {
+    if (scopedLocations.length > 0) return null
+
+    // Atenção: usa o local pai do breadcrumb (currentParentLocationId), não
+    // currentViewLocation — na raiz, currentViewLocation pode ser uma
+    // location de escopo Mundo usada só como imagem de fundo, sem relação
+    // com a navegação em camadas.
+    const parentLocation = currentParentLocationId ? locations.find((l) => l.id === currentParentLocationId) ?? null : null
+    const parentName = parentLocation?.name ?? null
+    let title = ""
+    let description = ""
+    let actions: React.ReactNode = null
+
+    if (currentTab === "world") {
+      title = "Nenhum ponto do mundo cadastrado ainda."
+      description = "Marque cidades, regiões e marcos importantes para começar a cartografia desta crônica."
+      if (isMaster) {
+        actions = (
+          <Button size="sm" className="rounded-full" onClick={() => handleOpenCreateLocation(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Criar Ponto do Mundo
+          </Button>
+        )
+      }
+    } else if (currentTab === "region") {
+      title = "Nenhuma região cadastrada ainda."
+      description = parentName
+        ? `Nenhuma região foi cadastrada dentro de ${parentName}.`
+        : "Cadastre as grandes regiões do mundo para organizar cidades e locais."
+      if (isMaster) {
+        actions = (
+          <Button size="sm" className="rounded-full" onClick={() => handleOpenCreateLocation(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Criar Região
+          </Button>
+        )
+      }
+    } else if (currentTab === "city") {
+      title = "Nenhuma cidade cadastrada ainda."
+      description = parentName
+        ? `Nenhuma cidade foi cadastrada dentro de ${parentName}.`
+        : "Cadastre as cidades conhecidas do mundo para organizar locais e dungeons."
+      if (isMaster) {
+        actions = (
+          <Button size="sm" className="rounded-full" onClick={() => handleOpenCreateLocation(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Criar Cidade
+          </Button>
+        )
+      }
+    } else if (currentTab === "local_dungeon") {
+      if (!parentName) {
+        title = "Nenhum local independente cadastrado."
+        description = "Locais e dungeons normalmente pertencem a uma cidade, região ou ponto do mundo. Selecione um mapa e clique em \"Entrar neste mapa\", ou crie um local independente."
+        if (isMaster) {
+          actions = (
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" className="rounded-full" onClick={() => handleOpenCreateLocation(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Criar Local Independente
+              </Button>
+              <Button size="sm" variant="outline" className="rounded-full border-white/10" onClick={() => handleTabClick("world")}>
+                Voltar ao Mundo
+              </Button>
+            </div>
+          )
+        }
+      } else {
+        title = `Nenhum local interno foi cadastrado em ${parentName}.`
+        description = "Locais e dungeons internos aparecem aqui depois de criados dentro deste mapa."
+        if (isMaster) {
+          actions = (
+            <Button size="sm" className="rounded-full" onClick={() => handleOpenCreateLocation(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Criar Local em {parentName}
+            </Button>
+          )
+        }
+      }
+    }
+
+    if (!title) return null
+
+    return (
+      <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none p-6">
+        <div className="pointer-events-auto max-w-md w-full text-center space-y-4 rounded-3xl border border-white/10 bg-card/90 backdrop-blur-xl p-6 literary-shadow">
+          <p className="font-display text-xl text-accent">{title}</p>
+          <p className="text-sm text-muted-foreground font-heading italic leading-relaxed">{description}</p>
+          {actions}
+        </div>
       </div>
     )
   }
@@ -809,6 +976,11 @@ export default function MapaVivo() {
                     Registre um novo local na cartografia desta crônica.
                   </DialogDescription>
                 </DialogHeader>
+                {newLocation.parent_location_id && (
+                  <p className="text-xs text-accent font-heading italic -mt-2">
+                    Criando ponto dentro de {locations.find((l) => l.id === newLocation.parent_location_id)?.name ?? "local selecionado"}.
+                  </p>
+                )}
                 <div className="space-y-4 py-2">
                   <div className="space-y-2">
                     <Label htmlFor="loc-name">Nome</Label>
@@ -982,19 +1154,22 @@ export default function MapaVivo() {
         </div>
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground font-bold flex-wrap">
-            {breadcrumbStack.map((entry, idx) => (
-              <React.Fragment key={idx}>
-                {idx > 0 && <ChevronRight className="h-3 w-3 opacity-50" />}
-                <button
-                  type="button"
-                  onClick={() => setBreadcrumbStack(breadcrumbStack.slice(0, idx + 1))}
-                  className={idx === breadcrumbStack.length - 1 ? "text-accent" : "hover:text-accent transition-colors"}
-                >
-                  {idx === 0 ? "Mundo" : entry.name}
-                </button>
-              </React.Fragment>
-            ))}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground font-bold flex-wrap">
+              {breadcrumbStack.map((entry, idx) => (
+                <React.Fragment key={idx}>
+                  {idx > 0 && <ChevronRight className="h-3 w-3 opacity-50" />}
+                  <button
+                    type="button"
+                    onClick={() => setBreadcrumbStack(breadcrumbStack.slice(0, idx + 1))}
+                    className="hover:text-accent transition-colors"
+                  >
+                    {idx === 0 ? "Mundo" : entry.name}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+            <p className="font-display text-lg text-accent">{pageTitle}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {MAP_TABS.map((tab) => (
@@ -1059,7 +1234,9 @@ export default function MapaVivo() {
 
         {!backgroundImageUrl && isMaster && !loading && (
           <p className="absolute bottom-4 left-4 right-4 text-center text-[11px] text-muted-foreground font-heading italic bg-black/40 rounded-xl py-2 px-4 border border-white/5 z-10">
-            Adicione uma imagem para alinhar os pontos ao mapa.
+            {currentViewLocation
+              ? `Adicione uma imagem em ${currentViewLocation.name} para usar como mapa desta camada.`
+              : "Adicione uma imagem a uma location de escopo Mundo para usar como mapa-múndi de fundo."}
           </p>
         )}
 
@@ -1108,6 +1285,8 @@ export default function MapaVivo() {
             ))
           ))}
         </div>
+
+        {!loading && renderEmptyLayerState()}
 
         {activeNode && !isTraveling && (
           <div className="absolute top-8 right-8 w-80 rounded-3xl bg-card/90 backdrop-blur-2xl border border-accent/20 literary-shadow animate-in slide-in-from-right-8 duration-500 overflow-hidden">
