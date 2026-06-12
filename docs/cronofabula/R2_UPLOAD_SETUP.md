@@ -60,6 +60,45 @@ quase sempre é uma das duas abaixo:
    `CLOUDFLARE_R2_ACCOUNT_ID` estiverem incorretos, a assinatura não casa com o
    que o R2 espera e o PUT é rejeitado.
 
+## Erro 403 no PUT (checksum automático do AWS SDK v3)
+
+Mesmo com CORS correto, o `PUT` assinado pode retornar **403 Forbidden** (sem
+header `Access-Control-Allow-Origin` na resposta de erro). Se a `uploadUrl`
+contiver parâmetros como `x-amz-checksum-crc32` e
+`x-amz-sdk-checksum-algorithm=CRC32`, a causa é o cálculo automático de
+checksum do `@aws-sdk/client-s3` recente: o SDK assina a URL incluindo esses
+parâmetros, mas o R2 não implementa esse esquema de checksum e rejeita a
+assinatura.
+
+A correção está em `getR2Client()` (`src/lib/server/r2.ts`), que cria o
+`S3Client` com:
+
+```ts
+requestChecksumCalculation: 'WHEN_REQUIRED',
+responseChecksumValidation: 'WHEN_REQUIRED',
+```
+
+Isso faz o SDK só calcular/validar checksum quando explicitamente solicitado
+via `ChecksumAlgorithm` (o que não é usado em `createPresignedUploadUrl`), e a
+URL assinada deixa de incluir `x-amz-checksum-*`/`x-amz-sdk-checksum-*`.
+
+## Fallback: upload direto pelo servidor
+
+Como rede corporativa, extensões de navegador ou bloqueadores podem continuar
+interferindo no PUT cross-origin para `r2.cloudflarestorage.com`, existe um
+caminho alternativo que não depende de URL assinada nem de CORS no bucket:
+
+- `POST /api/uploads/direct` recebe o arquivo via `multipart/form-data`,
+  valida permissões (mesmas regras do presign) e faz o upload ao R2
+  **a partir do servidor**, usando `uploadObjectToR2` em `src/lib/server/r2.ts`.
+- O componente `R2ImageUpload` (`src/components/uploads/r2-image-upload.tsx`)
+  aceita uma prop `mode`:
+  - `"presigned"` (padrão para a maioria dos usos): só tenta o PUT assinado.
+  - `"direct"`: sempre envia pelo servidor (usado hoje em
+    `/campaign/[id]/npcs` para token/imagem de NPC).
+  - `"auto"`: tenta o PUT assinado e, se falhar na etapa de PUT, exibe o botão
+    "Tentar envio seguro pelo servidor" para repetir via `/api/uploads/direct`.
+
 ## Variáveis de ambiente necessárias
 
 Confirme estas variáveis no ambiente da Vercel (Production e Preview):

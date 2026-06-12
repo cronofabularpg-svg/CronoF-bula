@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto'
 import { getAuthenticatedUserId } from '@/lib/ai/route-helpers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isR2Configured } from '@/lib/server/env'
-import { createPresignedUploadUrl, getR2PublicUrl } from '@/lib/server/r2'
+import { buildR2StorageKey, createPresignedUploadUrl, getR2PublicUrl } from '@/lib/server/r2'
 
 const ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
@@ -21,15 +21,6 @@ const VALID_USAGE_TYPES = [
   'handout',
   'other',
 ]
-
-function sanitizeFileName(fileName: string): string {
-  const cleaned = fileName
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-zA-Z0-9._-]/g, '-')
-    .replace(/-+/g, '-')
-  return cleaned.slice(-100) || 'arquivo'
-}
 
 export async function POST(request: Request) {
   if (!isR2Configured()) {
@@ -80,8 +71,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Apenas o mestre pode enviar este tipo de imagem.' }, { status: 403 })
   }
 
-  const safeFileName = sanitizeFileName(fileName)
-  const storageKey = `campaigns/${campaignId}/${usageType}/${randomUUID()}-${safeFileName}`
+  const storageKey = buildR2StorageKey(campaignId, usageType, fileName, randomUUID())
 
   // Log seguro: nunca inclui access key, secret key ou a uploadUrl assinada —
   // apenas metadados úteis para diagnosticar falhas de upload em produção.

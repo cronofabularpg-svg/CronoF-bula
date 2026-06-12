@@ -279,6 +279,9 @@ export default function NPCManager() {
                         usageType="npc_token"
                         visibility={npc.visibility === 'master_only' ? 'master_only' : 'party'}
                         label="Adicionar token/imagem"
+                        mode="direct"
+                        entityType="npc"
+                        entityId={npc.id}
                         onUploaded={(asset) => handleUpdateNpcImage(npc.id, asset)}
                       />
                     </DialogContent>
