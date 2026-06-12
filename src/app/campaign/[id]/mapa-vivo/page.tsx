@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { MapPin, Search, ChevronRight, ChevronLeft, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices, ShieldCheck, XCircle, PanelRightClose, PanelRightOpen, Route, NotebookTabs, Compass, Building2, Mountain, Skull, Landmark, DoorOpen, AlertTriangle, Store, Star, Image as ImageIcon, Settings2, Crosshair } from "lucide-react"
+import { MapPin, Search, ChevronRight, ChevronLeft, ChevronUp, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices, ShieldCheck, XCircle, PanelRightClose, PanelRightOpen, Route, NotebookTabs, Compass, Building2, Mountain, Skull, Landmark, DoorOpen, AlertTriangle, Store, Star, Image as ImageIcon, Settings2, Crosshair, Layers, Wand2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
 
 // ----------------------------------------------------------------------------
@@ -27,7 +28,7 @@ import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-up
 // escopos 'local' e 'dungeon' em uma única visão de navegação.
 // ----------------------------------------------------------------------------
 
-type MapScope = "world" | "region" | "city" | "local" | "dungeon"
+type MapScope = "world" | "region" | "city" | "local" | "dungeon" | "point"
 type MapTab = "world" | "region" | "city" | "local_dungeon"
 type MapMarkerType = "point" | "city" | "region" | "dungeon" | "landmark" | "portal" | "danger" | "shop" | "quest"
 
@@ -80,6 +81,7 @@ const MAP_SCOPE_LABEL: Record<MapScope, string> = {
   city: "Cidade",
   local: "Local",
   dungeon: "Dungeon",
+  point: "Ponto",
 }
 
 const MARKER_TYPE_META: Record<MapMarkerType, { label: string; icon: React.ElementType }> = {
@@ -102,7 +104,61 @@ const SCALE_SIZE_PX: Record<Location["map_scale"], number> = {
   huge: 64,
 }
 
-function tabToScope(tab: MapTab): MapScope | null {
+const MAP_SCALE_OPTIONS: { value: Location["map_scale"]; label: string }[] = [
+  { value: "tiny", label: "Minúsculo" },
+  { value: "small", label: "Pequeno" },
+  { value: "medium", label: "Médio" },
+  { value: "large", label: "Grande" },
+  { value: "huge", label: "Enorme" },
+]
+
+// TAREFA1: opções de visibilidade do modal "Editar Camada". Mantém os valores
+// já tratados por isVisibleToPlayers (public/party são visíveis aos
+// jogadores; master_only/hidden/secret continuam restritos ao mestre).
+const LAYER_VISIBILITY_OPTIONS: { value: string; label: string }[] = [
+  { value: "public", label: "Público" },
+  { value: "party", label: "Grupo (Party)" },
+  { value: "master_only", label: "Apenas Mestre" },
+  { value: "hidden", label: "Oculto" },
+  { value: "secret", label: "Secreto" },
+]
+
+const RECLASSIFY_SCOPE_OPTIONS: { value: Exclude<MapScope, "point">; label: string }[] = [
+  { value: "world", label: "Mundo" },
+  { value: "region", label: "Região" },
+  { value: "city", label: "Cidade" },
+  { value: "local", label: "Local" },
+  { value: "dungeon", label: "Dungeon" },
+]
+
+// TAREFA6: palavras-chave usadas pela "Organização Assistida" para sugerir
+// map_scope/map_marker_type a partir do nome do local. A primeira correspondência
+// (na ordem abaixo) é usada como sugestão.
+const SCOPE_NAME_SUGGESTIONS: { scope: MapScope; markerType: MapMarkerType; keywords: string[] }[] = [
+  { scope: "city", markerType: "city", keywords: ["hive", "capital", "cidade", "vila"] },
+  { scope: "region", markerType: "region", keywords: ["região", "regiao", "mundo selvagem", "reino", "continente"] },
+  { scope: "dungeon", markerType: "dungeon", keywords: ["dungeon", "masmorra"] },
+  { scope: "local", markerType: "landmark", keywords: ["bairro", "distrito", "taverna", "loja", "fortaleza"] },
+]
+
+function suggestScopeForName(name: string): { scope: MapScope; markerType: MapMarkerType } | null {
+  const lower = name.toLowerCase()
+  for (const group of SCOPE_NAME_SUGGESTIONS) {
+    if (group.keywords.some((kw) => lower.includes(kw))) {
+      return { scope: group.scope, markerType: group.markerType }
+    }
+  }
+  return null
+}
+
+type LayerSuggestion = {
+  location: Location
+  reason: string
+  suggestedScope: MapScope
+  suggestedMarkerType: MapMarkerType
+}
+
+function tabToScope(tab: MapTab): Exclude<MapScope, "point"> | null {
   if (tab === "local_dungeon") return null
   return tab
 }
@@ -229,6 +285,23 @@ export default function MapaVivo() {
   const [adjustGridOpacityInput, setAdjustGridOpacityInput] = React.useState("35")
   const [adjustSubmitting, setAdjustSubmitting] = React.useState(false)
 
+  // TAREFA1/2: modal "Editar Camada" (mestre) — corrige map_scope,
+  // parent_location_id, map_marker_type, map_scale, visibility e nome.
+  const [layerEditLocation, setLayerEditLocation] = React.useState<Location | null>(null)
+  const [layerEditForm, setLayerEditForm] = React.useState({
+    name: "",
+    map_scope: "world" as MapScope,
+    parent_location_id: "",
+    map_marker_type: "point" as MapMarkerType,
+    map_scale: "medium" as Location["map_scale"],
+    visibility: "public",
+  })
+  const [layerEditSubmitting, setLayerEditSubmitting] = React.useState(false)
+
+  // TAREFA6: modal "Organizar Camadas" (mestre) — reclassificação assistida.
+  const [organizeLayersOpen, setOrganizeLayersOpen] = React.useState(false)
+  const [applyingSuggestionId, setApplyingSuggestionId] = React.useState<string | null>(null)
+
   // Preparação Fase 10: item_type='map' poderá liberar anotações pessoais no Mapa Vivo.
   // Não bloqueia a visualização básica de locais já visíveis.
   const [hasMapItem, setHasMapItem] = React.useState(false)
@@ -279,12 +352,37 @@ export default function MapaVivo() {
   const currentTab = currentCrumb.tab
   const currentParentLocationId = currentCrumb.id
 
+  // TAREFA4: rótulos completos do breadcrumb (um por entrada da pilha, "Mundo"
+  // para a raiz) + o título completo (com a aba atual) para uso em
+  // title/tooltip, já que a versão compacta pode ocultar níveis intermediários.
+  const breadcrumbLabels = breadcrumbStack.map((entry, idx) => (idx === 0 ? "Mundo" : entry.name))
+  const fullBreadcrumbTitle = [...breadcrumbLabels, TAB_LABEL[currentTab]].join(" > ")
+
   // Título da camada atual: sem local pai, mostra só o nome da aba
   // ("Mundo", "Regiões", "Cidades", "Locais/Dungeons"); dentro de um local
   // pai, mostra a cadeia completa ("Mundo > Hive Primus > Locais/Dungeons").
+  // Com mais de 4 níveis, compacta para "Mundo > ... > Pai > Avo > Aba" — a
+  // cadeia completa continua disponível via title/tooltip.
+  const isBreadcrumbCompact = breadcrumbLabels.length > 4
+  const compactBreadcrumbLabels = isBreadcrumbCompact
+    ? [breadcrumbLabels[0], "...", ...breadcrumbLabels.slice(-2)]
+    : breadcrumbLabels
+
   const pageTitle = currentParentLocationId
-    ? `Mundo > ${breadcrumbStack.slice(1).map((entry) => entry.name).join(" > ")} > ${TAB_LABEL[currentTab]}`
+    ? `${compactBreadcrumbLabels.join(" > ")} > ${TAB_LABEL[currentTab]}`
     : TAB_LABEL[currentTab]
+
+  // Entradas clicáveis do breadcrumb: na versão compacta, "..." não navega
+  // para nenhum nível (representa os níveis ocultos entre Mundo e o penúltimo
+  // local visitado).
+  const breadcrumbButtonEntries: { label: string; targetIndex: number | null }[] = isBreadcrumbCompact
+    ? [
+        { label: breadcrumbLabels[0], targetIndex: 0 },
+        { label: "...", targetIndex: null },
+        { label: breadcrumbLabels[breadcrumbLabels.length - 2], targetIndex: breadcrumbStack.length - 2 },
+        { label: breadcrumbLabels[breadcrumbLabels.length - 1], targetIndex: breadcrumbStack.length - 1 },
+      ]
+    : breadcrumbLabels.map((label, idx) => ({ label, targetIndex: idx }))
 
   // Filtro por camada: na raiz (currentParentLocationId === null), cada aba
   // mostra apenas locations com o map_scope correspondente e sem pai (exceto
@@ -317,6 +415,45 @@ export default function MapaVivo() {
         : worldRootImageLocation)
 
   const backgroundImageUrl = currentViewLocation?.image_url ?? null
+
+  // TAREFA6: locais "suspeitos" para a reclassificação assistida — apenas
+  // sugestões, nada é alterado até o mestre confirmar via applyLayerSuggestion.
+  const layerSuggestions: LayerSuggestion[] = isMaster
+    ? locations.reduce<LayerSuggestion[]>((acc, loc) => {
+        const keywordSuggestion = suggestScopeForName(loc.name)
+
+        if (loc.map_scope === "world" && loc.parent_location_id !== null) {
+          acc.push({
+            location: loc,
+            reason: 'Classificado como "Mundo", mas possui um local pai definido.',
+            suggestedScope: keywordSuggestion?.scope ?? "region",
+            suggestedMarkerType: keywordSuggestion?.markerType ?? "region",
+          })
+          return acc
+        }
+
+        if (loc.map_scope === "world" && keywordSuggestion && keywordSuggestion.scope !== "world") {
+          acc.push({
+            location: loc,
+            reason: `Classificado como "Mundo", mas o nome sugere "${MAP_SCOPE_LABEL[keywordSuggestion.scope]}".`,
+            suggestedScope: keywordSuggestion.scope,
+            suggestedMarkerType: keywordSuggestion.markerType,
+          })
+          return acc
+        }
+
+        if ((loc.map_scope === "point" || loc.map_marker_type === "point") && keywordSuggestion) {
+          acc.push({
+            location: loc,
+            reason: `Marcador genérico ("Ponto"), mas o nome sugere "${MAP_SCOPE_LABEL[keywordSuggestion.scope]}".`,
+            suggestedScope: keywordSuggestion.scope,
+            suggestedMarkerType: keywordSuggestion.markerType,
+          })
+        }
+
+        return acc
+      }, [])
+    : []
 
   function handleTabClick(tab: MapTab) {
     setActiveNode(null)
@@ -501,6 +638,38 @@ export default function MapaVivo() {
                 >
                   Entrar neste mapa <ChevronRight className="ml-1 h-3 w-3" />
                 </Button>
+              )}
+              {isMaster && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-[10px] uppercase tracking-widest border-white/10"
+                    onClick={() => openLayerEdit(loc)}
+                  >
+                    <Layers className="mr-1 h-3 w-3" /> Editar Camada
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="flex-1 text-[10px] uppercase tracking-widest border-white/10">
+                        Classificar como
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel className="text-[10px] uppercase tracking-widest">Classificar como</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {RECLASSIFY_SCOPE_OPTIONS.map((option) => (
+                        <DropdownMenuItem
+                          key={option.value}
+                          disabled={loc.map_scope === option.value}
+                          onClick={() => handleQuickReclassify(loc, option.value)}
+                        >
+                          {option.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               )}
             </div>
           )
@@ -938,6 +1107,144 @@ export default function MapaVivo() {
     toast({ title: "Configuração do mapa atualizada" })
   }
 
+  // TAREFA1: abre o modal "Editar Camada" pré-preenchido com os dados atuais do local.
+  function openLayerEdit(location: Location) {
+    setLayerEditLocation(location)
+    setLayerEditForm({
+      name: location.name,
+      map_scope: location.map_scope === "point" ? "local" : location.map_scope,
+      parent_location_id: location.parent_location_id ?? "",
+      map_marker_type: location.map_marker_type,
+      map_scale: location.map_scale,
+      visibility: location.visibility ?? "public",
+    })
+  }
+
+  // TAREFA2: ids de todos os descendentes (filhos, netos, ...) de uma location,
+  // usados para impedir que ela seja movida para dentro da própria árvore (ciclo).
+  function getDescendantIds(locationId: string): Set<string> {
+    const result = new Set<string>()
+    const queue = [locationId]
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      for (const loc of locations) {
+        if (loc.parent_location_id === current && !result.has(loc.id)) {
+          result.add(loc.id)
+          queue.push(loc.id)
+        }
+      }
+    }
+    return result
+  }
+
+  // TAREFA2: salva nome, map_scope, parent_location_id, map_marker_type,
+  // map_scale e visibility. `updated_at` é preenchido automaticamente pelo
+  // trigger `set_locations_updated_at` no banco — não precisa ser enviado.
+  async function handleSaveLayerEdit() {
+    if (!layerEditLocation) return
+    const name = layerEditForm.name.trim()
+    if (!name) {
+      toast({ variant: "destructive", title: "Nome obrigatório", description: "Informe um nome para o local." })
+      return
+    }
+
+    const parentId = layerEditForm.parent_location_id || null
+    if (parentId === layerEditLocation.id) {
+      toast({ variant: "destructive", title: "Hierarquia inválida", description: "Um local não pode ser pai de si mesmo." })
+      return
+    }
+    if (parentId && getDescendantIds(layerEditLocation.id).has(parentId)) {
+      toast({ variant: "destructive", title: "Hierarquia inválida", description: "Não é possível mover um local para dentro de um de seus próprios descendentes (criaria um ciclo)." })
+      return
+    }
+
+    setLayerEditSubmitting(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('locations')
+      .update({
+        name,
+        map_scope: layerEditForm.map_scope,
+        parent_location_id: parentId,
+        map_marker_type: layerEditForm.map_marker_type,
+        map_scale: layerEditForm.map_scale,
+        visibility: layerEditForm.visibility,
+      })
+      .eq('id', layerEditLocation.id)
+
+    setLayerEditSubmitting(false)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao salvar camada", description: error.message })
+      return
+    }
+
+    const updated: Location = {
+      ...layerEditLocation,
+      name,
+      map_scope: layerEditForm.map_scope,
+      parent_location_id: parentId,
+      map_marker_type: layerEditForm.map_marker_type,
+      map_scale: layerEditForm.map_scale,
+      visibility: layerEditForm.visibility,
+    }
+    setLocations((prev) => prev.map((loc) => (loc.id === updated.id ? updated : loc)))
+    setActiveNode((prev) => (prev && prev.id === updated.id ? updated : prev))
+    setLayerEditLocation(null)
+    toast({ title: "Camada atualizada", description: `${name} agora é ${MAP_SCOPE_LABEL[updated.map_scope]}.` })
+  }
+
+  // TAREFA3: ação rápida "Classificar como" — atualiza apenas map_scope,
+  // preservando parent_location_id, map_marker_type, visibility etc.
+  async function handleQuickReclassify(location: Location, scope: MapScope) {
+    if (location.map_scope === scope) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('locations')
+      .update({ map_scope: scope })
+      .eq('id', location.id)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao reclassificar", description: error.message })
+      return
+    }
+
+    setLocations((prev) => prev.map((loc) => (loc.id === location.id ? { ...loc, map_scope: scope } : loc)))
+    setActiveNode((prev) => (prev && prev.id === location.id ? { ...prev, map_scope: scope } : prev))
+    toast({ title: "Camada atualizada", description: `${location.name} agora é ${MAP_SCOPE_LABEL[scope]}.` })
+  }
+
+  // TAREFA6: aplica a sugestão de reclassificação de UM item (map_scope +
+  // map_marker_type), somente quando o mestre confirma — nada é alterado
+  // automaticamente ao abrir o modal "Organizar Camadas".
+  async function applyLayerSuggestion(suggestion: LayerSuggestion) {
+    setApplyingSuggestionId(suggestion.location.id)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('locations')
+      .update({ map_scope: suggestion.suggestedScope, map_marker_type: suggestion.suggestedMarkerType })
+      .eq('id', suggestion.location.id)
+
+    setApplyingSuggestionId(null)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao aplicar sugestão", description: error.message })
+      return
+    }
+
+    setLocations((prev) => prev.map((loc) => (
+      loc.id === suggestion.location.id
+        ? { ...loc, map_scope: suggestion.suggestedScope, map_marker_type: suggestion.suggestedMarkerType }
+        : loc
+    )))
+    setActiveNode((prev) => (prev && prev.id === suggestion.location.id
+      ? { ...prev, map_scope: suggestion.suggestedScope, map_marker_type: suggestion.suggestedMarkerType }
+      : prev))
+    toast({ title: "Classificação atualizada", description: `${suggestion.location.name} agora é ${MAP_SCOPE_LABEL[suggestion.suggestedScope]}.` })
+  }
+
+  const layerEditBlockedParentIds = layerEditLocation ? getDescendantIds(layerEditLocation.id) : new Set<string>()
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <header className="p-5 lg:p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex flex-col gap-4 z-10 shrink-0">
@@ -1155,21 +1462,25 @@ export default function MapaVivo() {
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground font-bold flex-wrap">
-              {breadcrumbStack.map((entry, idx) => (
+            <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground font-bold flex-wrap" title={fullBreadcrumbTitle}>
+              {breadcrumbButtonEntries.map((entry, idx) => (
                 <React.Fragment key={idx}>
                   {idx > 0 && <ChevronRight className="h-3 w-3 opacity-50" />}
-                  <button
-                    type="button"
-                    onClick={() => setBreadcrumbStack(breadcrumbStack.slice(0, idx + 1))}
-                    className="hover:text-accent transition-colors"
-                  >
-                    {idx === 0 ? "Mundo" : entry.name}
-                  </button>
+                  {entry.targetIndex === null ? (
+                    <span className="opacity-50">{entry.label}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setBreadcrumbStack(breadcrumbStack.slice(0, entry.targetIndex! + 1))}
+                      className="hover:text-accent transition-colors"
+                    >
+                      {entry.label}
+                    </button>
+                  )}
                 </React.Fragment>
               ))}
             </div>
-            <p className="font-display text-lg text-accent">{pageTitle}</p>
+            <p className="font-display text-lg text-accent" title={fullBreadcrumbTitle}>{pageTitle}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {MAP_TABS.map((tab) => (
@@ -1183,10 +1494,20 @@ export default function MapaVivo() {
                 {tab.label}
               </Button>
             ))}
-            {breadcrumbStack.length > 1 && (
-              <Button size="sm" variant="ghost" className="rounded-full text-[10px] uppercase tracking-widest" onClick={handleGoBack}>
-                <ChevronLeft className="mr-1 h-3 w-3" /> Voltar
+            {isMaster && (
+              <Button size="sm" variant="outline" className="rounded-full text-[10px] uppercase tracking-widest border-accent/30 text-accent" onClick={() => setOrganizeLayersOpen(true)}>
+                <Wand2 className="mr-1 h-3 w-3" /> Organizar Camadas
               </Button>
+            )}
+            {breadcrumbStack.length > 1 && (
+              <>
+                <Button size="sm" variant="ghost" className="rounded-full text-[10px] uppercase tracking-widest" onClick={handleGoBack}>
+                  <ChevronUp className="mr-1 h-3 w-3" /> Subir um nível
+                </Button>
+                <Button size="sm" variant="ghost" className="rounded-full text-[10px] uppercase tracking-widest" onClick={handleGoBack}>
+                  <ChevronLeft className="mr-1 h-3 w-3" /> Voltar
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -1313,6 +1634,38 @@ export default function MapaVivo() {
                <p className="text-xs text-muted-foreground font-heading italic leading-relaxed">
                  {activeNode.description || 'Um local envolto em névoas e mistérios.'}
                </p>
+               {isMaster && (
+                 <div className="grid grid-cols-2 gap-2">
+                   <Button
+                     size="sm"
+                     variant="outline"
+                     className="text-[10px] uppercase tracking-widest border-white/10"
+                     onClick={() => openLayerEdit(activeNode)}
+                   >
+                     <Layers className="mr-1 h-3 w-3" /> Editar Camada
+                   </Button>
+                   <DropdownMenu>
+                     <DropdownMenuTrigger asChild>
+                       <Button size="sm" variant="outline" className="text-[10px] uppercase tracking-widest border-white/10">
+                         Classificar como
+                       </Button>
+                     </DropdownMenuTrigger>
+                     <DropdownMenuContent align="end">
+                       <DropdownMenuLabel className="text-[10px] uppercase tracking-widest">Classificar como</DropdownMenuLabel>
+                       <DropdownMenuSeparator />
+                       {RECLASSIFY_SCOPE_OPTIONS.map((option) => (
+                         <DropdownMenuItem
+                           key={option.value}
+                           disabled={activeNode.map_scope === option.value}
+                           onClick={() => handleQuickReclassify(activeNode, option.value)}
+                         >
+                           {option.label}
+                         </DropdownMenuItem>
+                       ))}
+                     </DropdownMenuContent>
+                   </DropdownMenu>
+                 </div>
+               )}
                {isMaster && (
                  <R2ImageUpload
                    campaignId={campaignId}
@@ -1500,6 +1853,181 @@ export default function MapaVivo() {
                 {adjustSubmitting ? "Salvando..." : "Salvar Ajustes"}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={Boolean(layerEditLocation)} onOpenChange={(open) => !open && setLayerEditLocation(null)}>
+          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-display text-accent flex items-center gap-2">
+                <Layers className="h-5 w-5" /> Editar Camada
+              </DialogTitle>
+              <DialogDescription className="font-heading italic">
+                Ajuste classificação, hierarquia e visibilidade sem mexer diretamente no Supabase.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-5 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="layer-name">Nome</Label>
+                <Input
+                  id="layer-name"
+                  value={layerEditForm.name}
+                  onChange={(e) => setLayerEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="Nome do local"
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Tipo de camada</Label>
+                  <Select value={layerEditForm.map_scope} onValueChange={(value) => setLayerEditForm((prev) => ({ ...prev, map_scope: value as MapScope }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="world">Mundo</SelectItem>
+                      <SelectItem value="region">Região</SelectItem>
+                      <SelectItem value="city">Cidade</SelectItem>
+                      <SelectItem value="local">Local</SelectItem>
+                      <SelectItem value="dungeon">Dungeon</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Pertence a</Label>
+                  <Select
+                    value={layerEditForm.parent_location_id || "none"}
+                    onValueChange={(value) => setLayerEditForm((prev) => ({ ...prev, parent_location_id: value === "none" ? "" : value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhum</SelectItem>
+                      {locations.map((loc) => (
+                        <SelectItem
+                          key={loc.id}
+                          value={loc.id}
+                          disabled={loc.id === layerEditLocation?.id || layerEditBlockedParentIds.has(loc.id)}
+                        >
+                          {loc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tipo de marcador</Label>
+                  <Select value={layerEditForm.map_marker_type} onValueChange={(value) => setLayerEditForm((prev) => ({ ...prev, map_marker_type: value as MapMarkerType }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(MARKER_TYPE_META).map(([key, meta]) => (
+                        <SelectItem key={key} value={key}>{meta.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Escala</Label>
+                  <Select value={layerEditForm.map_scale} onValueChange={(value) => setLayerEditForm((prev) => ({ ...prev, map_scale: value as Location["map_scale"] }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MAP_SCALE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Visibilidade</Label>
+                  <Select value={layerEditForm.visibility} onValueChange={(value) => setLayerEditForm((prev) => ({ ...prev, visibility: value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LAYER_VISIBILITY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setLayerEditLocation(null)}>Cancelar</Button>
+              <Button className="bg-primary hover:bg-primary/90" disabled={layerEditSubmitting} onClick={handleSaveLayerEdit}>
+                {layerEditSubmitting ? "Salvando..." : "Salvar Camada"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={organizeLayersOpen} onOpenChange={setOrganizeLayersOpen}>
+          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-display text-accent flex items-center gap-2">
+                <Wand2 className="h-5 w-5" /> Organizar Camadas
+              </DialogTitle>
+              <DialogDescription className="font-heading italic">
+                Sugestões para locais com classificação suspeita. Nada é aplicado automaticamente.
+              </DialogDescription>
+            </DialogHeader>
+
+            <ScrollArea className="max-h-[58vh] pr-4">
+              <div className="space-y-3">
+                {layerSuggestions.length === 0 && (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
+                    <p className="font-display text-xl text-accent">Nenhuma camada suspeita encontrada.</p>
+                    <p className="text-sm text-muted-foreground font-heading italic mt-2">
+                      As classificações atuais não acionaram as regras de sugestão.
+                    </p>
+                  </div>
+                )}
+
+                {layerSuggestions.map((suggestion) => {
+                  const markerMeta = MARKER_TYPE_META[suggestion.location.map_marker_type] || MARKER_TYPE_META.point
+                  const suggestedMarker = MARKER_TYPE_META[suggestion.suggestedMarkerType] || MARKER_TYPE_META.point
+                  return (
+                    <div key={suggestion.location.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <p className="font-display text-lg text-accent">{suggestion.location.name}</p>
+                          <p className="text-xs text-muted-foreground font-heading italic mt-1">{suggestion.reason}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="rounded-full"
+                          disabled={applyingSuggestionId === suggestion.location.id}
+                          onClick={() => applyLayerSuggestion(suggestion)}
+                        >
+                          {applyingSuggestionId === suggestion.location.id ? "Aplicando..." : "Aplicar sugestão"}
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2 text-xs">
+                        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                          <p className="uppercase tracking-widest text-muted-foreground font-bold text-[10px]">Atual</p>
+                          <p className="mt-1">{MAP_SCOPE_LABEL[suggestion.location.map_scope]} · {markerMeta.label}</p>
+                        </div>
+                        <div className="rounded-xl border border-primary/20 bg-primary/10 p-3">
+                          <p className="uppercase tracking-widest text-primary font-bold text-[10px]">Sugerido</p>
+                          <p className="mt-1">{MAP_SCOPE_LABEL[suggestion.suggestedScope]} · {suggestedMarker.label}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </ScrollArea>
           </DialogContent>
         </Dialog>
           </div>
