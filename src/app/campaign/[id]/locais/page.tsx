@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Eye, EyeOff, Compass, Navigation } from "lucide-react"
+import { Plus, Eye, EyeOff, Compass, Navigation, Image as ImageIcon } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -206,7 +206,13 @@ export default function LocalManager() {
         {!loadingLocs && locations.map((loc: any) => (
           <Card key={loc.id} className="bg-card/30 border-white/5 hover:border-primary/30 transition-all group overflow-hidden">
              <div className="relative h-40 bg-muted">
-                <img src={`https://picsum.photos/seed/${loc.id}/400/200`} className="object-cover w-full h-full opacity-40" />
+                {loc.image_url ? (
+                  <img src={loc.image_url} alt={loc.name} className="object-cover w-full h-full opacity-50" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-primary/10 text-primary/50">
+                    <ImageIcon className="h-10 w-10" />
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
                 <div className="absolute top-4 left-4 flex gap-2">
                    <Badge className="bg-primary/20 text-primary border-primary/30 text-[8px] uppercase font-black">{loc.type}</Badge>

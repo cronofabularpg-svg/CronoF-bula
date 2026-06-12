@@ -90,7 +90,7 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
     return getCharacterTheme(activeChar.class ?? undefined, activeChar.race ?? undefined);
   }, [activeChar]);
 
-  const charPhoto = activeChar?.avatar_url || `https://picsum.photos/seed/${activeChar?.id || 'default'}/300/300`;
+  const charPhoto = activeChar?.avatar_url || null;
 
   if (user && membershipStatus && membershipStatus !== 'active') {
     return (
@@ -204,14 +204,20 @@ export default function CampaignLayout({ children }: { children: React.ReactNode
               <Dialog>
                 <DialogTrigger asChild>
                   <Avatar className="h-12 w-12 rounded-2xl border-2 border-primary/30 group-hover:scale-110 transition-transform shadow-arcane cursor-zoom-in overflow-hidden">
-                    <AvatarImage src={charPhoto} className="object-cover" />
+                    {charPhoto && <AvatarImage src={charPhoto} className="object-cover" />}
                     <AvatarFallback className="bg-primary/20 text-primary font-display font-black text-lg">
                       {activeChar?.name?.[0] || 'G'}
                     </AvatarFallback>
                   </Avatar>
                 </DialogTrigger>
                 <DialogContent className="bg-black/90 border-primary/20 p-0 overflow-hidden">
-                  <img src={charPhoto} alt={activeChar?.name} className="w-full h-full object-contain" />
+                  {charPhoto ? (
+                    <img src={charPhoto} alt={activeChar?.name} className="w-full h-full object-contain" />
+                  ) : (
+                    <div className="flex min-h-80 items-center justify-center bg-primary/10 text-primary font-display text-7xl">
+                      {activeChar?.name?.[0] || 'G'}
+                    </div>
+                  )}
                 </DialogContent>
               </Dialog>
               

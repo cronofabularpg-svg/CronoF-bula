@@ -251,11 +251,17 @@ export default function NPCManager() {
           filteredNpcs.map((npc: any) => (
             <Card key={npc.id} className={`bg-card/30 border-white/5 hover:border-accent/30 transition-all group overflow-hidden ${npc.status === 'dead' ? 'grayscale opacity-60' : ''}`}>
               <div className="relative h-48 bg-muted">
-                <img
-                  src={npc.image_url || `https://picsum.photos/seed/${npc.id}/400/300`}
-                  alt={npc.name}
-                  className="object-cover w-full h-full opacity-60 group-hover:opacity-80 transition-opacity"
-                />
+                {npc.image_url ? (
+                  <img
+                    src={npc.image_url}
+                    alt={npc.name}
+                    className="object-cover w-full h-full opacity-60 group-hover:opacity-80 transition-opacity"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-primary/10 text-primary/50">
+                    <Users className="h-12 w-12" />
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
                 <div className="absolute top-4 left-4 flex gap-2">
                   <Badge className={`uppercase tracking-widest text-[9px] ${npc.status === 'alive' ? 'bg-primary' : 'bg-destructive'}`}>

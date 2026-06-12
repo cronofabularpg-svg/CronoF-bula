@@ -10,7 +10,6 @@ import {
   ChevronRight,
   ChevronLeft,
   PlusCircle,
-  Camera,
   Crown,
   MapPin,
   Trash2,
@@ -26,6 +25,7 @@ import { Switch } from "@/components/ui/switch"
 import { useUser } from "@/firebase"
 import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
+import { ImagePicker } from "@/components/media/image-picker"
 
 const DND_RACES = [
   { id: "human", name: "Humano" },
@@ -73,6 +73,36 @@ const AI_ROLES = [
 
 type Step = 'role' | 'basics' | 'narrative' | 'character' | 'done'
 
+type InitialNpc = {
+  name: string
+  role: string
+  description: string
+  goals: string
+  secrets: string
+  visibility: "public" | "visible" | "master_only" | "hidden" | "secret"
+  image_url: string
+}
+
+type InitialLocation = {
+  name: string
+  type: string
+  map_scope: "world" | "region" | "city" | "local" | "dungeon"
+  parent_index: string
+  description: string
+  visibility: "public" | "visible" | "known" | "master_only" | "hidden" | "secret"
+  image_url: string
+}
+
+type InitialItem = {
+  name: string
+  item_type: string
+  rarity: string
+  description: string
+  deliver_to_character: boolean
+  visibility: "public" | "party" | "master_only"
+  image_url: string
+}
+
 const MASTER_STEPS: Step[] = ['role', 'basics', 'narrative', 'character', 'done']
 const PLAYER_STEPS: Step[] = ['role', 'character', 'done']
 
@@ -105,8 +135,16 @@ export default function OnboardingPage() {
     soloRequiresApproval: true,
   })
 
-  const [initialNpcs, setInitialNpcs] = React.useState<{ name: string; description: string }[]>([])
-  const [initialLocations, setInitialLocations] = React.useState<{ name: string; description: string }[]>([])
+  const [initialNpcs, setInitialNpcs] = React.useState<InitialNpc[]>([])
+  const [initialLocations, setInitialLocations] = React.useState<InitialLocation[]>([])
+  const [initialItems, setInitialItems] = React.useState<InitialItem[]>([])
+  const [createdDeliverableItemIds, setCreatedDeliverableItemIds] = React.useState<string[]>([])
+  const [firstScene, setFirstScene] = React.useState({
+    title: "",
+    locationName: "",
+    notes: "",
+    image_url: "",
+  })
 
   const [characterData, setCharacterData] = React.useState({
     name: "",
@@ -131,9 +169,9 @@ export default function OnboardingPage() {
   }
 
   function addInitialNpc() {
-    setInitialNpcs(prev => [...prev, { name: "", description: "" }])
+    setInitialNpcs(prev => [...prev, { name: "", role: "", description: "", goals: "", secrets: "", visibility: "visible", image_url: "" }])
   }
-  function updateInitialNpc(index: number, field: 'name' | 'description', value: string) {
+  function updateInitialNpc(index: number, field: keyof InitialNpc, value: string) {
     setInitialNpcs(prev => prev.map((n, i) => i === index ? { ...n, [field]: value } : n))
   }
   function removeInitialNpc(index: number) {
@@ -141,13 +179,23 @@ export default function OnboardingPage() {
   }
 
   function addInitialLocation() {
-    setInitialLocations(prev => [...prev, { name: "", description: "" }])
+    setInitialLocations(prev => [...prev, { name: "", type: "landmark", map_scope: "local", parent_index: "", description: "", visibility: "known", image_url: "" }])
   }
-  function updateInitialLocation(index: number, field: 'name' | 'description', value: string) {
+  function updateInitialLocation(index: number, field: keyof InitialLocation, value: string) {
     setInitialLocations(prev => prev.map((l, i) => i === index ? { ...l, [field]: value } : l))
   }
   function removeInitialLocation(index: number) {
     setInitialLocations(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function addInitialItem() {
+    setInitialItems(prev => [...prev, { name: "", item_type: "story", rarity: "common", description: "", deliver_to_character: false, visibility: "party", image_url: "" }])
+  }
+  function updateInitialItem(index: number, field: keyof InitialItem, value: string | boolean) {
+    setInitialItems(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item))
+  }
+  function removeInitialItem(index: number) {
+    setInitialItems(prev => prev.filter((_, i) => i !== index))
   }
 
   async function handleCreateCampaign() {
@@ -251,8 +299,12 @@ export default function OnboardingPage() {
         .map(n => ({
           campaign_id: campaignId,
           name: n.name.trim(),
+          role: n.role.trim() || null,
           description: n.description.trim() || null,
-          visibility: 'known',
+          goals: n.goals.trim() || null,
+          secrets: n.secrets.trim() || null,
+          visibility: n.visibility,
+          image_url: n.image_url || null,
           status: 'alive',
           created_by: user.uid,
         }))
@@ -261,20 +313,85 @@ export default function OnboardingPage() {
         if (npcError) throw npcError
       }
 
-      const locationRows = initialLocations
-        .filter(l => l.name.trim())
-        .map(l => ({
-          campaign_id: campaignId,
-          name: l.name.trim(),
-          description: l.description.trim() || null,
-          type: 'landmark',
-          visibility: 'visible',
-          status: 'active',
-          created_by: user.uid,
-        }))
-      if (locationRows.length > 0) {
-        const { error: locationError } = await supabase.from('locations').insert(locationRows)
+      const createdLocationIdsByIndex = new Map<number, string>()
+      for (const [index, location] of initialLocations.entries()) {
+        if (!location.name.trim()) continue
+        const parentIndex = location.parent_index ? Number(location.parent_index) : Number.NaN
+        const parentLocationId = Number.isNaN(parentIndex) ? null : createdLocationIdsByIndex.get(parentIndex) ?? null
+        const { data: createdLocation, error: locationError } = await supabase
+          .from('locations')
+          .insert({
+            campaign_id: campaignId,
+            name: location.name.trim(),
+            description: location.description.trim() || null,
+            type: location.type,
+            visibility: location.visibility,
+            status: 'active',
+            map_scope: location.map_scope,
+            map_marker_type: location.map_scope === 'city' ? 'city' : location.map_scope === 'region' ? 'region' : location.map_scope === 'dungeon' ? 'dungeon' : 'landmark',
+            parent_location_id: parentLocationId,
+            image_url: location.image_url || null,
+            created_by: user.uid,
+          })
+          .select('id')
+          .single()
         if (locationError) throw locationError
+        if (createdLocation) createdLocationIdsByIndex.set(index, createdLocation.id)
+      }
+
+      const deliverableIds: string[] = []
+      for (const item of initialItems) {
+        if (!item.name.trim()) continue
+        const { data: createdItem, error: itemError } = await supabase
+          .from('items')
+          .insert({
+            campaign_id: campaignId,
+            name: item.name.trim(),
+            item_type: item.item_type || null,
+            rarity: item.rarity || 'common',
+            description: item.description.trim() || null,
+            visibility: item.visibility,
+            image_url: item.image_url || null,
+            status: 'available',
+            created_by: user.uid,
+          })
+          .select('id')
+          .single()
+        if (itemError) throw itemError
+        if (createdItem && item.deliver_to_character) deliverableIds.push(createdItem.id)
+      }
+      setCreatedDeliverableItemIds(deliverableIds)
+
+      if (firstScene.title.trim()) {
+        const { data: session, error: sessionError } = await supabase
+          .from('sessions')
+          .insert({
+            campaign_id: campaignId,
+            title: firstScene.title.trim(),
+            status: 'active',
+            started_at: nowIso,
+            created_by: user.uid,
+          })
+          .select('id')
+          .single()
+        if (sessionError) throw sessionError
+
+        const { error: sceneError } = await supabase
+          .from('scenes')
+          .insert({
+            campaign_id: campaignId,
+            session_id: session.id,
+            title: firstScene.title.trim(),
+            location_name: firstScene.locationName.trim() || null,
+            visibility: 'participants',
+            status: 'active',
+            metadata: {
+              scene_image_url: firstScene.image_url || null,
+              onboarding_notes: firstScene.notes.trim() || null,
+            },
+            created_by: user.uid,
+          })
+        if (sceneError) throw sceneError
       }
 
       toast({ title: "Mundo Construído!", description: "A lore inicial foi registrada nos anais da campanha." })
@@ -291,7 +408,7 @@ export default function OnboardingPage() {
     setLoading(true)
     try {
       const supabase = createClient()
-      const { error } = await supabase
+      const { data: character, error } = await supabase
         .from('characters')
         .insert({
           campaign_id: campaignId || null,
@@ -299,11 +416,27 @@ export default function OnboardingPage() {
           name: characterData.name,
           race: characterData.race,
           class: characterData.class,
-          level: characterData.level,
+          level: role === 'master' ? narrativeData.startingLevel : characterData.level,
           avatar_url: characterData.photoURL || null,
         })
+        .select('id')
+        .single()
 
       if (error) throw error
+
+      if (character?.id && campaignId && createdDeliverableItemIds.length > 0) {
+        const { error: deliverError } = await supabase.from('character_items').insert(
+          createdDeliverableItemIds.map((itemId) => ({
+            campaign_id: campaignId,
+            character_id: character.id,
+            item_id: itemId,
+            quantity: 1,
+            equipped: false,
+            notes: 'Entregue no onboarding da campanha.',
+          }))
+        )
+        if (deliverError) throw deliverError
+      }
 
       toast({ title: "Personagem Criado!", description: `${characterData.name} está pronto para a aventura.` })
       setStep('done')
@@ -507,13 +640,14 @@ export default function OnboardingPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label className="font-ui uppercase text-[10px] tracking-widest font-bold flex items-center gap-2">
-                      <ImageIcon className="h-3 w-3 text-primary" /> Capa (URL)
-                    </Label>
-                    <Input
-                      placeholder="https://..."
+                    <ImagePicker
+                      campaignId={campaignId}
+                      usageType="campaign_cover"
+                      visibility="public"
                       value={narrativeData.coverImageUrl}
-                      onChange={e => setNarrativeData({...narrativeData, coverImageUrl: e.target.value})}
+                      onChange={(url) => setNarrativeData({...narrativeData, coverImageUrl: url || ""})}
+                      label="Capa da campanha"
+                      optionalLabel="Escolha do banco, envie uma capa ou deixe sem capa por enquanto."
                     />
                   </div>
                 </div>
@@ -554,11 +688,49 @@ export default function OnboardingPage() {
                             onChange={e => updateInitialNpc(i, 'name', e.target.value)}
                             className="pr-8"
                           />
+                          <Input
+                            placeholder="Papel na história"
+                            value={npc.role}
+                            onChange={e => updateInitialNpc(i, 'role', e.target.value)}
+                          />
                           <Textarea
                             rows={2}
-                            placeholder="Curta descrição (papel, aparência, motivação)"
+                            placeholder="Descrição"
                             value={npc.description}
                             onChange={e => updateInitialNpc(i, 'description', e.target.value)}
+                          />
+                          <Textarea
+                            rows={2}
+                            placeholder="Objetivo"
+                            value={npc.goals}
+                            onChange={e => updateInitialNpc(i, 'goals', e.target.value)}
+                          />
+                          <Textarea
+                            rows={2}
+                            placeholder="Segredo do mestre"
+                            value={npc.secrets}
+                            onChange={e => updateInitialNpc(i, 'secrets', e.target.value)}
+                          />
+                          <Select value={npc.visibility} onValueChange={v => updateInitialNpc(i, 'visibility', v)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="visible">Visível</SelectItem>
+                              <SelectItem value="public">Público</SelectItem>
+                              <SelectItem value="master_only">Apenas Mestre</SelectItem>
+                              <SelectItem value="hidden">Oculto</SelectItem>
+                              <SelectItem value="secret">Secreto</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <ImagePicker
+                            campaignId={campaignId}
+                            usageType="npc_token"
+                            visibility={npc.visibility === "master_only" || npc.visibility === "hidden" || npc.visibility === "secret" ? "master_only" : "party"}
+                            value={npc.image_url}
+                            onChange={(url) => updateInitialNpc(i, 'image_url', url || "")}
+                            label="Imagem do NPC"
+                            optionalLabel="opcional"
                           />
                         </div>
                       ))}
@@ -588,16 +760,202 @@ export default function OnboardingPage() {
                             onChange={e => updateInitialLocation(i, 'name', e.target.value)}
                             className="pr-8"
                           />
+                          <div className="grid grid-cols-2 gap-2">
+                            <Select value={loc.type} onValueChange={v => updateInitialLocation(i, 'type', v)}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="landmark">Marco</SelectItem>
+                                <SelectItem value="city">Cidade</SelectItem>
+                                <SelectItem value="village">Vilarejo</SelectItem>
+                                <SelectItem value="dungeon">Dungeon</SelectItem>
+                                <SelectItem value="shop">Loja</SelectItem>
+                                <SelectItem value="tavern">Taverna</SelectItem>
+                                <SelectItem value="region">Região</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Select value={loc.map_scope} onValueChange={v => updateInitialLocation(i, 'map_scope', v)}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="world">Mundo</SelectItem>
+                                <SelectItem value="region">Região</SelectItem>
+                                <SelectItem value="city">Cidade</SelectItem>
+                                <SelectItem value="local">Local</SelectItem>
+                                <SelectItem value="dungeon">Dungeon</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Select value={loc.parent_index || "none"} onValueChange={v => updateInitialLocation(i, 'parent_index', v === "none" ? "" : v)}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Parent location, se houver" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Sem parent</SelectItem>
+                              {initialLocations.map((candidate, candidateIndex) => (
+                                candidateIndex < i && candidate.name.trim() ? (
+                                  <SelectItem key={candidateIndex} value={String(candidateIndex)}>{candidate.name}</SelectItem>
+                                ) : null
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <Textarea
                             rows={2}
                             placeholder="Curta descrição (o que torna este lugar notável)"
                             value={loc.description}
                             onChange={e => updateInitialLocation(i, 'description', e.target.value)}
                           />
+                          <Select value={loc.visibility} onValueChange={v => updateInitialLocation(i, 'visibility', v)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="public">Público</SelectItem>
+                              <SelectItem value="visible">Visível</SelectItem>
+                              <SelectItem value="known">Conhecido</SelectItem>
+                              <SelectItem value="master_only">Apenas Mestre</SelectItem>
+                              <SelectItem value="hidden">Oculto</SelectItem>
+                              <SelectItem value="secret">Secreto</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <ImagePicker
+                            campaignId={campaignId}
+                            usageType="location_image"
+                            visibility={loc.visibility === "master_only" || loc.visibility === "hidden" || loc.visibility === "secret" ? "master_only" : "party"}
+                            value={loc.image_url}
+                            onChange={(url) => updateInitialLocation(i, 'image_url', url || "")}
+                            label="Imagem do local"
+                            optionalLabel="opcional"
+                          />
                         </div>
                       ))}
                     </div>
                   </div>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-white/5">
+                  <div className="flex items-center justify-between">
+                    <Label className="font-ui uppercase text-[10px] tracking-widest font-bold flex items-center gap-2">
+                      <ImageIcon className="h-3 w-3 text-primary" /> Itens Iniciais
+                    </Label>
+                    <Button type="button" variant="ghost" size="sm" onClick={addInitialItem} className="text-primary hover:text-primary h-7 px-2">
+                      <PlusCircle className="h-4 w-4 mr-1" /> Adicionar
+                    </Button>
+                  </div>
+                  {initialItems.length === 0 && (
+                    <p className="text-xs text-muted-foreground italic opacity-60">Nenhum item inicial adicionado.</p>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {initialItems.map((item, i) => (
+                      <div key={i} className="p-3 rounded-xl bg-black/20 border border-white/5 space-y-2 relative">
+                        <Button type="button" variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeInitialItem(i)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                        <Input
+                          placeholder="Nome do item"
+                          value={item.name}
+                          onChange={e => updateInitialItem(i, 'name', e.target.value)}
+                          className="pr-8"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Select value={item.item_type} onValueChange={v => updateInitialItem(i, 'item_type', v)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="weapon">Arma</SelectItem>
+                              <SelectItem value="armor">Armadura</SelectItem>
+                              <SelectItem value="consumable">Consumível</SelectItem>
+                              <SelectItem value="story">Item de História</SelectItem>
+                              <SelectItem value="journal">Diário</SelectItem>
+                              <SelectItem value="map">Mapa</SelectItem>
+                              <SelectItem value="other">Outro</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select value={item.rarity} onValueChange={v => updateInitialItem(i, 'rarity', v)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="common">Comum</SelectItem>
+                              <SelectItem value="uncommon">Incomum</SelectItem>
+                              <SelectItem value="rare">Raro</SelectItem>
+                              <SelectItem value="epic">Épico</SelectItem>
+                              <SelectItem value="legendary">Lendário</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Textarea
+                          rows={2}
+                          placeholder="Descrição"
+                          value={item.description}
+                          onChange={e => updateInitialItem(i, 'description', e.target.value)}
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Select value={item.visibility} onValueChange={v => updateInitialItem(i, 'visibility', v)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="public">Público</SelectItem>
+                              <SelectItem value="party">Grupo</SelectItem>
+                              <SelectItem value="master_only">Apenas Mestre</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <label className="flex items-center gap-2 rounded-md border border-white/10 bg-background px-3 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={item.deliver_to_character}
+                              onChange={e => updateInitialItem(i, 'deliver_to_character', e.target.checked)}
+                            />
+                            Entregar ao personagem?
+                          </label>
+                        </div>
+                        <ImagePicker
+                          campaignId={campaignId}
+                          usageType="item_image"
+                          visibility={item.visibility === "master_only" ? "master_only" : "party"}
+                          value={item.image_url}
+                          onChange={(url) => updateInitialItem(i, 'image_url', url || "")}
+                          label="Imagem do item"
+                          optionalLabel="opcional"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t border-white/5">
+                  <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">Primeira cena</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      placeholder="Título da primeira cena"
+                      value={firstScene.title}
+                      onChange={e => setFirstScene({...firstScene, title: e.target.value})}
+                    />
+                    <Input
+                      placeholder="Local da cena"
+                      value={firstScene.locationName}
+                      onChange={e => setFirstScene({...firstScene, locationName: e.target.value})}
+                    />
+                  </div>
+                  <Textarea
+                    rows={2}
+                    placeholder="Notas de abertura da cena"
+                    value={firstScene.notes}
+                    onChange={e => setFirstScene({...firstScene, notes: e.target.value})}
+                  />
+                  <ImagePicker
+                    campaignId={campaignId}
+                    usageType="location_image"
+                    visibility="party"
+                    value={firstScene.image_url}
+                    onChange={(url) => setFirstScene({...firstScene, image_url: url || ""})}
+                    label="Imagem da primeira cena"
+                    optionalLabel="opcional"
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -659,23 +1017,15 @@ export default function OnboardingPage() {
                         </Select>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">URL do Retrato</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Link da imagem..."
-                          value={characterData.photoURL}
-                          onChange={e => setCharacterData({...characterData, photoURL: e.target.value})}
-                        />
-                        <div className="h-10 w-10 shrink-0 bg-primary/20 border border-primary/30 rounded-md flex items-center justify-center overflow-hidden">
-                          {characterData.photoURL ? (
-                            <img src={characterData.photoURL} className="w-full h-full object-cover" />
-                          ) : (
-                            <Camera className="h-4 w-4 text-primary" />
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                    <ImagePicker
+                      campaignId={campaignId}
+                      usageType="character_avatar"
+                      visibility="party"
+                      value={characterData.photoURL}
+                      onChange={(url) => setCharacterData({...characterData, photoURL: url || ""})}
+                      label="Retrato do personagem"
+                      optionalLabel="Escolha retrato do banco, envie um retrato ou deixe sem retrato por enquanto."
+                    />
                   </div>
                   <div className="space-y-4">
                     <div className="p-6 rounded-2xl bg-primary/5 border border-primary/20 space-y-3">

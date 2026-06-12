@@ -39,6 +39,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Wand2,
+  User,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
@@ -395,7 +396,7 @@ export default function FichaPersonagem() {
   const proficiency = character.proficiency_bonus ?? expectedProficiency;
   const dexMod = getAbilityModifier(stats.dex);
 
-  const charPhoto = character.avatar_url || `https://picsum.photos/seed/${character.id}/500/500`;
+  const charPhoto = character.avatar_url || null;
 
   // TAREFA 1/3: detecta ficha incompleta para exibir banner/badges e bloquear combate sem dados.
   const ATTRIBUTE_KEYS: (keyof CharacterStats)[] = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
@@ -603,11 +604,17 @@ export default function FichaPersonagem() {
             <Dialog>
               <DialogTrigger asChild>
                 <div className={`relative h-44 w-44 rounded-2xl overflow-hidden border-2 shadow-arcane cursor-zoom-in group transition-all ${sheetState.hasInspiration ? 'border-primary ring-4 ring-primary/20' : 'border-white/10'}`}>
-                  <img
-                    src={charPhoto}
-                    alt={character.name}
-                    className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-110"
-                  />
+                  {charPhoto ? (
+                    <img
+                      src={charPhoto}
+                      alt={character.name}
+                      className="object-cover w-full h-full transition-transform duration-700 group-hover:scale-110"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-primary/10 text-primary/50">
+                      <User className="h-16 w-16" />
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Maximize2 className="h-8 w-8 text-white animate-pulse" />
                   </div>
@@ -619,7 +626,13 @@ export default function FichaPersonagem() {
                 </div>
               </DialogTrigger>
               <DialogContent className="bg-black/90 border-primary/20 max-w-4xl p-0 overflow-hidden">
-                <img src={charPhoto} alt={character.name} className="w-full h-full object-contain max-h-[85vh]" />
+                {charPhoto ? (
+                  <img src={charPhoto} alt={character.name} className="w-full h-full object-contain max-h-[85vh]" />
+                ) : (
+                  <div className="flex min-h-96 items-center justify-center bg-primary/10 text-primary/50">
+                    <User className="h-24 w-24" />
+                  </div>
+                )}
                 <div className="p-6 bg-gradient-to-t from-black to-transparent absolute bottom-0 w-full">
                   <h2 className="text-3xl font-display font-black text-primary">{character.name}</h2>
                   <p className="text-muted-foreground font-heading italic">{character.race} {character.class}</p>

@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { useUser } from '@/firebase';
 import { useToast } from "@/hooks/use-toast";
@@ -40,6 +39,7 @@ type Campaign = {
   system_key: string | null
   tone: string | null
   status: string
+  cover_image_url: string | null
 }
 
 type PendingCampaignInvite = {
@@ -145,13 +145,13 @@ export default function Dashboard() {
     Promise.all([
       supabase
         .from('campaign_members')
-        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status)')
+        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status, cover_image_url)')
         .eq('user_id', user.uid)
         .eq('status', 'active')
         .order('joined_at', { ascending: false }),
       supabase
         .from('campaign_members')
-        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status)')
+        .select('id, status, role, joined_at, campaigns(id, owner_id, name, system_key, tone, status, cover_image_url)')
         .eq('user_id', user.uid)
         .eq('status', 'pending')
         .order('joined_at', { ascending: false }),
@@ -464,12 +464,17 @@ export default function Dashboard() {
               displayCampaigns.map((campaign) => (
                 <Card key={campaign.id} className="grimoire-card group">
                   <div className="relative h-64 w-full bg-muted overflow-hidden">
-                    <Image
-                      src={`https://picsum.photos/seed/${campaign.id}/800/400`}
-                      alt={campaign.name}
-                      fill
-                      className="object-cover opacity-40 group-hover:opacity-70 group-hover:scale-110 transition-all duration-1000"
-                    />
+                    {campaign.cover_image_url ? (
+                      <img
+                        src={campaign.cover_image_url}
+                        alt={campaign.name}
+                        className="h-full w-full object-cover opacity-50 group-hover:opacity-75 group-hover:scale-110 transition-all duration-1000"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-primary/10 text-primary/40">
+                        <BookOpen className="h-16 w-16" />
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-[#050711] via-transparent to-transparent" />
                     <div className="absolute top-6 left-6 flex gap-3">
                       <Badge className="bg-primary text-black font-display text-[9px] px-3 py-1 uppercase tracking-widest shadow-lg">

@@ -1615,7 +1615,9 @@ export default function MapaVivo() {
                {activeNode.image_url ? (
                  <img src={activeNode.image_url} alt={activeNode.name} className="object-cover w-full h-full opacity-70" />
                ) : (
-                 <img src={`https://picsum.photos/seed/${activeNode.id}/400/200`} alt={activeNode.name} className="object-cover w-full h-full opacity-40" />
+                 <div className="flex h-full w-full items-center justify-center bg-primary/10 text-primary/50">
+                   <ImageIcon className="h-10 w-10" />
+                 </div>
                )}
                <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
                <Button variant="ghost" size="icon" className="absolute top-2 right-2 text-white/50" onClick={() => setActiveNode(null)}>
