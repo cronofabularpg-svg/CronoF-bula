@@ -33,6 +33,17 @@ import {
 } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
+import { getAbilityModifier, getProficiencyBonus, formatSpeed } from "@/lib/dnd/srd-rules"
+import {
+  rollD20,
+  calculateAttackTotal,
+  rollDamageFormula,
+  getSpellcastingAbilityForClass,
+  getAttackOutcome,
+  ATTACK_OUTCOME_LABEL,
+  ABILITY_KEY_LABEL,
+  type AbilityKey,
+} from "@/lib/dnd/combat-math"
 import {
   Swords,
   Skull,
@@ -59,6 +70,11 @@ import {
   Crosshair,
   RotateCcw,
   Image as ImageIcon,
+  UserPlus,
+  Backpack,
+  Footprints,
+  BookOpen,
+  Dices,
 } from "lucide-react"
 
 // ----------------------------------------------------------------------------
@@ -80,6 +96,7 @@ type Concentration = { active: boolean; spell: string }
 type ParticipantMetadata = {
   death_saves?: DeathSaves
   concentration?: Concentration
+  surprise?: boolean
 }
 
 type CombatMetadata = {
@@ -192,6 +209,93 @@ type SelectedCombatant = {
 }
 
 // ----------------------------------------------------------------------------
+// Tipos: ações reais da ficha (ataques, magias/habilidades, itens)
+// ----------------------------------------------------------------------------
+
+type AbilityScores = {
+  strength: number
+  dexterity: number
+  constitution: number
+  intelligence: number
+  wisdom: number
+  charisma: number
+}
+
+type AttackData = {
+  name: string
+  attack_bonus?: number
+  ability?: AbilityKey
+  damage?: string
+  damage_type?: string
+  range?: string
+  notes?: string
+}
+
+type SpellData = {
+  name: string
+  type?: string
+  range?: string
+  save_ability?: AbilityKey
+  concentration?: boolean
+  damage?: string
+  damage_type?: string
+  ability?: AbilityKey
+  notes?: string
+}
+
+type CharacterSheet = {
+  id: string
+  name: string
+  avatar_url: string | null
+  level: number | null
+  class: string | null
+  current_hp: number | null
+  max_hp: number | null
+  armor_class: number | null
+  speed: number | null
+  proficiency_bonus: number | null
+  stats: AbilityScores | null
+  saving_throws: Record<string, number> | null
+  skills: Record<string, number> | null
+  initiative_bonus: number | null
+  attacks: AttackData[]
+  spells: SpellData[]
+}
+
+type EquippedItemRow = {
+  id: string
+  name: string
+  item_type: string | null
+  properties: Record<string, unknown> | null
+  quantity: number
+  equipped: boolean
+}
+
+type NpcSheet = {
+  id: string
+  name: string
+  image_url: string | null
+  role: string | null
+  status: string | null
+}
+
+// Ação resolvida a partir de um ataque, magia ou item — pronta para rolagem.
+type ResolvedAction = {
+  key: string
+  name: string
+  source: "attack" | "spell" | "item"
+  attackBonus: number | null
+  damageFormula?: string | null
+  damageType?: string | null
+  range?: string | null
+  saveAbility?: AbilityKey | null
+  saveDC?: number | null
+  concentration?: boolean
+  notes?: string | null
+  itemId?: string
+}
+
+// ----------------------------------------------------------------------------
 // Constantes
 // ----------------------------------------------------------------------------
 
@@ -201,6 +305,14 @@ const STATUS_LABEL: Record<string, string> = {
   dead: "Morto",
   fled: "Fugiu",
   inactive: "Inativo",
+}
+
+// TAREFA 10: badge de tipo de participante no card (Personagem/NPC/Aliado/Inimigo).
+const PARTICIPANT_TYPE_BADGE: Record<string, { label: string; className: string }> = {
+  character: { label: "Personagem", className: "border-primary/30 text-primary" },
+  npc: { label: "NPC", className: "border-muted-foreground/30 text-muted-foreground" },
+  ally: { label: "Aliado", className: "border-emerald-400/30 text-emerald-300" },
+  enemy: { label: "Inimigo", className: "border-destructive/30 text-destructive" },
 }
 
 // Condições oficiais de D&D 5e (5.1 SRD) usadas no select do modal de gerenciamento.
@@ -236,15 +348,6 @@ const TURN_ACTIONS: string[] = [
   "Esconder",
   "Preparar Ação",
   "Usar Objeto",
-]
-
-const ABILITIES: { key: string; label: string }[] = [
-  { key: "STR", label: "Força (STR)" },
-  { key: "DEX", label: "Destreza (DEX)" },
-  { key: "CON", label: "Constituição (CON)" },
-  { key: "INT", label: "Inteligência (INT)" },
-  { key: "WIS", label: "Sabedoria (WIS)" },
-  { key: "CHA", label: "Carisma (CHA)" },
 ]
 
 // Grid Tático D&D: 1 célula = 5 ft / 1,5 m (1 quadrado físico = 2,5 cm).
@@ -397,24 +500,12 @@ const EVENT_META: Record<string, { label: string; icon: React.ElementType; color
   concentration_ended: { label: "Concentração perdida", icon: Wand2, color: "text-muted-foreground" },
   participant_moved: { label: "Movimento no campo", icon: MapPin, color: "text-accent" },
   battlefield_configured: { label: "Campo de batalha configurado", icon: Grid3x3, color: "text-muted-foreground" },
+  participant_added: { label: "Participante adicionado", icon: UserPlus, color: "text-primary" },
 }
 
 // ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
-
-function rollFormula(formula: string): number | null {
-  const match = formula.trim().match(/^(\d+)d(\d+)([+-]\d+)?$/i)
-  if (!match) return null
-  const count = Math.min(parseInt(match[1], 10), 100)
-  const sides = Math.max(parseInt(match[2], 10), 1)
-  const modifier = match[3] ? parseInt(match[3], 10) : 0
-  let total = 0
-  for (let i = 0; i < count; i++) {
-    total += Math.floor(Math.random() * sides) + 1
-  }
-  return total + modifier
-}
 
 // Distância narrativa entre duas zonas via BFS no grafo de conexões.
 function zoneDistanceLabel(
@@ -459,6 +550,135 @@ function zoneDistanceLabel(
 
 function findConditionLabel(key: string): string {
   return DND_CONDITIONS.find((c) => c.key === key)?.label || key
+}
+
+// ----------------------------------------------------------------------------
+// Resolução de ações reais da ficha (TAREFA 2-6)
+// ----------------------------------------------------------------------------
+
+function getAbilityScore(sheet: CharacterSheet | null | undefined, ability: AbilityKey): number {
+  return sheet?.stats?.[ability] ?? 10
+}
+
+function getAbilityMod(sheet: CharacterSheet | null | undefined, ability: AbilityKey): number {
+  return getAbilityModifier(getAbilityScore(sheet, ability))
+}
+
+function getProficiency(sheet: CharacterSheet | null | undefined): number {
+  return sheet?.proficiency_bonus ?? getProficiencyBonus(sheet?.level ?? 1)
+}
+
+// Detecta se uma arma equipada é "finesse" ou de longo alcance (propriedade
+// opcional do item); nesse caso o ataque usa DEX em vez de STR.
+function getWeaponAbility(item: EquippedItemRow): AbilityKey {
+  const props = item.properties || {}
+  if (props.finesse || props.ranged) return "dexterity"
+  const text = `${item.item_type ?? ""} ${item.name}`.toLowerCase()
+  if (/ranged|distância|distancia|arco|besta|bow|crossbow/.test(text)) return "dexterity"
+  return "strength"
+}
+
+function isWeaponItem(item: EquippedItemRow): boolean {
+  const type = (item.item_type ?? "").toLowerCase()
+  return type === "weapon" || type === "arma" || !!item.properties?.damage
+}
+
+function isUsableItem(item: EquippedItemRow): boolean {
+  const type = (item.item_type ?? "").toLowerCase()
+  return ["consumable", "potion", "poção", "pocao", "scroll", "food"].includes(type) || !!item.properties?.heal
+}
+
+// Ataques: combina character_stats.attacks (ficha) com armas equipadas do inventário.
+function buildResolvedAttacks(sheet: CharacterSheet | null | undefined, items: EquippedItemRow[]): ResolvedAction[] {
+  const actions: ResolvedAction[] = []
+  const prof = getProficiency(sheet)
+
+  for (const [idx, atk] of (sheet?.attacks ?? []).entries()) {
+    const ability = atk.ability ?? "strength"
+    const bonus = atk.attack_bonus ?? (getAbilityMod(sheet, ability) + prof)
+    actions.push({
+      key: `attack-${idx}-${atk.name}`,
+      name: atk.name,
+      source: "attack",
+      attackBonus: bonus,
+      damageFormula: atk.damage ?? null,
+      damageType: atk.damage_type ?? null,
+      range: atk.range ?? null,
+      notes: atk.notes ?? null,
+    })
+  }
+
+  for (const item of items) {
+    if (!item.equipped || !isWeaponItem(item)) continue
+    const ability = getWeaponAbility(item)
+    const bonus = getAbilityMod(sheet, ability) + prof
+    const props = item.properties || {}
+    actions.push({
+      key: `weapon-${item.id}`,
+      name: item.name,
+      source: "attack",
+      attackBonus: bonus,
+      damageFormula: (props.damage as string | undefined) ?? null,
+      damageType: (props.damage_type as string | undefined) ?? null,
+      range: (props.range as string | undefined) ?? null,
+      notes: `Arma equipada · ${ABILITY_KEY_LABEL[ability]}`,
+    })
+  }
+
+  return actions
+}
+
+// Magias/Habilidades: lê character_stats.spells. Sem dados fictícios — se a
+// ficha estiver vazia, a aba mostra um estado vazio.
+function buildResolvedSpells(sheet: CharacterSheet | null | undefined): ResolvedAction[] {
+  const actions: ResolvedAction[] = []
+  const prof = getProficiency(sheet)
+  const defaultAbility = getSpellcastingAbilityForClass(sheet?.class)
+
+  for (const [idx, spell] of (sheet?.spells ?? []).entries()) {
+    const ability = spell.ability ?? defaultAbility
+    const mod = getAbilityMod(sheet, ability)
+    const hasSave = !!spell.save_ability
+    const hasDamage = !!spell.damage
+
+    actions.push({
+      key: `spell-${idx}-${spell.name}`,
+      name: spell.name,
+      source: "spell",
+      attackBonus: !hasSave && hasDamage ? mod + prof : null,
+      damageFormula: spell.damage ?? null,
+      damageType: spell.damage_type ?? null,
+      range: spell.range ?? null,
+      saveAbility: spell.save_ability ?? null,
+      saveDC: hasSave ? 8 + prof + mod : null,
+      concentration: !!spell.concentration,
+      notes: spell.type ?? null,
+    })
+  }
+
+  return actions
+}
+
+// Itens: consumíveis/usáveis do inventário equipado (poções, pergaminhos etc.).
+function buildResolvedItems(items: EquippedItemRow[]): ResolvedAction[] {
+  return items
+    .filter((item) => isUsableItem(item) && item.quantity > 0)
+    .map((item) => {
+      const props = item.properties || {}
+      const healFormula = props.heal as string | undefined
+      const damageFormula = props.damage as string | undefined
+      return {
+        key: `item-${item.id}`,
+        name: `${item.name}${item.quantity > 1 ? ` (x${item.quantity})` : ""}`,
+        source: "item" as const,
+        attackBonus: null,
+        damageFormula: healFormula ?? damageFormula ?? null,
+        damageType: healFormula ? "cura" : (props.damage_type as string | undefined) ?? null,
+        range: (props.range as string | undefined) ?? null,
+        notes: item.item_type ?? null,
+        itemId: item.id,
+      }
+    })
 }
 
 // ----------------------------------------------------------------------------
@@ -522,21 +742,6 @@ export default function Combate() {
   const [turnActionNote, setTurnActionNote] = React.useState("")
   const [turnActionSubmitting, setTurnActionSubmitting] = React.useState(false)
 
-  // Rolagem de ataque contra CA
-  const [attackOpen, setAttackOpen] = React.useState(false)
-  const [attackTargetId, setAttackTargetId] = React.useState("")
-  const [attackFormula, setAttackFormula] = React.useState("1d20")
-  const [attackResult, setAttackResult] = React.useState<number | null>(null)
-  const [attackSubmitting, setAttackSubmitting] = React.useState(false)
-
-  // Teste de resistência
-  const [saveOpen, setSaveOpen] = React.useState(false)
-  const [saveAbility, setSaveAbility] = React.useState(ABILITIES[0].key)
-  const [saveDC, setSaveDC] = React.useState("")
-  const [saveModifier, setSaveModifier] = React.useState("0")
-  const [saveResult, setSaveResult] = React.useState<number | null>(null)
-  const [saveSubmitting, setSaveSubmitting] = React.useState(false)
-
   // Campo de batalha: criação rápida por modelo (zonas) ou configuração de grid
   const [battlefieldOpen, setBattlefieldOpen] = React.useState(false)
   const [battlefieldTemplate, setBattlefieldTemplate] = React.useState(BATTLEFIELD_TEMPLATES[0].key)
@@ -554,6 +759,38 @@ export default function Combate() {
   const [measureTokenA, setMeasureTokenA] = React.useState("")
   const [measureTokenB, setMeasureTokenB] = React.useState("")
   const [participantAvatars, setParticipantAvatars] = React.useState<Record<string, string | null>>({})
+
+  // TAREFA 1: dados completos da ficha (personagens) e dos NPCs envolvidos no combate.
+  const [characterSheets, setCharacterSheets] = React.useState<Record<string, CharacterSheet>>({})
+  const [characterItems, setCharacterItems] = React.useState<Record<string, EquippedItemRow[]>>({})
+  const [npcSheets, setNpcSheets] = React.useState<Record<string, NpcSheet>>({})
+
+  // TAREFA 2-6: ação do turno com abas (Ataques, Magias, Itens, Movimento, Manual).
+  const [actionTab, setActionTab] = React.useState("ataques")
+  const [actionTargetId, setActionTargetId] = React.useState("")
+  const [selectedAction, setSelectedAction] = React.useState<ResolvedAction | null>(null)
+  const [actionRoll, setActionRoll] = React.useState<{ roll: number; total: number; outcome: string } | null>(null)
+  const [actionDamageRoll, setActionDamageRoll] = React.useState<{ total: number; critical: boolean } | null>(null)
+  const [actionRollSubmitting, setActionRollSubmitting] = React.useState(false)
+  const [actionDamageSubmitting, setActionDamageSubmitting] = React.useState(false)
+
+  // TAREFA 6: teste de resistência solicitado a um alvo (a partir de uma magia/habilidade).
+  const [saveRequestResult, setSaveRequestResult] = React.useState<{ roll: number; total: number; dc: number; success: boolean } | null>(null)
+  const [saveRequestSubmitting, setSaveRequestSubmitting] = React.useState(false)
+
+  // TAREFA 8-9: modal "Adicionar ao Combate" (apenas mestre).
+  const [addParticipantOpen, setAddParticipantOpen] = React.useState(false)
+  const [addInitiativeByCharacter, setAddInitiativeByCharacter] = React.useState<Record<string, string>>({})
+  const [addingCharacterId, setAddingCharacterId] = React.useState<string | null>(null)
+  const [addNpcTypeById, setAddNpcTypeById] = React.useState<Record<string, string>>({})
+  const [addInitiativeByNpc, setAddInitiativeByNpc] = React.useState<Record<string, string>>({})
+  const [addingNpcId, setAddingNpcId] = React.useState<string | null>(null)
+  const [surpriseName, setSurpriseName] = React.useState("")
+  const [surpriseCurrentHp, setSurpriseCurrentHp] = React.useState("")
+  const [surpriseMaxHp, setSurpriseMaxHp] = React.useState("")
+  const [surpriseArmorClass, setSurpriseArmorClass] = React.useState("")
+  const [surpriseInitiative, setSurpriseInitiative] = React.useState("")
+  const [surpriseSubmitting, setSurpriseSubmitting] = React.useState(false)
 
   // Visualização do grid: zoom e centralização são apenas locais (não persistidos).
   const DEFAULT_GRID_CELL_SIZE = 48
@@ -613,31 +850,103 @@ export default function Combate() {
       const npcIds = participantsList.filter(p => p.npc_id).map(p => p.npc_id as string)
       const avatarMap: Record<string, string | null> = {}
 
+      const sheetMap: Record<string, CharacterSheet> = {}
+      const itemsMap: Record<string, EquippedItemRow[]> = {}
+      const npcMap: Record<string, NpcSheet> = {}
+
       if (characterIds.length > 0) {
-        const { data: charAvatars } = await supabase
+        const { data: charsFull } = await supabase
           .from('characters')
-          .select('id, avatar_url')
+          .select('id, name, avatar_url, level, class, current_hp, max_hp, armor_class, speed, proficiency_bonus')
           .in('id', characterIds)
-        for (const c of (charAvatars as { id: string; avatar_url: string | null }[]) || []) {
-          for (const p of participantsList.filter(p => p.character_id === c.id)) {
-            avatarMap[p.id] = c.avatar_url
+
+        const { data: statsFull } = await supabase
+          .from('character_stats')
+          .select('character_id, strength, dexterity, constitution, intelligence, wisdom, charisma, saving_throws, skills, attacks, spells, initiative_bonus')
+          .in('character_id', characterIds)
+
+        const statsById: Record<string, Record<string, unknown>> = {}
+        for (const s of (statsFull as Record<string, unknown>[]) || []) {
+          statsById[s.character_id as string] = s
+        }
+
+        for (const c of (charsFull as Record<string, unknown>[]) || []) {
+          const id = c.id as string
+          const s = statsById[id]
+          for (const p of participantsList.filter(p => p.character_id === id)) {
+            avatarMap[p.id] = (c.avatar_url as string | null) ?? null
           }
+          sheetMap[id] = {
+            id,
+            name: c.name as string,
+            avatar_url: (c.avatar_url as string | null) ?? null,
+            level: (c.level as number | null) ?? null,
+            class: (c.class as string | null) ?? null,
+            current_hp: (c.current_hp as number | null) ?? null,
+            max_hp: (c.max_hp as number | null) ?? null,
+            armor_class: (c.armor_class as number | null) ?? null,
+            speed: (c.speed as number | null) ?? null,
+            proficiency_bonus: (c.proficiency_bonus as number | null) ?? null,
+            stats: s ? {
+              strength: (s.strength as number) ?? 10,
+              dexterity: (s.dexterity as number) ?? 10,
+              constitution: (s.constitution as number) ?? 10,
+              intelligence: (s.intelligence as number) ?? 10,
+              wisdom: (s.wisdom as number) ?? 10,
+              charisma: (s.charisma as number) ?? 10,
+            } : null,
+            saving_throws: (s?.saving_throws as Record<string, number> | null) ?? null,
+            skills: (s?.skills as Record<string, number> | null) ?? null,
+            initiative_bonus: (s?.initiative_bonus as number | null) ?? null,
+            attacks: Array.isArray(s?.attacks) ? s.attacks as AttackData[] : [],
+            spells: Array.isArray(s?.spells) ? s.spells as SpellData[] : [],
+          }
+        }
+
+        const { data: itemsFull } = await supabase
+          .from('character_items')
+          .select('id, character_id, quantity, equipped, item_id, items(id, name, item_type, properties)')
+          .in('character_id', characterIds)
+
+        for (const row of (itemsFull as Record<string, unknown>[]) || []) {
+          const item = Array.isArray(row.items) ? row.items[0] : row.items
+          if (!item) continue
+          const charId = row.character_id as string
+          ;(itemsMap[charId] ||= []).push({
+            id: (item as Record<string, unknown>).id as string,
+            name: (item as Record<string, unknown>).name as string,
+            item_type: ((item as Record<string, unknown>).item_type as string | null) ?? null,
+            properties: ((item as Record<string, unknown>).properties as Record<string, unknown> | null) ?? null,
+            quantity: (row.quantity as number) ?? 1,
+            equipped: !!row.equipped,
+          })
         }
       }
 
       if (npcIds.length > 0) {
-        const { data: npcAvatars } = await supabase
+        const { data: npcsFull } = await supabase
           .from('npcs')
-          .select('id, image_url')
+          .select('id, name, image_url, role, status')
           .in('id', npcIds)
-        for (const n of (npcAvatars as { id: string; image_url: string | null }[]) || []) {
-          for (const p of participantsList.filter(p => p.npc_id === n.id)) {
-            avatarMap[p.id] = n.image_url
+        for (const n of (npcsFull as Record<string, unknown>[]) || []) {
+          const id = n.id as string
+          npcMap[id] = {
+            id,
+            name: n.name as string,
+            image_url: (n.image_url as string | null) ?? null,
+            role: (n.role as string | null) ?? null,
+            status: (n.status as string | null) ?? null,
+          }
+          for (const p of participantsList.filter(p => p.npc_id === id)) {
+            avatarMap[p.id] = (n.image_url as string | null) ?? null
           }
         }
       }
 
       setParticipantAvatars(avatarMap)
+      setCharacterSheets(sheetMap)
+      setCharacterItems(itemsMap)
+      setNpcSheets(npcMap)
 
       const { data: zonesData } = await supabase
         .from('combat_zones')
@@ -669,6 +978,9 @@ export default function Combate() {
     } else {
       setParticipants([])
       setParticipantAvatars({})
+      setCharacterSheets({})
+      setCharacterItems({})
+      setNpcSheets({})
       setZones([])
       setZoneLinks([])
       setSceneEvents([])
@@ -836,6 +1148,15 @@ export default function Combate() {
     return myParticipant
   }, [isMaster, actingParticipantId, participants, myParticipant])
 
+  // TAREFA 2-6: ao trocar "Atuando como", limpa a ação/rolagem selecionada.
+  React.useEffect(() => {
+    setSelectedAction(null)
+    setActionRoll(null)
+    setActionDamageRoll(null)
+    setSaveRequestResult(null)
+    setActionTargetId("")
+  }, [actingParticipant?.id])
+
   const currentTurnZoneId = currentTurnParticipant?.current_zone_id ?? null
 
   function resetStartForm() {
@@ -938,6 +1259,25 @@ export default function Combate() {
 
     if (error) {
       toast({ variant: "destructive", title: "Erro ao avançar turno", description: error.message })
+      return
+    }
+    await loadCombat()
+  }
+
+  // TAREFA 10: mestre força o turno atual para um participante específico
+  // (ex.: após adicionar um inimigo surpresa ou reorganizar a iniciativa).
+  async function handleSetCurrentTurn(participantId: string) {
+    if (!combat) return
+    setTurnSubmitting(true)
+    const supabase = createClient()
+    const { error } = await supabase.rpc('set_combat_current_turn', {
+      target_combat_id: combat.id,
+      target_participant_id: participantId,
+    })
+    setTurnSubmitting(false)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao definir turno atual", description: error.message })
       return
     }
     await loadCombat()
@@ -1302,30 +1642,27 @@ export default function Combate() {
     await loadCombat()
   }
 
-  function openAttack() {
-    setAttackTargetId("")
-    setAttackFormula("1d20")
-    setAttackResult(null)
-    setAttackOpen(true)
+  // TAREFA 2-6: seleciona uma ação resolvida (ataque/magia/item) e limpa rolagens anteriores.
+  function handleSelectAction(action: ResolvedAction) {
+    setSelectedAction(action)
+    setActionRoll(null)
+    setActionDamageRoll(null)
+    setSaveRequestResult(null)
   }
 
-  function rollAttack() {
-    const total = rollFormula(attackFormula)
-    if (total === null) {
-      toast({ variant: "destructive", title: "Fórmula inválida", description: "Use o formato NdM (ex.: 1d20, 1d20+5)." })
-      return
-    }
-    setAttackResult(total)
-  }
+  // TAREFA 4: rola 1d20 + bônus de ataque da ação selecionada contra a CA do alvo.
+  // Apenas registra a rolagem (dice_rolls + scene_event); não aplica dano.
+  async function handleRollAction() {
+    if (!combat || !actingParticipant || !user || !selectedAction || selectedAction.attackBonus === null) return
 
-  // Apenas calcula e registra a rolagem; o mestre confirma o dano manualmente depois.
-  async function registerAttack() {
-    if (!combat || !actingParticipant || !user || attackResult === null) return
-
-    setAttackSubmitting(true)
+    setActionRollSubmitting(true)
     const supabase = createClient()
 
-    const target = participants.find(p => p.id === attackTargetId) || null
+    const result = calculateAttackTotal(selectedAction.attackBonus)
+    const target = participants.find(p => p.id === actionTargetId) || null
+    const outcome = getAttackOutcome(result, target?.armor_class ?? null)
+    const bonus = selectedAction.attackBonus
+    const formula = `1d20${bonus >= 0 ? '+' : ''}${bonus}`
 
     const { error: rollError } = await supabase.from('dice_rolls').insert({
       campaign_id: campaignId,
@@ -1334,33 +1671,27 @@ export default function Combate() {
       character_id: actingParticipant.character_id,
       user_id: user.uid,
       roll_type: 'attack',
-      formula: attackFormula.trim() || '1d20',
-      raw_result: attackResult,
-      modifier: 0,
-      total: attackResult,
-      reason: target ? `Ataque contra ${target.name}` : 'Rolagem de ataque',
+      formula,
+      raw_result: result.roll,
+      modifier: bonus,
+      total: result.total,
+      reason: target ? `${selectedAction.name} contra ${target.name}` : selectedAction.name,
       visibility: 'scene',
     })
 
     if (rollError) {
-      setAttackSubmitting(false)
+      setActionRollSubmitting(false)
       toast({ variant: "destructive", title: "Erro ao registrar rolagem", description: rollError.message })
       return
     }
 
-    let outcome: 'hit' | 'miss' | 'unknown' = 'unknown'
-    let content = `${actingParticipant.name} rolou ataque: ${attackResult}`
-    if (target) {
-      content += ` contra ${target.name}`
-      if (target.armor_class !== null) {
-        outcome = attackResult >= target.armor_class ? 'hit' : 'miss'
-        content += ` (CA ${target.armor_class}) — ${outcome === 'hit' ? 'possível acerto' : 'possível erro'}.`
-      } else {
-        content += '.'
-      }
-    } else {
-      content += '.'
+    let content = `${actingParticipant.name} atacou com ${selectedAction.name}`
+    if (target) content += ` contra ${target.name}`
+    content += `: ${result.total}`
+    if (target?.armor_class !== null && target?.armor_class !== undefined) {
+      content += ` vs CA ${target.armor_class}`
     }
+    content += ` — ${ATTACK_OUTCOME_LABEL[outcome]}.`
 
     const { error } = await supabase.rpc('log_combat_event', {
       target_combat_id: combat.id,
@@ -1370,77 +1701,130 @@ export default function Combate() {
         character_id: actingParticipant.character_id,
         participant_id: actingParticipant.id,
         target_participant_id: target?.id ?? null,
-        total: attackResult,
+        action: selectedAction.name,
+        roll: result.roll,
+        bonus,
+        total: result.total,
         target_ac: target?.armor_class ?? null,
         outcome,
       },
     })
-    setAttackSubmitting(false)
+    setActionRollSubmitting(false)
 
     if (error) {
       toast({ variant: "destructive", title: "Erro ao registrar evento", description: error.message })
       return
     }
 
-    toast({ title: "Rolagem registrada", description: content })
-    setAttackOpen(false)
+    setActionRoll({ roll: result.roll, total: result.total, outcome })
+    setActionDamageRoll(null)
+    toast({ title: "Ataque rolado", description: content })
     await loadCombat()
   }
 
-  function openSavingThrow() {
-    setSaveAbility(ABILITIES[0].key)
-    setSaveDC("")
-    setSaveModifier("0")
-    setSaveResult(null)
-    setSaveOpen(true)
+  // TAREFA 5: rola o dano sugerido para a ação selecionada (dobra dados em crítico).
+  function handleRollDamage() {
+    if (!selectedAction?.damageFormula) return
+    const critical = actionRoll?.outcome === 'critical_hit'
+    const result = rollDamageFormula(selectedAction.damageFormula, critical)
+    if (!result) {
+      toast({
+        variant: "destructive",
+        title: "Fórmula de dano inválida",
+        description: `Use o formato NdM ou NdM+K (ex.: 1d8+2). Recebido: "${selectedAction.damageFormula}".`,
+      })
+      return
+    }
+    setActionDamageRoll({ total: result.total, critical })
   }
 
-  function rollSavingThrow() {
-    const d20 = rollFormula("1d20")
-    if (d20 === null) return
-    const modifier = parseInt(saveModifier, 10) || 0
-    setSaveResult(d20 + modifier)
+  // TAREFA 5: mestre confirma e aplica o dano/cura sugerido ao alvo selecionado.
+  async function handleApplyActionEffect() {
+    if (!isMaster || !combat || !selectedAction || !actionDamageRoll || !actionTargetId) return
+
+    const target = participants.find(p => p.id === actionTargetId)
+    if (!target) return
+
+    setActionDamageSubmitting(true)
+    const supabase = createClient()
+    const isHealing = selectedAction.damageType === 'cura'
+
+    const { error } = isHealing
+      ? await supabase.rpc('apply_combat_healing', {
+          target_participant_id: target.id,
+          amount: actionDamageRoll.total,
+        })
+      : await supabase.rpc('apply_combat_damage', {
+          target_participant_id: target.id,
+          amount: actionDamageRoll.total,
+          damage_type: selectedAction.damageType ?? null,
+        })
+
+    setActionDamageSubmitting(false)
+
+    if (error) {
+      toast({
+        variant: "destructive",
+        title: isHealing ? "Erro ao aplicar cura" : "Erro ao aplicar dano",
+        description: error.message,
+      })
+      return
+    }
+
+    toast({
+      title: isHealing ? "Cura aplicada" : "Dano aplicado",
+      description: `${target.name} ${isHealing ? 'recuperou' : 'recebeu'} ${actionDamageRoll.total}` +
+        (selectedAction.damageType && selectedAction.damageType !== 'cura' ? ` (${selectedAction.damageType})` : '') + '.',
+    })
+    setActionDamageRoll(null)
+    setActionRoll(null)
+    setSelectedAction(null)
+    await loadCombat()
   }
 
-  async function registerSavingThrow() {
-    if (!combat || !actingParticipant || !user || saveResult === null) return
+  // TAREFA 6: rola o teste de resistência do alvo (d20 + bônus da ficha) contra a CD da magia/habilidade.
+  async function handleRequestSavingThrow() {
+    if (!combat || !actingParticipant || !user || !selectedAction?.saveAbility || selectedAction.saveDC === null || selectedAction.saveDC === undefined || !actionTargetId) return
 
-    setSaveSubmitting(true)
+    const target = participants.find(p => p.id === actionTargetId)
+    if (!target) return
+
+    setSaveRequestSubmitting(true)
     const supabase = createClient()
 
-    const modifier = parseInt(saveModifier, 10) || 0
-    const formula = modifier !== 0 ? `1d20${modifier > 0 ? '+' : ''}${modifier}` : '1d20'
+    const ability = selectedAction.saveAbility
+    const targetSheet = target.character_id ? characterSheets[target.character_id] : null
+    const savingThrowBonus = targetSheet?.saving_throws?.[ability]
+    const bonus = typeof savingThrowBonus === 'number' ? savingThrowBonus : getAbilityMod(targetSheet, ability)
+
+    const roll = rollD20()
+    const total = roll + bonus
+    const dc = selectedAction.saveDC
+    const success = total >= dc
+    const formula = `1d20${bonus >= 0 ? '+' : ''}${bonus}`
 
     const { error: rollError } = await supabase.from('dice_rolls').insert({
       campaign_id: campaignId,
       session_id: combat.session_id ?? activeSession?.id ?? null,
       scene_id: combat.scene_id ?? activeScene?.id ?? null,
-      character_id: actingParticipant.character_id,
+      character_id: target.character_id,
       user_id: user.uid,
       roll_type: 'saving_throw',
       formula,
-      raw_result: saveResult,
-      modifier,
-      total: saveResult,
-      reason: `Teste de resistência (${saveAbility})`,
+      raw_result: roll,
+      modifier: bonus,
+      total,
+      reason: `Teste de ${ABILITY_KEY_LABEL[ability]} contra ${selectedAction.name} (CD ${dc})`,
       visibility: 'scene',
     })
 
     if (rollError) {
-      setSaveSubmitting(false)
+      setSaveRequestSubmitting(false)
       toast({ variant: "destructive", title: "Erro ao registrar rolagem", description: rollError.message })
       return
     }
 
-    const dc = parseInt(saveDC, 10)
-    let outcome: 'success' | 'failure' | 'unknown' = 'unknown'
-    let content = `${actingParticipant.name} fez um teste de resistência de ${saveAbility}: ${saveResult}`
-    if (!isNaN(dc)) {
-      outcome = saveResult >= dc ? 'success' : 'failure'
-      content += ` vs CD ${dc} — ${outcome === 'success' ? 'sucesso provável' : 'falha provável'}.`
-    } else {
-      content += '.'
-    }
+    const content = `${target.name} ${success ? 'passou' : 'falhou'} no teste de ${ABILITY_KEY_LABEL[ability]} contra ${selectedAction.name} (CD ${dc}): ${total}.`
 
     const { error } = await supabase.rpc('log_combat_event', {
       target_combat_id: combat.id,
@@ -1449,21 +1833,163 @@ export default function Combate() {
       event_metadata: {
         character_id: actingParticipant.character_id,
         participant_id: actingParticipant.id,
-        ability: saveAbility,
-        dc: isNaN(dc) ? null : dc,
-        total: saveResult,
-        outcome,
+        target_participant_id: target.id,
+        ability,
+        dc,
+        roll,
+        bonus,
+        total,
+        outcome: success ? 'success' : 'failure',
+        source_action: selectedAction.name,
       },
     })
-    setSaveSubmitting(false)
+    setSaveRequestSubmitting(false)
 
     if (error) {
       toast({ variant: "destructive", title: "Erro ao registrar evento", description: error.message })
       return
     }
 
-    toast({ title: "Teste registrado", description: content })
-    setSaveOpen(false)
+    setSaveRequestResult({ roll, total, dc, success })
+    toast({ title: "Teste de resistência registrado", description: content })
+    await loadCombat()
+  }
+
+  // Aba Itens: registra a intenção de uso (mestre aplica dano/cura manualmente, se houver).
+  async function handleUseItem(action: ResolvedAction) {
+    if (!combat || !actingParticipant || !user) return
+
+    setActionRollSubmitting(true)
+    const supabase = createClient()
+    const content = `${actingParticipant.name} usou ${action.name}.`
+
+    const { error } = await supabase.rpc('log_combat_event', {
+      target_combat_id: combat.id,
+      event_type: 'combat_action_declared',
+      content,
+      event_metadata: {
+        action: action.name,
+        character_id: actingParticipant.character_id,
+        participant_id: actingParticipant.id,
+        item_id: action.itemId ?? null,
+      },
+    })
+    setActionRollSubmitting(false)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao registrar uso do item", description: error.message })
+      return
+    }
+
+    toast({ title: "Item usado", description: content })
+    await loadCombat()
+  }
+
+  // TAREFA 8-9: mestre adiciona um personagem da campanha ao combate em
+  // andamento. Iniciativa manual (opcional) ou rolada automaticamente pela RPC.
+  async function handleAddCharacterParticipant(characterId: string) {
+    if (!combat) return
+
+    setAddingCharacterId(characterId)
+    const supabase = createClient()
+
+    const rawInitiative = addInitiativeByCharacter[characterId]?.trim()
+    const initiative = rawInitiative ? parseInt(rawInitiative, 10) : null
+
+    const { error } = await supabase.rpc('add_combat_character_participant', {
+      p_combat_id: combat.id,
+      p_character_id: characterId,
+      p_initiative: initiative !== null && !isNaN(initiative) ? initiative : null,
+    })
+
+    setAddingCharacterId(null)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao adicionar personagem", description: error.message })
+      return
+    }
+
+    toast({ title: "Personagem adicionado ao combate" })
+    setAddInitiativeByCharacter(prev => ({ ...prev, [characterId]: "" }))
+    await loadCombat()
+  }
+
+  // TAREFA 8-9: mestre adiciona um NPC da campanha como NPC/aliado/inimigo.
+  // PV/CA podem ser preenchidos depois via "Gerenciar".
+  async function handleAddNpcParticipant(npcId: string) {
+    if (!combat) return
+
+    setAddingNpcId(npcId)
+    const supabase = createClient()
+
+    const rawInitiative = addInitiativeByNpc[npcId]?.trim()
+    const initiative = rawInitiative ? parseInt(rawInitiative, 10) : null
+    const participantType = addNpcTypeById[npcId] || 'npc'
+
+    const { error } = await supabase.rpc('add_combat_npc_participant', {
+      p_combat_id: combat.id,
+      p_npc_id: npcId,
+      p_participant_type: participantType,
+      p_initiative: initiative !== null && !isNaN(initiative) ? initiative : null,
+    })
+
+    setAddingNpcId(null)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao adicionar NPC", description: error.message })
+      return
+    }
+
+    toast({ title: "NPC adicionado ao combate" })
+    setAddInitiativeByNpc(prev => ({ ...prev, [npcId]: "" }))
+    await loadCombat()
+  }
+
+  // TAREFA 8-9: mestre cria um inimigo surpresa direto no combate (sem NPC prévio).
+  async function handleAddSurpriseEnemy() {
+    if (!combat) return
+
+    const name = surpriseName.trim()
+    if (!name) {
+      toast({ variant: "destructive", title: "Informe o nome do inimigo surpresa" })
+      return
+    }
+
+    const currentHp = parseInt(surpriseCurrentHp, 10)
+    const maxHp = parseInt(surpriseMaxHp, 10)
+    const armorClass = parseInt(surpriseArmorClass, 10)
+    const initiative = parseInt(surpriseInitiative, 10)
+
+    if (isNaN(currentHp) || isNaN(maxHp) || isNaN(armorClass) || isNaN(initiative)) {
+      toast({ variant: "destructive", title: "Preencha PV atual, PV máximo, CA e iniciativa" })
+      return
+    }
+
+    setSurpriseSubmitting(true)
+    const supabase = createClient()
+
+    const { error } = await supabase.rpc('add_combat_surprise_enemy', {
+      p_combat_id: combat.id,
+      p_name: name,
+      p_current_hp: currentHp,
+      p_max_hp: maxHp,
+      p_armor_class: armorClass,
+      p_initiative: initiative,
+    })
+
+    setSurpriseSubmitting(false)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao adicionar inimigo surpresa", description: error.message })
+      return
+    }
+
+    toast({ title: "Inimigo surpresa adicionado ao combate" })
+    setSurpriseName("")
+    setSurpriseCurrentHp("")
+    setSurpriseMaxHp("")
+    setSurpriseArmorClass("")
+    setSurpriseInitiative("")
     await loadCombat()
   }
 
@@ -1818,10 +2344,18 @@ export default function Combate() {
   // ---- Painel: Participantes -----------------------------------------------
   const participantesPanel = combat && (
     <div className="space-y-4">
-      <h2 className="font-display font-black tracking-tight text-lg flex items-center gap-2">
-        <Crown className="h-4 w-4 text-primary" />
-        Participantes
-      </h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-display font-black tracking-tight text-lg flex items-center gap-2">
+          <Crown className="h-4 w-4 text-primary" />
+          Participantes
+        </h2>
+        {isMaster && (
+          <Button onClick={() => setAddParticipantOpen(true)} size="sm" variant="outline" className="rounded-full border-primary/30 text-primary">
+            <UserPlus className="h-4 w-4 mr-2" />
+            Adicionar ao Combate
+          </Button>
+        )}
+      </div>
       {participants.length === 0 ? (
         <Card className="bg-card/40 border-primary/10 rounded-[2rem] p-8 text-center">
           <p className="text-muted-foreground font-heading italic">Nenhum participante neste combate.</p>
@@ -1832,12 +2366,15 @@ export default function Combate() {
             <ParticipantCard
               key={p.id}
               participant={p}
+              avatarUrl={participantAvatars[p.id] ?? null}
+              npcRole={p.npc_id ? npcSheets[p.npc_id]?.role ?? null : null}
               isMaster={isMaster}
               isCurrentTurn={currentTurnParticipant?.id === p.id}
               zones={zones}
               zoneLinks={zoneLinks}
               currentTurnZoneId={currentTurnZoneId}
               onManage={() => openManage(p)}
+              onMakeCurrentTurn={() => handleSetCurrentTurn(p.id)}
               isGridMode={isGridMode}
               isSelectedForMove={isGridMode && selectedGridTokenId === p.id}
               onToggleSelectForMove={() => setSelectedGridTokenId(selectedGridTokenId === p.id ? null : p.id)}
@@ -1849,6 +2386,207 @@ export default function Combate() {
   )
 
   // ---- Painel: Ações ---------------------------------------------------------
+  // TAREFA 2-6: ações reais da ficha do personagem que está "atuando".
+  const actingSheet = actingParticipant?.character_id ? characterSheets[actingParticipant.character_id] ?? null : null
+  const actingItems = actingParticipant?.character_id ? characterItems[actingParticipant.character_id] ?? [] : []
+  const resolvedAttacks = React.useMemo(() => buildResolvedAttacks(actingSheet, actingItems), [actingSheet, actingItems])
+  const resolvedSpells = React.useMemo(() => buildResolvedSpells(actingSheet), [actingSheet])
+  const resolvedItems = React.useMemo(() => buildResolvedItems(actingItems), [actingItems])
+
+  // TAREFA 3: alvos vivos (PV nulo ou > 0), com CA/PV/posição para a seleção de alvo.
+  const livingTargets = participants.filter(p => p.current_hp === null || p.current_hp > 0)
+
+  // TAREFA 3: seletor de alvo compartilhado pelas abas Ataques/Magias/Itens.
+  const targetSelector = (
+    <div className="space-y-1">
+      <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Alvo</Label>
+      <Select value={actionTargetId || "__none__"} onValueChange={(v) => setActionTargetId(v === "__none__" ? "" : v)}>
+        <SelectTrigger className="bg-black/30 border-primary/20">
+          <SelectValue placeholder="Escolha um alvo" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">Sem alvo definido</SelectItem>
+          {livingTargets.map(p => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.name}
+              {p.armor_class !== null ? ` · CA ${p.armor_class}` : ''}
+              {p.current_hp !== null ? ` · PV ${p.current_hp}${p.max_hp !== null ? `/${p.max_hp}` : ''}` : ''}
+              {p.grid_x !== null && p.grid_y !== null ? ` · (${p.grid_x}, ${p.grid_y})` : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+
+  // TAREFA 2: card de uma ação resolvida (ataque ou magia/habilidade) com botão "Usar".
+  function renderActionCard(action: ResolvedAction) {
+    const isSelected = selectedAction?.key === action.key
+    return (
+      <div
+        key={action.key}
+        className={`rounded-xl border p-3 space-y-1 ${isSelected ? 'border-primary bg-primary/5' : 'border-primary/10 bg-black/20'}`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-heading font-bold text-sm">{action.name}</p>
+          <Button
+            size="sm"
+            variant={isSelected ? "default" : "outline"}
+            onClick={() => handleSelectAction(action)}
+            className="rounded-full h-7 px-3 text-xs shrink-0"
+          >
+            {isSelected ? "Selecionado" : "Usar"}
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground uppercase tracking-widest">
+          {action.attackBonus !== null && (
+            <span>Bônus {action.attackBonus >= 0 ? '+' : ''}{action.attackBonus}</span>
+          )}
+          {action.damageFormula && (
+            <span>Dano {action.damageFormula}{action.damageType ? ` (${action.damageType})` : ''}</span>
+          )}
+          {action.range && <span>Alcance {action.range}</span>}
+          {action.saveAbility && action.saveDC !== null && action.saveDC !== undefined && (
+            <span>CD {action.saveDC} {ABILITY_KEY_LABEL[action.saveAbility]}</span>
+          )}
+          {action.concentration && <span>Concentração</span>}
+        </div>
+        {action.notes && <p className="text-[10px] text-muted-foreground">{action.notes}</p>}
+      </div>
+    )
+  }
+
+  // TAREFA 2/5: card de item usável — "Usar Item" apenas declara o uso; se houver
+  // fórmula de dano/cura, "Rolar efeito" abre o painel de rolagem (sem consumir o item).
+  function renderItemCard(action: ResolvedAction) {
+    const isSelected = selectedAction?.key === action.key
+    return (
+      <div
+        key={action.key}
+        className={`rounded-xl border p-3 space-y-2 ${isSelected ? 'border-primary bg-primary/5' : 'border-primary/10 bg-black/20'}`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-heading font-bold text-sm">{action.name}</p>
+          {action.notes && (
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest shrink-0">{action.notes}</span>
+          )}
+        </div>
+        {(action.damageFormula || action.range) && (
+          <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground uppercase tracking-widest">
+            {action.damageFormula && (
+              <span>
+                {action.damageType === 'cura' ? 'Cura' : 'Dano'} {action.damageFormula}
+                {action.damageType && action.damageType !== 'cura' ? ` (${action.damageType})` : ''}
+              </span>
+            )}
+            {action.range && <span>Alcance {action.range}</span>}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleUseItem(action)}
+            disabled={actionRollSubmitting}
+            className="rounded-full h-7 text-xs border-primary/30 text-primary"
+          >
+            Usar Item
+          </Button>
+          {action.damageFormula && (
+            <Button
+              size="sm"
+              variant={isSelected ? "default" : "outline"}
+              onClick={() => handleSelectAction(action)}
+              className="rounded-full h-7 text-xs"
+            >
+              {isSelected ? "Selecionado" : "Rolar efeito"}
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // TAREFA 4-6: painel de rolagem da ação selecionada (ataque vs CA, teste de
+  // resistência e dano sugerido). Compartilhado pelas abas Ataques/Magias/Itens.
+  const actionRollPanel = selectedAction && (
+    <div className="rounded-xl border border-primary/20 bg-black/30 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-display font-black text-sm">{selectedAction.name}</p>
+        <Button size="sm" variant="ghost" onClick={() => setSelectedAction(null)} className="h-7 px-2 text-xs text-muted-foreground">
+          Limpar
+        </Button>
+      </div>
+
+      {selectedAction.attackBonus !== null && (
+        <div className="space-y-2">
+          <Button onClick={handleRollAction} disabled={actionRollSubmitting} variant="outline" className="w-full rounded-full border-primary/30 text-primary">
+            <Dices className="h-4 w-4 mr-2" />
+            Rolar Ataque (1d20{selectedAction.attackBonus >= 0 ? '+' : ''}{selectedAction.attackBonus})
+          </Button>
+          {actionRoll && (
+            <div className="text-center space-y-1">
+              <p className="text-2xl font-display font-black">{actionRoll.total}</p>
+              <p className={`text-xs font-bold ${actionRoll.outcome === 'hit' || actionRoll.outcome === 'critical_hit' ? 'text-primary' : 'text-destructive'}`}>
+                {ATTACK_OUTCOME_LABEL[actionRoll.outcome as keyof typeof ATTACK_OUTCOME_LABEL] ?? actionRoll.outcome}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedAction.saveAbility && selectedAction.saveDC !== null && selectedAction.saveDC !== undefined && (
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            Teste de {ABILITY_KEY_LABEL[selectedAction.saveAbility]} · CD {selectedAction.saveDC}
+          </p>
+          <Button
+            onClick={handleRequestSavingThrow}
+            disabled={saveRequestSubmitting || !actionTargetId}
+            variant="outline"
+            className="w-full rounded-full border-accent/30 text-accent"
+          >
+            <Shield className="h-4 w-4 mr-2" />
+            Solicitar Teste de Resistência
+          </Button>
+          {saveRequestResult && (
+            <div className="text-center space-y-1">
+              <p className="text-2xl font-display font-black">{saveRequestResult.total}</p>
+              <p className={`text-xs font-bold ${saveRequestResult.success ? 'text-primary' : 'text-destructive'}`}>
+                vs CD {saveRequestResult.dc} — {saveRequestResult.success ? 'Sucesso' : 'Falha'}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedAction.damageFormula && (
+        <div className="space-y-2">
+          <Button onClick={handleRollDamage} variant="outline" className="w-full rounded-full border-destructive/30 text-destructive">
+            Rolar {selectedAction.damageType === 'cura' ? 'Cura' : 'Dano'} Sugerido ({selectedAction.damageFormula}
+            {selectedAction.damageType && selectedAction.damageType !== 'cura' ? ` ${selectedAction.damageType}` : ''})
+          </Button>
+          {actionDamageRoll && (
+            <div className="text-center space-y-2">
+              <p className="text-2xl font-display font-black">
+                {actionDamageRoll.total}
+                {selectedAction.damageType && selectedAction.damageType !== 'cura' ? ` ${selectedAction.damageType}` : ''}
+                {actionDamageRoll.critical && <span className="text-primary"> (crítico!)</span>}
+              </p>
+              {isMaster ? (
+                <Button onClick={handleApplyActionEffect} disabled={actionDamageSubmitting || !actionTargetId} className="w-full btn-ritual rounded-full">
+                  Aplicar {selectedAction.damageType === 'cura' ? 'Cura' : 'Dano'} Sugerido
+                </Button>
+              ) : (
+                <p className="text-[10px] text-muted-foreground italic">Aguarde o mestre confirmar e aplicar o efeito.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
   const acoesPanel = combat && (
     <Card className="bg-card/40 border-primary/10 rounded-[2rem] p-5 space-y-4">
       <h2 className="font-display font-black tracking-tight text-lg flex items-center gap-2">
@@ -1878,47 +2616,99 @@ export default function Combate() {
             </div>
           )}
 
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Ação</Label>
-            <Select value={turnActionType} onValueChange={setTurnActionType}>
-              <SelectTrigger className="bg-black/30 border-primary/20">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TURN_ACTIONS.map(a => (
-                  <SelectItem key={a} value={a}>{a}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Tabs value={actionTab} onValueChange={setActionTab}>
+            <TabsList className="grid grid-cols-5 gap-1 bg-black/30">
+              <TabsTrigger value="ataques" title="Ataques"><Swords className="h-4 w-4" /></TabsTrigger>
+              <TabsTrigger value="magias" title="Magias/Habilidades"><BookOpen className="h-4 w-4" /></TabsTrigger>
+              <TabsTrigger value="itens" title="Itens"><Backpack className="h-4 w-4" /></TabsTrigger>
+              <TabsTrigger value="movimento" title="Movimento"><Footprints className="h-4 w-4" /></TabsTrigger>
+              <TabsTrigger value="manual" title="Manual"><Wand2 className="h-4 w-4" /></TabsTrigger>
+            </TabsList>
 
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Descrição (opcional)</Label>
-            <Textarea
-              value={turnActionNote}
-              onChange={(e) => setTurnActionNote(e.target.value)}
-              placeholder="Ex.: Ataca o bandido com a espada longa"
-              className="bg-black/30 border-primary/20"
-              rows={2}
-            />
-          </div>
+            <TabsContent value="ataques" className="pt-3 space-y-3">
+              {targetSelector}
+              {resolvedAttacks.length === 0 ? (
+                <p className="text-xs text-muted-foreground font-heading italic">
+                  Nenhum ataque cadastrado na ficha (Ataques/Equipamentos). Preencha na Ficha do personagem.
+                </p>
+              ) : (
+                <div className="space-y-2">{resolvedAttacks.map(renderActionCard)}</div>
+              )}
+              {selectedAction?.source === "attack" && actionRollPanel}
+            </TabsContent>
 
-          <Button onClick={handleRegisterTurnAction} disabled={turnActionSubmitting} className="w-full btn-ritual rounded-full">
-            Registrar Ação
-          </Button>
+            <TabsContent value="magias" className="pt-3 space-y-3">
+              {targetSelector}
+              {resolvedSpells.length === 0 ? (
+                <p className="text-xs text-muted-foreground font-heading italic">
+                  Nenhuma magia/habilidade cadastrada na ficha. Preencha na Ficha do personagem.
+                </p>
+              ) : (
+                <div className="space-y-2">{resolvedSpells.map(renderActionCard)}</div>
+              )}
+              {selectedAction?.source === "spell" && actionRollPanel}
+            </TabsContent>
 
-          <Separator className="bg-primary/10" />
+            <TabsContent value="itens" className="pt-3 space-y-3">
+              {targetSelector}
+              {resolvedItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground font-heading italic">
+                  Nenhum item usável equipado no inventário.
+                </p>
+              ) : (
+                <div className="space-y-2">{resolvedItems.map(renderItemCard)}</div>
+              )}
+              {selectedAction?.source === "item" && actionRollPanel}
+            </TabsContent>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button onClick={openAttack} variant="outline" className="rounded-full border-destructive/30 text-destructive">
-              <Target className="h-4 w-4 mr-2" />
-              Ataque
-            </Button>
-            <Button onClick={openSavingThrow} variant="outline" className="rounded-full border-accent/30 text-accent">
-              <Shield className="h-4 w-4 mr-2" />
-              Teste de Resistência
-            </Button>
-          </div>
+            <TabsContent value="movimento" className="pt-3 space-y-3">
+              <div className="rounded-xl border border-primary/10 bg-black/20 p-3 space-y-1">
+                <p className="text-sm font-heading">
+                  Deslocamento: <span className="font-bold text-primary">{formatSpeed(actingSheet?.speed ?? null)}</span>
+                </p>
+                <p className="text-sm font-heading">
+                  Posição atual:{' '}
+                  {actingParticipant.grid_x !== null && actingParticipant.grid_y !== null
+                    ? <span className="font-bold text-primary">({actingParticipant.grid_x}, {actingParticipant.grid_y})</span>
+                    : 'não posicionado no grid'}
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground italic">
+                Para mover, selecione o token no grid e clique na célula de destino.
+              </p>
+            </TabsContent>
+
+            <TabsContent value="manual" className="pt-3 space-y-3">
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Ação</Label>
+                <Select value={turnActionType} onValueChange={setTurnActionType}>
+                  <SelectTrigger className="bg-black/30 border-primary/20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TURN_ACTIONS.map(a => (
+                      <SelectItem key={a} value={a}>{a}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Descrição (opcional)</Label>
+                <Textarea
+                  value={turnActionNote}
+                  onChange={(e) => setTurnActionNote(e.target.value)}
+                  placeholder="Ex.: Ataca o bandido com a espada longa"
+                  className="bg-black/30 border-primary/20"
+                  rows={2}
+                />
+              </div>
+
+              <Button onClick={handleRegisterTurnAction} disabled={turnActionSubmitting} className="w-full btn-ritual rounded-full">
+                Registrar Ação
+              </Button>
+            </TabsContent>
+          </Tabs>
         </div>
       )}
     </Card>
@@ -2474,131 +3264,133 @@ export default function Combate() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de rolagem de ataque contra CA */}
-      <Dialog open={attackOpen} onOpenChange={setAttackOpen}>
-        <DialogContent className="max-w-md bg-[#0b0e1c] border-primary/20">
+      {/* Modal "Adicionar ao Combate" (TAREFA 8-9, somente mestre) */}
+      <Dialog open={addParticipantOpen} onOpenChange={setAddParticipantOpen}>
+        <DialogContent className="max-w-lg bg-[#0b0e1c] border-primary/20 max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl text-primary flex items-center gap-2">
-              <Target className="h-5 w-5" /> Rolagem de Ataque
+              <UserPlus className="h-5 w-5" /> Adicionar ao Combate
             </DialogTitle>
             <DialogDescription>
-              {actingParticipant ? `Atuando como ${actingParticipant.name}.` : ''} O mestre confirma o dano depois.
+              Adicione personagens, NPCs ou um inimigo surpresa ao combate em andamento.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Alvo</Label>
-              <Select value={attackTargetId || "__none__"} onValueChange={(v) => setAttackTargetId(v === "__none__" ? "" : v)}>
-                <SelectTrigger className="bg-black/30 border-primary/20">
-                  <SelectValue placeholder="Escolha um alvo (opcional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Sem alvo definido</SelectItem>
-                  {participants.map(p => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}{p.armor_class !== null ? ` (CA ${p.armor_class})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <Tabs defaultValue="personagens">
+            <TabsList className="grid grid-cols-3 gap-1 bg-black/30">
+              <TabsTrigger value="personagens">Personagens</TabsTrigger>
+              <TabsTrigger value="npcs">NPCs</TabsTrigger>
+              <TabsTrigger value="surpresa">Inimigo Surpresa</TabsTrigger>
+            </TabsList>
 
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Fórmula (d20 + modificador)</Label>
-              <Input value={attackFormula} onChange={(e) => setAttackFormula(e.target.value)} placeholder="Ex.: 1d20+5" className="bg-black/30 border-primary/20" />
-            </div>
+            <TabsContent value="personagens" className="pt-3 space-y-2">
+              {(() => {
+                const inCombatIds = new Set(participants.map(p => p.character_id).filter((id): id is string => !!id))
+                const available = campaignCharacters.filter(c => !inCombatIds.has(c.id))
+                if (available.length === 0) {
+                  return <p className="text-sm text-muted-foreground font-heading italic">Todos os personagens da campanha já estão no combate.</p>
+                }
+                return available.map((c) => (
+                  <div key={c.id} className="rounded-xl border border-primary/10 p-3 flex items-center gap-3">
+                    <span className="flex-1 font-heading">{c.name}</span>
+                    <Input
+                      type="number"
+                      placeholder="Iniciativa (auto)"
+                      value={addInitiativeByCharacter[c.id] || ""}
+                      onChange={(e) => setAddInitiativeByCharacter(prev => ({ ...prev, [c.id]: e.target.value }))}
+                      className="w-32 bg-black/30 border-primary/20"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => handleAddCharacterParticipant(c.id)}
+                      disabled={addingCharacterId === c.id}
+                      className="rounded-full btn-ritual"
+                    >
+                      Adicionar
+                    </Button>
+                  </div>
+                ))
+              })()}
+            </TabsContent>
 
-            <Button onClick={rollAttack} variant="outline" className="w-full rounded-full border-primary/30 text-primary">
-              Rolar
-            </Button>
+            <TabsContent value="npcs" className="pt-3 space-y-2">
+              {(() => {
+                const inCombatIds = new Set(participants.map(p => p.npc_id).filter((id): id is string => !!id))
+                const available = campaignNpcs.filter(n => !inCombatIds.has(n.id))
+                if (available.length === 0) {
+                  return <p className="text-sm text-muted-foreground font-heading italic">Todos os NPCs da campanha já estão no combate.</p>
+                }
+                return available.map((n) => (
+                  <div key={n.id} className="rounded-xl border border-primary/10 p-3 flex flex-wrap items-center gap-2">
+                    <span className="flex-1 font-heading min-w-[100px]">{n.name}</span>
+                    <Select
+                      value={addNpcTypeById[n.id] || "npc"}
+                      onValueChange={(v) => setAddNpcTypeById(prev => ({ ...prev, [n.id]: v }))}
+                    >
+                      <SelectTrigger className="w-32 bg-black/30 border-primary/20">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="npc">NPC</SelectItem>
+                        <SelectItem value="ally">Aliado</SelectItem>
+                        <SelectItem value="enemy">Inimigo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      placeholder="Iniciativa"
+                      value={addInitiativeByNpc[n.id] || ""}
+                      onChange={(e) => setAddInitiativeByNpc(prev => ({ ...prev, [n.id]: e.target.value }))}
+                      className="w-24 bg-black/30 border-primary/20"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => handleAddNpcParticipant(n.id)}
+                      disabled={addingNpcId === n.id}
+                      className="rounded-full btn-ritual"
+                    >
+                      Adicionar
+                    </Button>
+                  </div>
+                ))
+              })()}
+              <p className="text-[10px] text-muted-foreground italic">
+                PV e CA podem ser definidos depois em &quot;Gerenciar&quot;, no card do participante.
+              </p>
+            </TabsContent>
 
-            {attackResult !== null && (
-              <div className="rounded-xl border border-primary/10 bg-black/30 p-3 text-center space-y-1">
-                <p className="text-2xl font-display font-black">{attackResult}</p>
-                {(() => {
-                  const target = participants.find(p => p.id === attackTargetId)
-                  if (!target) return <p className="text-xs text-muted-foreground">Sem alvo selecionado.</p>
-                  if (target.armor_class === null) return <p className="text-xs text-muted-foreground">CA do alvo não definida.</p>
-                  const hit = attackResult >= target.armor_class
-                  return (
-                    <p className={`text-xs font-bold ${hit ? 'text-primary' : 'text-destructive'}`}>
-                      vs CA {target.armor_class} — {hit ? 'Possível acerto' : 'Possível erro'}
-                    </p>
-                  )
-                })()}
-              </div>
-            )}
-
-            <Button onClick={registerAttack} disabled={attackSubmitting || attackResult === null} className="w-full btn-ritual rounded-full">
-              Registrar Rolagem
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal de teste de resistência */}
-      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
-        <DialogContent className="max-w-md bg-[#0b0e1c] border-primary/20">
-          <DialogHeader>
-            <DialogTitle className="font-display text-2xl text-primary flex items-center gap-2">
-              <Shield className="h-5 w-5" /> Teste de Resistência
-            </DialogTitle>
-            <DialogDescription>
-              {actingParticipant ? `Atuando como ${actingParticipant.name}.` : ''}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Atributo</Label>
-              <Select value={saveAbility} onValueChange={setSaveAbility}>
-                <SelectTrigger className="bg-black/30 border-primary/20">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ABILITIES.map(a => (
-                    <SelectItem key={a.key} value={a.key}>{a.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
+            <TabsContent value="surpresa" className="pt-3 space-y-3">
               <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">CD (opcional)</Label>
-                <Input type="number" value={saveDC} onChange={(e) => setSaveDC(e.target.value)} placeholder="Ex.: 12" className="bg-black/30 border-primary/20" />
+                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Nome</Label>
+                <Input value={surpriseName} onChange={(e) => setSurpriseName(e.target.value)} placeholder="Ex.: Lobo das sombras" className="bg-black/30 border-primary/20" />
               </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Modificador</Label>
-                <Input type="number" value={saveModifier} onChange={(e) => setSaveModifier(e.target.value)} placeholder="Ex.: 2" className="bg-black/30 border-primary/20" />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">PV atual</Label>
+                  <Input type="number" value={surpriseCurrentHp} onChange={(e) => setSurpriseCurrentHp(e.target.value)} placeholder="Ex.: 11" className="bg-black/30 border-primary/20" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">PV máximo</Label>
+                  <Input type="number" value={surpriseMaxHp} onChange={(e) => setSurpriseMaxHp(e.target.value)} placeholder="Ex.: 11" className="bg-black/30 border-primary/20" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">CA</Label>
+                  <Input type="number" value={surpriseArmorClass} onChange={(e) => setSurpriseArmorClass(e.target.value)} placeholder="Ex.: 13" className="bg-black/30 border-primary/20" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-widest text-muted-foreground">Iniciativa</Label>
+                  <Input type="number" value={surpriseInitiative} onChange={(e) => setSurpriseInitiative(e.target.value)} placeholder="Ex.: 15" className="bg-black/30 border-primary/20" />
+                </div>
               </div>
-            </div>
-
-            <Button onClick={rollSavingThrow} variant="outline" className="w-full rounded-full border-primary/30 text-primary">
-              Rolar 1d20 + modificador
-            </Button>
-
-            {saveResult !== null && (
-              <div className="rounded-xl border border-primary/10 bg-black/30 p-3 text-center space-y-1">
-                <p className="text-2xl font-display font-black">{saveResult}</p>
-                {(() => {
-                  const dc = parseInt(saveDC, 10)
-                  if (isNaN(dc)) return <p className="text-xs text-muted-foreground">CD não definida.</p>
-                  const success = saveResult >= dc
-                  return (
-                    <p className={`text-xs font-bold ${success ? 'text-primary' : 'text-destructive'}`}>
-                      vs CD {dc} — {success ? 'Sucesso provável' : 'Falha provável'}
-                    </p>
-                  )
-                })()}
-              </div>
-            )}
-
-            <Button onClick={registerSavingThrow} disabled={saveSubmitting || saveResult === null} className="w-full btn-ritual rounded-full">
-              Registrar Teste
-            </Button>
-          </div>
+              <Button onClick={handleAddSurpriseEnemy} disabled={surpriseSubmitting} className="w-full btn-ritual rounded-full">
+                <UserPlus className="h-4 w-4 mr-2" />
+                Adicionar Inimigo Surpresa
+              </Button>
+              <p className="text-[10px] text-muted-foreground italic">
+                Um evento &quot;Um inimigo surpresa entrou no combate&quot; será registrado.
+              </p>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
@@ -2717,23 +3509,29 @@ export default function Combate() {
 
 function ParticipantCard({
   participant,
+  avatarUrl,
+  npcRole,
   isMaster,
   isCurrentTurn,
   zones,
   zoneLinks,
   currentTurnZoneId,
   onManage,
+  onMakeCurrentTurn,
   isGridMode,
   isSelectedForMove,
   onToggleSelectForMove,
 }: {
   participant: Participant
+  avatarUrl: string | null
+  npcRole: string | null
   isMaster: boolean
   isCurrentTurn: boolean
   zones: CombatZone[]
   zoneLinks: CombatZoneLink[]
   currentTurnZoneId: string | null
   onManage: () => void
+  onMakeCurrentTurn: () => void
   isGridMode: boolean
   isSelectedForMove: boolean
   onToggleSelectForMove: () => void
@@ -2744,6 +3542,7 @@ function ParticipantCard({
 
   const isEnemy = participant.participant_type === 'enemy'
   const isDefeated = participant.status !== 'active'
+  const isSurprise = !!participant.metadata?.surprise
   const conditions = participant.conditions || []
   const deathSaves = participant.metadata?.death_saves
   const concentration = participant.metadata?.concentration
@@ -2754,13 +3553,34 @@ function ParticipantCard({
 
   return (
     <Card className={`bg-card/40 border-primary/10 rounded-[2rem] p-5 space-y-3 ${isDefeated ? 'opacity-50' : ''} ${isCurrentTurn ? 'border-primary oracle-glow' : ''} ${isSelectedForMove ? 'ring-2 ring-amber-300 border-amber-300/60' : ''}`}>
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="font-display font-black tracking-tight text-lg truncate">{participant.name}</h3>
-        {isEnemy ? (
-          <Skull className="h-4 w-4 text-destructive/60 shrink-0" />
-        ) : (
-          <Crown className="h-4 w-4 text-primary/60 shrink-0" />
+      <div className="flex items-center gap-3">
+        <div className="relative h-10 w-10 shrink-0 rounded-full overflow-hidden bg-black/40 border border-primary/20 flex items-center justify-center">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={participant.name} className="h-full w-full object-cover" />
+          ) : isEnemy ? (
+            <Skull className="h-5 w-5 text-destructive/60" />
+          ) : (
+            <Crown className="h-5 w-5 text-primary/60" />
+          )}
+        </div>
+        <h3 className="font-display font-black tracking-tight text-lg truncate flex-1">{participant.name}</h3>
+      </div>
+
+      <div className="flex items-center justify-between flex-wrap gap-1">
+        <Badge variant="outline" className={`text-[10px] ${PARTICIPANT_TYPE_BADGE[participant.participant_type]?.className ?? 'border-primary/20'}`}>
+          {PARTICIPANT_TYPE_BADGE[participant.participant_type]?.label ?? participant.participant_type}
+        </Badge>
+        {isSurprise && (
+          <Badge className="text-[10px] bg-amber-500/20 text-amber-300 border-amber-500/30">
+            Surpresa
+          </Badge>
         )}
+        {npcRole && (
+          <span className="text-[10px] text-muted-foreground font-heading italic truncate">{npcRole}</span>
+        )}
+        <span className="text-[10px] text-muted-foreground font-heading uppercase tracking-widest">
+          Iniciativa {participant.initiative ?? "—"}
+        </span>
       </div>
 
       <div className="space-y-1">
@@ -2844,6 +3664,13 @@ function ParticipantCard({
           className={`w-full rounded-full text-[10px] ${isSelectedForMove ? 'border-amber-300 text-amber-300' : 'border-primary/20'}`}
         >
           {isSelectedForMove ? `Cancelar seleção — clique numa célula` : 'Selecionar para mover'}
+        </Button>
+      )}
+
+      {isMaster && !isCurrentTurn && (
+        <Button onClick={onMakeCurrentTurn} variant="outline" size="sm" className="w-full rounded-full border-accent/30 text-accent">
+          <ChevronsRight className="h-3.5 w-3.5 mr-2" />
+          Tornar turno atual
         </Button>
       )}
 
