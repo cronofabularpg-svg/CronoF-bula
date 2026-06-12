@@ -10,14 +10,127 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { MapPin, Search, ChevronRight, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices, ShieldCheck, XCircle, PanelRightClose, PanelRightOpen, Route, NotebookTabs, Compass } from "lucide-react"
+import { MapPin, Search, ChevronRight, ChevronLeft, Lock, Eye, EyeOff, Info, Sparkles, Plus, Sword, Package, MessageSquare, Dices, ShieldCheck, XCircle, PanelRightClose, PanelRightOpen, Route, NotebookTabs, Compass, Building2, Mountain, Skull, Landmark, DoorOpen, AlertTriangle, Store, Star, Image as ImageIcon, Settings2, Crosshair } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { R2ImageUpload, type MediaAsset } from "@/components/uploads/r2-image-upload"
+
+// ----------------------------------------------------------------------------
+// Mapa Vivo em camadas: cada location tem uma escala (map_scope) e pode
+// pertencer a outra location (parent_location_id), formando a hierarquia
+// Mundo -> Região/Cidade -> Local/Dungeon. A aba "Locais/Dungeons" agrupa os
+// escopos 'local' e 'dungeon' em uma única visão de navegação.
+// ----------------------------------------------------------------------------
+
+type MapScope = "world" | "region" | "city" | "local" | "dungeon"
+type MapTab = "world" | "region" | "city" | "local_dungeon"
+type MapMarkerType = "point" | "city" | "region" | "dungeon" | "landmark" | "portal" | "danger" | "shop" | "quest"
+
+type Location = {
+  id: string
+  name: string
+  type: string | null
+  description: string | null
+  visibility: string | null
+  status: string | null
+  image_url: string | null
+  map_scope: MapScope
+  parent_location_id: string | null
+  map_position_x: number
+  map_position_y: number
+  map_marker_type: MapMarkerType
+  map_icon: string | null
+  map_scale: "tiny" | "small" | "medium" | "large" | "huge"
+  map_image_fit: "contain" | "cover"
+  map_grid_enabled: boolean
+  map_grid_opacity: number
+}
+
+type BreadcrumbEntry = { id: string | null; name: string; tab: MapTab }
+
+const MAP_TABS: { key: MapTab; label: string }[] = [
+  { key: "world", label: "Mundo" },
+  { key: "region", label: "Regiões" },
+  { key: "city", label: "Cidades" },
+  { key: "local_dungeon", label: "Locais/Dungeons" },
+]
+
+const SCOPE_PANEL_TITLE: Record<MapTab, string> = {
+  world: "Locais do Mundo",
+  region: "Locais da Região",
+  city: "Locais da Cidade",
+  local_dungeon: "Pontos Internos",
+}
+
+const MARKER_TYPE_META: Record<MapMarkerType, { label: string; icon: React.ElementType }> = {
+  point: { label: "Ponto", icon: MapPin },
+  city: { label: "Cidade", icon: Building2 },
+  region: { label: "Região", icon: Mountain },
+  dungeon: { label: "Dungeon", icon: Skull },
+  landmark: { label: "Marco", icon: Landmark },
+  portal: { label: "Portal", icon: DoorOpen },
+  danger: { label: "Perigo", icon: AlertTriangle },
+  shop: { label: "Loja", icon: Store },
+  quest: { label: "Missão", icon: Star },
+}
+
+const SCALE_SIZE_PX: Record<Location["map_scale"], number> = {
+  tiny: 28,
+  small: 34,
+  medium: 42,
+  large: 52,
+  huge: 64,
+}
+
+function tabToScope(tab: MapTab): MapScope | null {
+  if (tab === "local_dungeon") return null
+  return tab
+}
+
+function locationMatchesTab(loc: Location, tab: MapTab): boolean {
+  if (tab === "local_dungeon") return loc.map_scope === "local" || loc.map_scope === "dungeon"
+  return loc.map_scope === tab
+}
+
+function childTabForLocation(loc: Location): MapTab {
+  switch (loc.map_scope) {
+    case "world": return "city"
+    case "region": return "city"
+    case "city": return "local_dungeon"
+    case "local": return "local_dungeon"
+    case "dungeon": return "local_dungeon"
+    default: return "city"
+  }
+}
+
+function normalizeLocation(raw: any): Location {
+  return {
+    id: raw.id,
+    name: raw.name,
+    type: raw.type ?? null,
+    description: raw.description ?? null,
+    visibility: raw.visibility ?? null,
+    status: raw.status ?? null,
+    image_url: raw.image_url ?? null,
+    map_scope: (raw.map_scope ?? "world") as MapScope,
+    parent_location_id: raw.parent_location_id ?? null,
+    map_position_x: raw.map_position_x ?? 50,
+    map_position_y: raw.map_position_y ?? 50,
+    map_marker_type: (raw.map_marker_type ?? "point") as MapMarkerType,
+    map_icon: raw.map_icon ?? null,
+    map_scale: (raw.map_scale ?? "medium") as Location["map_scale"],
+    map_image_fit: (raw.map_image_fit ?? "contain") as "contain" | "cover",
+    map_grid_enabled: raw.map_grid_enabled ?? false,
+    map_grid_opacity: raw.map_grid_opacity ?? 0.35,
+  }
+}
+
+const LOCATION_SELECT = "id, name, type, description, visibility, status, image_url, map_scope, parent_location_id, map_position_x, map_position_y, map_marker_type, map_icon, map_scale, map_image_fit, map_grid_enabled, map_grid_opacity"
 
 export default function MapaVivo() {
   const { id: campaignId } = useParams() as { id: string }
@@ -25,7 +138,7 @@ export default function MapaVivo() {
   const { user } = useUser()
   const { toast } = useToast()
 
-  const [activeNode, setActiveNode] = React.useState<any>(null)
+  const [activeNode, setActiveNode] = React.useState<Location | null>(null)
   const [isTraveling, setIsTraveling] = React.useState(false)
   const [travelEvent, setTravelEvent] = React.useState<{ 
     type: 'peaceful' | 'item' | 'combat' | 'dialogue', 
@@ -40,15 +153,43 @@ export default function MapaVivo() {
   const [campaign, setCampaign] = React.useState<{ id: string; owner_id: string } | null>(null)
   const [activeSession, setActiveSession] = React.useState<{ id: string; title: string } | null>(null)
   const [activeScene, setActiveScene] = React.useState<{ id: string; title: string } | null>(null)
-  const [locations, setLocations] = React.useState<any[]>([])
+  const [locations, setLocations] = React.useState<Location[]>([])
   const [loading, setLoading] = React.useState(true)
   const [isCreateLocationOpen, setIsCreateLocationOpen] = React.useState(false)
   const [isCreatingLocation, setIsCreatingLocation] = React.useState(false)
   const [isInvestigateOpen, setIsInvestigateOpen] = React.useState(false)
   const [isPanelOpen, setIsPanelOpen] = React.useState(true)
   const [mobileMapTab, setMobileMapTab] = React.useState("mapa")
-  const [newLocation, setNewLocation] = React.useState({ name: "", type: "city", description: "", visibility: "visible" })
+  const [newLocation, setNewLocation] = React.useState({
+    name: "",
+    type: "city",
+    description: "",
+    visibility: "visible",
+    map_scope: "world" as MapScope,
+    map_marker_type: "point" as MapMarkerType,
+    parent_location_id: "",
+    map_position_x: "50",
+    map_position_y: "50",
+  })
   const [membershipRole, setMembershipRole] = React.useState<string | null>(null)
+
+  // Navegação em camadas: pilha de breadcrumb. O primeiro item é sempre o
+  // Mundo (id null). "Entrar neste mapa" empilha; "Voltar" desempilha.
+  const [breadcrumbStack, setBreadcrumbStack] = React.useState<BreadcrumbEntry[]>([
+    { id: null, name: "Mundo", tab: "world" },
+  ])
+
+  // Edição de posição de marcador (mestre): X%/Y% manuais ou clique no mapa.
+  const [positioningLocationId, setPositioningLocationId] = React.useState<string | null>(null)
+  const [posXInput, setPosXInput] = React.useState("50")
+  const [posYInput, setPosYInput] = React.useState("50")
+
+  // Ajuste de imagem/grade da camada atual (mestre).
+  const [adjustImageOpen, setAdjustImageOpen] = React.useState(false)
+  const [adjustFitInput, setAdjustFitInput] = React.useState<"contain" | "cover">("contain")
+  const [adjustGridEnabledInput, setAdjustGridEnabledInput] = React.useState(false)
+  const [adjustGridOpacityInput, setAdjustGridOpacityInput] = React.useState("35")
+  const [adjustSubmitting, setAdjustSubmitting] = React.useState(false)
 
   // Preparação Fase 10: item_type='map' poderá liberar anotações pessoais no Mapa Vivo.
   // Não bloqueia a visualização básica de locais já visíveis.
@@ -92,8 +233,59 @@ export default function MapaVivo() {
 
   const isMaster = campaign?.owner_id === user?.uid || ['owner', 'master', 'assistant_master'].includes(membershipRole || '')
   const isVisibleToPlayers = (visibility: string | null | undefined) => !['secret', 'master_only', 'hidden'].includes(visibility || '')
-  const visibleLocations = locations.filter((location) => isMaster || isVisibleToPlayers(location.visibility))
-  const secretLocations = isMaster ? locations.filter((location) => !isVisibleToPlayers(location.visibility)) : []
+  const allVisibleLocations = locations.filter((location) => isMaster || isVisibleToPlayers(location.visibility))
+
+  // Navegação em camadas: a camada/escopo atual e o "local pai" são derivados
+  // do topo da pilha de breadcrumb.
+  const currentCrumb = breadcrumbStack[breadcrumbStack.length - 1]
+  const currentTab = currentCrumb.tab
+  const currentParentLocationId = currentCrumb.id
+
+  const scopedLocations = locations.filter((location) => {
+    if (currentTab === "world") {
+      return location.map_scope === "world" || location.parent_location_id === null
+    }
+    return locationMatchesTab(location, currentTab) && location.parent_location_id === currentParentLocationId
+  })
+
+  const visibleLocations = scopedLocations.filter((location) => isMaster || isVisibleToPlayers(location.visibility))
+  const secretLocations = isMaster ? scopedLocations.filter((location) => !isVisibleToPlayers(location.visibility)) : []
+  const markersToRender = isMaster ? scopedLocations : visibleLocations
+
+  // A imagem de fundo da camada atual vem do local "pai" (quando navegando
+  // para dentro de uma cidade/local) ou, na raiz do Mundo, de uma location
+  // com map_scope='world' sem pai que tenha uma imagem cadastrada.
+  const currentViewLocation = currentParentLocationId
+    ? locations.find((location) => location.id === currentParentLocationId) ?? null
+    : locations.find((location) => location.map_scope === "world" && location.parent_location_id === null && !!location.image_url) ?? null
+
+  const backgroundImageUrl = currentViewLocation?.image_url ?? null
+
+  function handleTabClick(tab: MapTab) {
+    setActiveNode(null)
+    setPositioningLocationId(null)
+    if (tab === "world") {
+      setBreadcrumbStack([{ id: null, name: "Mundo", tab: "world" }])
+      return
+    }
+    setBreadcrumbStack((prev) => {
+      const next = [...prev]
+      next[next.length - 1] = { ...next[next.length - 1], tab }
+      return next
+    })
+  }
+
+  function handleEnterLocation(location: Location) {
+    setActiveNode(null)
+    setPositioningLocationId(null)
+    setBreadcrumbStack((prev) => [...prev, { id: location.id, name: location.name, tab: childTabForLocation(location) }])
+  }
+
+  function handleGoBack() {
+    setActiveNode(null)
+    setPositioningLocationId(null)
+    setBreadcrumbStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev))
+  }
 
   React.useEffect(() => {
     if (!campaignId) return
@@ -105,7 +297,7 @@ export default function MapaVivo() {
 
       const { data: locationData, error: locationError } = await supabase
         .from('locations')
-        .select('id, name, type, description, visibility, status, image_url')
+        .select(LOCATION_SELECT)
         .eq('campaign_id', campaignId)
         .order('created_at', { ascending: false })
 
@@ -164,7 +356,7 @@ export default function MapaVivo() {
       }
 
       if (!active) return
-      setLocations(locationData || [])
+      setLocations((locationData || []).map(normalizeLocation))
       setActiveSession(sessionData)
       setActiveScene(sceneData)
       setLoading(false)
@@ -177,6 +369,15 @@ export default function MapaVivo() {
     }
   }, [campaignId, toast, user])
 
+  // Mantém os campos de posição (X%/Y%) do painel sincronizados com o local
+  // selecionado, para que "Salvar Posição" comece a partir do valor atual.
+  React.useEffect(() => {
+    if (activeNode) {
+      setPosXInput(String(activeNode.map_position_x))
+      setPosYInput(String(activeNode.map_position_y))
+    }
+  }, [activeNode?.id])
+
   const displayLocations = visibleLocations.map((location, index) => ({
     ...location,
     coords: {
@@ -185,7 +386,7 @@ export default function MapaVivo() {
     }
   }))
 
-  function renderLocationRows(items: any[], emptyText: string, secret = false) {
+  function renderLocationRows(items: Location[], emptyText: string, secret = false) {
     if (items.length === 0) {
       return (
         <p className="text-sm text-muted-foreground font-heading italic py-4">
@@ -196,32 +397,38 @@ export default function MapaVivo() {
 
     return (
       <div className="space-y-3">
-        {items.map((loc) => (
-          <button
-            key={loc.id}
-            type="button"
-            onClick={() => setActiveNode(displayLocations.find((node) => node.id === loc.id) || loc)}
-            className="w-full text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-primary/40 transition-colors"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-display font-bold text-accent">{loc.name}</p>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-widest mt-1">{loc.type || 'local'}</p>
+        {items.map((loc) => {
+          const markerMeta = MARKER_TYPE_META[loc.map_marker_type] || MARKER_TYPE_META.point
+          const MarkerIcon = markerMeta.icon
+          return (
+            <button
+              key={loc.id}
+              type="button"
+              onClick={() => setActiveNode(loc)}
+              className="w-full text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:border-primary/40 transition-colors"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-display font-bold text-accent flex items-center gap-2">
+                    <MarkerIcon className="h-4 w-4 text-primary" /> {loc.name}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-widest mt-1">{loc.type || markerMeta.label}</p>
+                </div>
+                <Badge variant="outline" className={secret ? "border-destructive/30 text-destructive" : "border-primary/30 text-primary"}>
+                  {loc.visibility || 'visible'}
+                </Badge>
               </div>
-              <Badge variant="outline" className={secret ? "border-destructive/30 text-destructive" : "border-primary/30 text-primary"}>
-                {loc.visibility || 'visible'}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground font-heading italic leading-relaxed mt-3 line-clamp-3">
-              {loc.description || 'Nenhum detalhe registrado ainda.'}
-            </p>
-            {loc.image_url && (
-              <div className="mt-3 h-20 w-full rounded-lg overflow-hidden border border-white/10">
-                <img src={loc.image_url} alt={loc.name} className="w-full h-full object-cover opacity-70" />
-              </div>
-            )}
-          </button>
-        ))}
+              <p className="text-xs text-muted-foreground font-heading italic leading-relaxed mt-3 line-clamp-3">
+                {loc.description || 'Nenhum detalhe registrado ainda.'}
+              </p>
+              {loc.image_url && (
+                <div className="mt-3 h-20 w-full rounded-lg overflow-hidden border border-white/10">
+                  <img src={loc.image_url} alt={loc.name} className="w-full h-full object-cover opacity-70" />
+                </div>
+              )}
+            </button>
+          )
+        })}
       </div>
     )
   }
@@ -243,10 +450,10 @@ export default function MapaVivo() {
           <Accordion type="multiple" defaultValue={["locais", "legenda"]} className="px-5 py-4">
             <AccordionItem value="locais" className="border-white/10">
               <AccordionTrigger className="font-ui text-xs uppercase tracking-widest">
-                <Compass className="mr-2 h-4 w-4 text-primary" /> Locais Visíveis
+                <Compass className="mr-2 h-4 w-4 text-primary" /> {SCOPE_PANEL_TITLE[currentTab]}
               </AccordionTrigger>
               <AccordionContent>
-                {renderLocationRows(visibleLocations, "Nenhum local visível foi registrado ainda.")}
+                {renderLocationRows(visibleLocations, "Nenhum local visível foi registrado nesta camada ainda.")}
               </AccordionContent>
             </AccordionItem>
 
@@ -305,9 +512,9 @@ export default function MapaVivo() {
     if (mobileMapTab === "locais") {
       return (
         <div className="rounded-3xl border border-white/10 bg-card/80 backdrop-blur-xl p-5">
-          <h2 className="font-display text-2xl text-accent mb-4">Locais Visíveis</h2>
+          <h2 className="font-display text-2xl text-accent mb-4">{SCOPE_PANEL_TITLE[currentTab]}</h2>
           <ScrollArea className="h-[54vh] pr-3">
-            {renderLocationRows(visibleLocations, "Nenhum local visível foi registrado ainda.")}
+            {renderLocationRows(visibleLocations, "Nenhum local visível foi registrado nesta camada ainda.")}
           </ScrollArea>
         </div>
       )
@@ -427,11 +634,24 @@ export default function MapaVivo() {
     setTravelEvent(null)
   }
 
+  function handleOpenCreateLocation(open: boolean) {
+    if (open) {
+      setNewLocation((p) => ({
+        ...p,
+        map_scope: tabToScope(currentTab) ?? "local",
+        parent_location_id: currentParentLocationId ?? "",
+      }))
+    }
+    setIsCreateLocationOpen(open)
+  }
+
   async function handleCreateLocation() {
     if (!campaignId || !user || !newLocation.name.trim()) return
     setIsCreatingLocation(true)
     try {
       const supabase = createClient()
+      const posX = Math.max(0, Math.min(100, parseFloat(newLocation.map_position_x) || 50))
+      const posY = Math.max(0, Math.min(100, parseFloat(newLocation.map_position_y) || 50))
       const { data, error } = await supabase
         .from('locations')
         .insert({
@@ -442,16 +662,31 @@ export default function MapaVivo() {
           visibility: newLocation.visibility,
           status: 'active',
           created_by: user.uid,
+          map_scope: newLocation.map_scope,
+          map_marker_type: newLocation.map_marker_type,
+          parent_location_id: newLocation.parent_location_id || null,
+          map_position_x: posX,
+          map_position_y: posY,
         })
-        .select('id, name, type, description, visibility, status, image_url')
+        .select(LOCATION_SELECT)
         .single()
 
       if (error) throw error
 
-      setLocations((prev) => [data, ...prev])
+      setLocations((prev) => [normalizeLocation(data), ...prev])
       toast({ title: "Ponto Marcado", description: `${newLocation.name} agora existe no mapa.` })
       setIsCreateLocationOpen(false)
-      setNewLocation({ name: "", type: "city", description: "", visibility: "visible" })
+      setNewLocation({
+        name: "",
+        type: "city",
+        description: "",
+        visibility: "visible",
+        map_scope: tabToScope(currentTab) ?? "local",
+        map_marker_type: "point",
+        parent_location_id: currentParentLocationId ?? "",
+        map_position_x: "50",
+        map_position_y: "50",
+      })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erro na Cartografia", description: e.message })
     } finally {
@@ -473,13 +708,73 @@ export default function MapaVivo() {
     }
 
     setLocations((prev) => prev.map((loc) => loc.id === activeNode.id ? { ...loc, image_url: mediaAsset.public_url } : loc))
-    setActiveNode((prev: any) => prev ? { ...prev, image_url: mediaAsset.public_url } : prev)
+    setActiveNode((prev) => prev ? { ...prev, image_url: mediaAsset.public_url } : prev)
     toast({ title: "Imagem do local atualizada" })
+  }
+
+  async function handleSavePosition(locationId: string, x: number, y: number) {
+    const clampedX = Math.max(0, Math.min(100, x))
+    const clampedY = Math.max(0, Math.min(100, y))
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('locations')
+      .update({ map_position_x: clampedX, map_position_y: clampedY })
+      .eq('id', locationId)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao salvar posição", description: error.message })
+      return
+    }
+
+    setLocations((prev) => prev.map((loc) => loc.id === locationId ? { ...loc, map_position_x: clampedX, map_position_y: clampedY } : loc))
+    setActiveNode((prev) => prev && prev.id === locationId ? { ...prev, map_position_x: clampedX, map_position_y: clampedY } : prev)
+    setPositioningLocationId(null)
+    toast({ title: "Posição atualizada", description: `X: ${clampedX.toFixed(1)}% · Y: ${clampedY.toFixed(1)}%` })
+  }
+
+  function handleMapAreaClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!isMaster || !positioningLocationId || !backgroundImageUrl) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = ((e.clientX - rect.left) / rect.width) * 100
+    const y = ((e.clientY - rect.top) / rect.height) * 100
+    handleSavePosition(positioningLocationId, x, y)
+  }
+
+  function openAdjustImage() {
+    if (!currentViewLocation) return
+    setAdjustFitInput(currentViewLocation.map_image_fit)
+    setAdjustGridEnabledInput(currentViewLocation.map_grid_enabled)
+    setAdjustGridOpacityInput(String(Math.round(currentViewLocation.map_grid_opacity * 100)))
+    setAdjustImageOpen(true)
+  }
+
+  async function handleSaveImageAdjust() {
+    if (!currentViewLocation) return
+    setAdjustSubmitting(true)
+    const supabase = createClient()
+    const opacity = Math.max(10, Math.min(100, parseInt(adjustGridOpacityInput, 10) || 35)) / 100
+    const { error } = await supabase
+      .from('locations')
+      .update({ map_image_fit: adjustFitInput, map_grid_enabled: adjustGridEnabledInput, map_grid_opacity: opacity })
+      .eq('id', currentViewLocation.id)
+
+    setAdjustSubmitting(false)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao ajustar mapa", description: error.message })
+      return
+    }
+
+    const viewLocationId = currentViewLocation.id
+    setLocations((prev) => prev.map((loc) => loc.id === viewLocationId ? { ...loc, map_image_fit: adjustFitInput, map_grid_enabled: adjustGridEnabledInput, map_grid_opacity: opacity } : loc))
+    setAdjustImageOpen(false)
+    toast({ title: "Configuração do mapa atualizada" })
   }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <header className="p-5 lg:p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center z-10 shrink-0">
+      <header className="p-5 lg:p-6 border-b border-white/5 bg-background/80 backdrop-blur-md flex flex-col gap-4 z-10 shrink-0">
+        <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
         <div>
           <h1 className="text-2xl font-display font-bold flex items-center tracking-tight">
             <MapPin className="mr-3 h-6 w-6 text-primary animate-pulse" /> Mapa Vivo
@@ -501,7 +796,7 @@ export default function MapaVivo() {
             </Button>
           )}
           {isMaster && (
-            <Dialog open={isCreateLocationOpen} onOpenChange={setIsCreateLocationOpen}>
+            <Dialog open={isCreateLocationOpen} onOpenChange={handleOpenCreateLocation}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm" className="rounded-full border-primary/30 text-primary hover:bg-primary/10">
                   <Plus className="mr-2 h-4 w-4" /> Novo Ponto
@@ -557,6 +852,74 @@ export default function MapaVivo() {
                       </Select>
                     </div>
                   </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Escala / Camada</Label>
+                      <Select value={newLocation.map_scope} onValueChange={(v) => setNewLocation((p) => ({ ...p, map_scope: v as MapScope }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="world">Mundo</SelectItem>
+                          <SelectItem value="region">Região</SelectItem>
+                          <SelectItem value="city">Cidade</SelectItem>
+                          <SelectItem value="local">Local</SelectItem>
+                          <SelectItem value="dungeon">Dungeon</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Marcador</Label>
+                      <Select value={newLocation.map_marker_type} onValueChange={(v) => setNewLocation((p) => ({ ...p, map_marker_type: v as MapMarkerType }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(MARKER_TYPE_META).map(([key, meta]) => (
+                            <SelectItem key={key} value={key}>{meta.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2 col-span-1">
+                      <Label>Pertence a</Label>
+                      <Select value={newLocation.parent_location_id || "none"} onValueChange={(v) => setNewLocation((p) => ({ ...p, parent_location_id: v === "none" ? "" : v }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhum (Mundo)</SelectItem>
+                          {locations.map((loc) => (
+                            <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="loc-pos-x">Posição X%</Label>
+                      <Input
+                        id="loc-pos-x"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={newLocation.map_position_x}
+                        onChange={(e) => setNewLocation((p) => ({ ...p, map_position_x: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="loc-pos-y">Posição Y%</Label>
+                      <Input
+                        id="loc-pos-y"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={newLocation.map_position_y}
+                        onChange={(e) => setNewLocation((p) => ({ ...p, map_position_y: e.target.value }))}
+                      />
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="loc-desc">Descrição</Label>
                     <Textarea
@@ -595,12 +958,12 @@ export default function MapaVivo() {
               </DialogHeader>
               <ScrollArea className="max-h-96">
                 <div className="space-y-3 pr-4">
-                  {locations.length === 0 && (
+                  {allVisibleLocations.length === 0 && (
                     <p className="text-sm text-muted-foreground font-heading italic text-center py-8">
                       Nenhum local foi descoberto ainda.
                     </p>
                   )}
-                  {locations.map((loc) => (
+                  {allVisibleLocations.map((loc) => (
                     <div key={loc.id} className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="font-display font-bold text-accent">{loc.name}</span>
@@ -616,6 +979,42 @@ export default function MapaVivo() {
             </DialogContent>
           </Dialog>
         </div>
+        </div>
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground font-bold flex-wrap">
+            {breadcrumbStack.map((entry, idx) => (
+              <React.Fragment key={idx}>
+                {idx > 0 && <ChevronRight className="h-3 w-3 opacity-50" />}
+                <button
+                  type="button"
+                  onClick={() => setBreadcrumbStack(breadcrumbStack.slice(0, idx + 1))}
+                  className={idx === breadcrumbStack.length - 1 ? "text-accent" : "hover:text-accent transition-colors"}
+                >
+                  {idx === 0 ? "Mundo" : entry.name}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {MAP_TABS.map((tab) => (
+              <Button
+                key={tab.key}
+                size="sm"
+                variant={currentTab === tab.key ? "default" : "outline"}
+                className={`rounded-full text-[10px] uppercase tracking-widest ${currentTab === tab.key ? "" : "border-white/10"}`}
+                onClick={() => handleTabClick(tab.key)}
+              >
+                {tab.label}
+              </Button>
+            ))}
+            {breadcrumbStack.length > 1 && (
+              <Button size="sm" variant="ghost" className="rounded-full text-[10px] uppercase tracking-widest" onClick={handleGoBack}>
+                <ChevronLeft className="mr-1 h-3 w-3" /> Voltar
+              </Button>
+            )}
+          </div>
+        </div>
       </header>
 
       <div className="flex-1 bg-[#0A0A0F] p-4 lg:p-6 overflow-hidden">
@@ -630,22 +1029,83 @@ export default function MapaVivo() {
 
         <div className={`h-[calc(100vh-184px)] min-h-[560px] grid gap-4 ${isPanelOpen ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'}`}>
           <div className={`${mobileMapTab === "mapa" ? "block" : "hidden"} lg:block relative overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0F]`}>
-        <div className="absolute inset-0 opacity-10" 
-             style={{ backgroundImage: 'radial-gradient(circle, #C8A24A 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
-        
-        <div className="absolute inset-0">
+        {backgroundImageUrl ? (
+          <div
+            className="absolute inset-0 bg-[#05050A]"
+            style={{
+              backgroundImage: `url(${backgroundImageUrl})`,
+              backgroundSize: currentViewLocation?.map_image_fit === 'cover' ? 'cover' : 'contain',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              cursor: isMaster && positioningLocationId ? 'crosshair' : 'default',
+            }}
+            onClick={handleMapAreaClick}
+          />
+        ) : (
+          <div className="absolute inset-0 opacity-10"
+               style={{ backgroundImage: 'radial-gradient(circle, #C8A24A 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
+        )}
+
+        {backgroundImageUrl && currentViewLocation?.map_grid_enabled && (
+          <div
+            className="absolute inset-0 grid pointer-events-none"
+            style={{ gridTemplateColumns: 'repeat(10, 1fr)', gridTemplateRows: 'repeat(10, 1fr)', opacity: currentViewLocation.map_grid_opacity }}
+          >
+            {Array.from({ length: 100 }).map((_, i) => (
+              <div key={i} className="border border-amber-200/40" />
+            ))}
+          </div>
+        )}
+
+        {!backgroundImageUrl && isMaster && !loading && (
+          <p className="absolute bottom-4 left-4 right-4 text-center text-[11px] text-muted-foreground font-heading italic bg-black/40 rounded-xl py-2 px-4 border border-white/5 z-10">
+            Adicione uma imagem para alinhar os pontos ao mapa.
+          </p>
+        )}
+
+        {isMaster && backgroundImageUrl && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="absolute top-4 left-4 rounded-full bg-black/50 border-white/10 text-[10px] uppercase tracking-widest z-30"
+            onClick={openAdjustImage}
+          >
+            <Settings2 className="mr-2 h-3 w-3" /> Ajustar imagem/grade
+          </Button>
+        )}
+
+        {isMaster && positioningLocationId && (
+          <div className="absolute top-4 right-4 z-30 px-3 py-2 rounded-full bg-primary/90 text-[10px] uppercase tracking-widest font-bold text-primary-foreground flex items-center gap-2">
+            <Crosshair className="h-3 w-3" /> Clique no mapa para posicionar
+            <button type="button" className="ml-1 underline" onClick={() => setPositioningLocationId(null)}>Cancelar</button>
+          </div>
+        )}
+
+        <div className="absolute inset-0 pointer-events-none">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center text-muted-foreground font-heading italic">
               Consultando rotas e presságios...
             </div>
           )}
-          {!loading && displayLocations.map((node: any) => (
-            <MapNode 
-              key={node.id} 
-              node={node} 
-              isActive={activeNode?.id === node.id} 
-              onClick={() => setActiveNode(node)}
-            />
+          {!loading && (backgroundImageUrl ? (
+            markersToRender.map((location) => (
+              <MapMarker
+                key={location.id}
+                location={location}
+                isActive={activeNode?.id === location.id}
+                isSecret={!isVisibleToPlayers(location.visibility)}
+                onClick={() => setActiveNode(location)}
+              />
+            ))
+          ) : (
+            displayLocations.map((node) => (
+              <MapNode
+                key={node.id}
+                node={node}
+                isActive={activeNode?.id === node.id}
+                onClick={() => setActiveNode(node)}
+              />
+            ))
           ))}
         </div>
 
@@ -663,7 +1123,14 @@ export default function MapaVivo() {
                </Button>
              </div>
              <div className="p-6 space-y-6">
-               <h2 className="text-2xl font-display font-bold text-accent">{activeNode.name}</h2>
+               <div className="flex items-start justify-between gap-3">
+                 <h2 className="text-2xl font-display font-bold text-accent">{activeNode.name}</h2>
+                 {isMaster && (
+                   <Badge variant="outline" className={!isVisibleToPlayers(activeNode.visibility) ? "border-destructive/30 text-destructive shrink-0" : "border-primary/30 text-primary shrink-0"}>
+                     {activeNode.visibility || 'visible'}
+                   </Badge>
+                 )}
+               </div>
                <p className="text-xs text-muted-foreground font-heading italic leading-relaxed">
                  {activeNode.description || 'Um local envolto em névoas e mistérios.'}
                </p>
@@ -672,12 +1139,56 @@ export default function MapaVivo() {
                    campaignId={campaignId}
                    usageType="location_image"
                    visibility="party"
-                   label="Definir imagem do local"
+                   label={activeNode.image_url ? "Usar imagem como mapa desta camada" : "Adicionar imagem do mapa"}
                    mode="direct"
                    entityType="location"
                    entityId={activeNode.id}
                    onUploaded={handleLocationImageUploaded}
                  />
+               )}
+               {isMaster && backgroundImageUrl && (
+                 <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+                   <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold flex items-center gap-2">
+                     <Crosshair className="h-3 w-3" /> Posição no Mapa
+                   </p>
+                   <div className="grid grid-cols-2 gap-3">
+                     <div className="space-y-1">
+                       <Label htmlFor="pos-x" className="text-[10px]">X%</Label>
+                       <Input id="pos-x" type="number" min={0} max={100} value={posXInput} onChange={(e) => setPosXInput(e.target.value)} />
+                     </div>
+                     <div className="space-y-1">
+                       <Label htmlFor="pos-y" className="text-[10px]">Y%</Label>
+                       <Input id="pos-y" type="number" min={0} max={100} value={posYInput} onChange={(e) => setPosYInput(e.target.value)} />
+                     </div>
+                   </div>
+                   <div className="flex gap-2">
+                     <Button
+                       size="sm"
+                       variant="outline"
+                       className="flex-1 text-[10px] uppercase tracking-widest"
+                       onClick={() => handleSavePosition(activeNode.id, parseFloat(posXInput) || 0, parseFloat(posYInput) || 0)}
+                     >
+                       Salvar Posição
+                     </Button>
+                     <Button
+                       size="sm"
+                       variant={positioningLocationId === activeNode.id ? "default" : "outline"}
+                       className="flex-1 text-[10px] uppercase tracking-widest"
+                       onClick={() => setPositioningLocationId(positioningLocationId === activeNode.id ? null : activeNode.id)}
+                     >
+                       {positioningLocationId === activeNode.id ? "Clique no mapa..." : "Clicar no Mapa"}
+                     </Button>
+                   </div>
+                 </div>
+               )}
+               {(activeNode.image_url || locations.some((loc) => loc.parent_location_id === activeNode.id)) && (
+                 <Button
+                   variant="secondary"
+                   className="w-full py-5 rounded-xl font-bold uppercase tracking-widest text-[11px]"
+                   onClick={() => handleEnterLocation(activeNode)}
+                 >
+                   Entrar neste mapa <ChevronRight className="ml-2 h-4 w-4" />
+                 </Button>
                )}
                <Button
                  className="w-full py-6 rounded-xl bg-primary hover:bg-primary/90 font-bold uppercase tracking-widest text-[11px]"
@@ -759,6 +1270,59 @@ export default function MapaVivo() {
             </div>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={adjustImageOpen} onOpenChange={setAdjustImageOpen}>
+          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-display text-accent">Ajustar Imagem do Mapa</DialogTitle>
+              <DialogDescription className="font-heading italic">
+                Controla como a imagem de {currentViewLocation?.name ?? "esta camada"} se encaixa e se uma grade decorativa é exibida sobre ela.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Ajuste da Imagem</Label>
+                <Select value={adjustFitInput} onValueChange={(v) => setAdjustFitInput(v as "contain" | "cover")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="contain">Conter (mostra a imagem inteira)</SelectItem>
+                    <SelectItem value="cover">Cobrir (preenche o quadro, pode cortar bordas)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4">
+                <div>
+                  <Label className="text-sm">Grade decorativa</Label>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Apenas visual — não é o grid tático de combate</p>
+                </div>
+                <Switch checked={adjustGridEnabledInput} onCheckedChange={setAdjustGridEnabledInput} />
+              </div>
+              {adjustGridEnabledInput && (
+                <div className="space-y-2">
+                  <Label>Opacidade da Grade</Label>
+                  <Select value={adjustGridOpacityInput} onValueChange={setAdjustGridOpacityInput}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10%</SelectItem>
+                      <SelectItem value="25">25%</SelectItem>
+                      <SelectItem value="35">35%</SelectItem>
+                      <SelectItem value="50">50%</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button className="bg-primary hover:bg-primary/90" disabled={adjustSubmitting} onClick={handleSaveImageAdjust}>
+                {adjustSubmitting ? "Salvando..." : "Salvar Ajustes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
           </div>
 
           <aside className={`${mobileMapTab === "mapa" ? "hidden" : "block"} lg:block ${isPanelOpen ? "" : "lg:hidden"} min-h-0 overflow-hidden`}>
@@ -775,11 +1339,11 @@ export default function MapaVivo() {
   )
 }
 
-function MapNode({ node, isActive, onClick }: { node: any, isActive: boolean, onClick: () => void }) {
+function MapNode({ node, isActive, onClick }: { node: Location & { coords: { x: number, y: number } }, isActive: boolean, onClick: () => void }) {
   const isUnknown = node.status === 'unknown'
   return (
-    <div 
-      className={`absolute cursor-pointer transition-all duration-700 flex flex-col items-center group
+    <div
+      className={`absolute cursor-pointer transition-all duration-700 flex flex-col items-center group pointer-events-auto
         ${isActive ? 'z-20 scale-125' : 'z-10 hover:scale-110'}
         ${isUnknown ? 'opacity-20' : 'opacity-100'}
       `}
@@ -795,5 +1359,35 @@ function MapNode({ node, isActive, onClick }: { node: any, isActive: boolean, on
         {isUnknown ? '???' : node.name}
       </span>
     </div>
+  )
+}
+
+function MapMarker({ location, isActive, isSecret, onClick }: { location: Location, isActive: boolean, isSecret: boolean, onClick: () => void }) {
+  const markerMeta = MARKER_TYPE_META[location.map_marker_type] || MARKER_TYPE_META.point
+  const Icon = markerMeta.icon
+  const size = SCALE_SIZE_PX[location.map_scale] ?? 42
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`absolute flex flex-col items-center transition-all duration-300 pointer-events-auto
+        ${isActive ? 'z-20 scale-110' : 'z-10 hover:scale-105'}
+      `}
+      style={{ left: `${location.map_position_x}%`, top: `${location.map_position_y}%`, transform: 'translate(-50%, -50%)' }}
+    >
+      <div
+        className={`rounded-2xl border-2 flex items-center justify-center shadow-arcane transition-all
+          ${isActive ? 'bg-primary border-accent animate-glow' : 'bg-card/90 border-white/10 hover:border-primary/50'}
+          ${isSecret ? 'border-dashed border-destructive/50' : ''}
+        `}
+        style={{ width: size, height: size }}
+      >
+        <Icon className={isActive ? 'text-white' : 'text-primary'} style={{ width: size * 0.5, height: size * 0.5 }} />
+      </div>
+      <span className={`mt-1 text-[9px] font-black uppercase tracking-[0.15em] px-2 py-0.5 rounded-full bg-card/70 backdrop-blur-sm border border-white/5 ${isActive ? 'text-white bg-primary' : 'text-muted-foreground'}`}>
+        {location.name}
+      </span>
+    </button>
   )
 }
