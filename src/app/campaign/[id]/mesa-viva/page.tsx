@@ -707,16 +707,16 @@ export default function MesaViva() {
     setRollReason('')
   }
 
-  if (loadingSession) return <div className="h-screen flex items-center justify-center font-heading italic text-3xl opacity-40">Sincronizando com o Arcano...</div>
+  if (loadingSession) return <div className="h-screen flex items-center justify-center font-heading italic text-xl sm:text-3xl opacity-40 px-4 text-center">Sincronizando com o Arcano...</div>
   if (!activeSession || !activeScene) return (
-    <div className="h-screen flex flex-col items-center justify-center space-y-10 text-center p-10 bg-[#050711]">
-      <div className="p-8 rounded-full bg-primary/5 border border-primary/10 text-primary opacity-30"><MessageSquareDashed className="h-24 w-24" /></div>
+    <div className="h-screen flex flex-col items-center justify-center space-y-6 sm:space-y-10 text-center p-6 sm:p-10 bg-[#050711]">
+      <div className="p-6 sm:p-8 rounded-full bg-primary/5 border border-primary/10 text-primary opacity-30"><MessageSquareDashed className="h-14 w-14 sm:h-24 sm:w-24" /></div>
       <div className="space-y-4">
-        <h2 className="text-5xl font-display font-black text-primary">Portal Fechado</h2>
-        <p className="text-2xl font-heading italic text-muted-foreground max-w-md">"O tempo parou nesta crônica. Nenhuma sessão está em curso."</p>
+        <h2 className="text-3xl sm:text-5xl font-display font-black text-primary">Portal Fechado</h2>
+        <p className="text-base sm:text-2xl font-heading italic text-muted-foreground max-w-md">"O tempo parou nesta crônica. Nenhuma sessão está em curso."</p>
       </div>
       {isMaster && (
-        <Button asChild className="btn-ritual rounded-full px-12 h-16 text-xl shadow-arcane">
+        <Button asChild className="btn-ritual rounded-full px-8 sm:px-12 h-12 sm:h-16 text-base sm:text-xl shadow-arcane">
           <a href={`/campaign/${campaignId}/master`}>Iniciar Sessão Oficial</a>
         </Button>
       )}
@@ -785,28 +785,28 @@ export default function MesaViva() {
 
       {/* Área Principal de Jogo */}
       <div className="flex-1 flex flex-col relative">
-        <header className="p-8 border-b border-primary/10 bg-background/60 backdrop-blur-xl flex justify-between items-center px-12 shrink-0 z-10">
-          <div className="flex items-center gap-6">
-            <div className="flex flex-col">
-              <h2 className="text-3xl font-display font-black text-primary flex items-center gap-3 tracking-tighter">
-                {isMaster && <ShieldCheck className="h-6 w-6 text-primary" />}
+        <header className="p-4 sm:p-6 lg:p-8 border-b border-primary/10 bg-background/60 backdrop-blur-xl flex justify-between items-center px-4 sm:px-8 lg:px-12 shrink-0 z-10 gap-4">
+          <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+            <div className="flex flex-col min-w-0">
+              <h2 className="text-xl sm:text-2xl lg:text-3xl font-display font-black text-primary flex items-center gap-3 tracking-tighter">
+                {isMaster && <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6" />}
                 Mesa Viva
               </h2>
-              <p className="text-sm text-muted-foreground font-heading italic mt-1">Sessão interativa com apoio da IA.</p>
-              <div className="flex items-center gap-4 mt-2">
+              <p className="hidden sm:block text-sm text-muted-foreground font-heading italic mt-1">Sessão interativa com apoio da IA.</p>
+              <div className="flex items-center gap-2 sm:gap-4 mt-1 sm:mt-2 flex-wrap">
                  <Badge className="bg-primary/10 text-primary border-primary/20 text-[9px] font-display tracking-widest px-3 py-0.5">Sessão Ativa</Badge>
-                 <span className="text-[9px] text-muted-foreground font-display uppercase tracking-[0.2em] opacity-40">{activeSession.title}</span>
+                 <span className="text-[9px] text-muted-foreground font-display uppercase tracking-[0.2em] opacity-40 truncate">{activeSession.title}</span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-5 shrink-0">
              <Dialog open={isDiceDialogOpen} onOpenChange={setIsDiceDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="btn-ritual rounded-2xl h-14 w-14 literary-shadow group">
-                  <Dices className="h-7 w-7 group-hover:rotate-45 transition-transform duration-500" />
+                <Button className="btn-ritual rounded-2xl h-11 w-11 sm:h-14 sm:w-14 literary-shadow group">
+                  <Dices className="h-5 w-5 sm:h-7 sm:w-7 group-hover:rotate-45 transition-transform duration-500" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="bg-card border-primary/30 literary-shadow max-w-md p-10 rounded-[2rem]">
+              <DialogContent className="bg-card border-primary/30 literary-shadow max-w-md p-6 sm:p-10 rounded-[2rem] max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="font-display text-3xl text-primary text-center">Lançar Sorte</DialogTitle>
                 </DialogHeader>
@@ -821,25 +821,25 @@ export default function MesaViva() {
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="virtual" className="space-y-8 pt-8 animate-in slide-in-from-left-4 duration-300">
+                  <TabsContent value="virtual" className="space-y-6 sm:space-y-8 pt-6 sm:pt-8 animate-in slide-in-from-left-4 duration-300">
                     <div className="space-y-6">
                       <div className="space-y-3">
                         <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Fórmula Arcana</Label>
-                        <div className="flex gap-3">
-                          <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="1d20+5" className="font-code text-2xl h-16 bg-black/20 border-primary/20 text-center" />
-                          <Button onClick={() => handleRollDice(false)} className="btn-ritual h-16 px-10">Rolar</Button>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <Input value={diceFormula} onChange={e => setDiceFormula(e.target.value)} placeholder="1d20+5" className="font-code text-xl sm:text-2xl h-14 sm:h-16 bg-black/20 border-primary/20 text-center" />
+                          <Button onClick={() => handleRollDice(false)} className="btn-ritual h-14 sm:h-16 px-10">Rolar</Button>
                         </div>
                       </div>
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="physical" className="space-y-8 pt-8 animate-in slide-in-from-right-4 duration-300">
+                  <TabsContent value="physical" className="space-y-6 sm:space-y-8 pt-6 sm:pt-8 animate-in slide-in-from-right-4 duration-300">
                     <div className="space-y-6">
                       <div className="space-y-3">
                         <Label className="text-[10px] font-display uppercase tracking-widest text-primary opacity-60">Resultado Real</Label>
-                        <div className="flex gap-3">
-                          <Input value={physicalResult} onChange={e => setPhysicalResult(e.target.value)} placeholder="Total" type="number" className="font-code text-3xl h-16 bg-black/20 border-primary/20 text-center" />
-                          <Button onClick={() => handleRollDice(true)} className="btn-ritual h-16 px-10">Registrar</Button>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <Input value={physicalResult} onChange={e => setPhysicalResult(e.target.value)} placeholder="Total" type="number" className="font-code text-2xl sm:text-3xl h-14 sm:h-16 bg-black/20 border-primary/20 text-center" />
+                          <Button onClick={() => handleRollDice(true)} className="btn-ritual h-14 sm:h-16 px-10">Registrar</Button>
                         </div>
                       </div>
                     </div>
@@ -850,16 +850,16 @@ export default function MesaViva() {
           </div>
         </header>
 
-        <div className="mx-12 mt-6 rounded-2xl border border-secondary/20 bg-secondary/5 px-5 py-3 text-[11px] text-muted-foreground font-heading italic">
+        <div className="mx-4 sm:mx-8 lg:mx-12 mt-6 rounded-2xl border border-secondary/20 bg-secondary/5 px-5 py-3 text-[11px] text-muted-foreground font-heading italic">
           A Mesa Viva é o modo de jogo assistido pela IA. O mestre continua aprovando o que vira cânone.
         </div>
 
-        <ScrollArea className="flex-1 p-10 px-16 bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, rgba(var(--primary), 0.05) 1px, transparent 1px)', backgroundSize: '80px 80px' }}>
-          <div className="max-w-5xl mx-auto space-y-16 pb-32">
+        <ScrollArea className="flex-1 p-4 sm:p-6 lg:p-10 px-4 sm:px-8 lg:px-16 bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, rgba(var(--primary), 0.05) 1px, transparent 1px)', backgroundSize: '80px 80px' }}>
+          <div className="max-w-5xl mx-auto space-y-8 sm:space-y-12 lg:space-y-16 pb-32">
             {loadingMessages ? (
-              <div className="flex flex-col items-center justify-center py-40 gap-6 opacity-30 animate-pulse">
+              <div className="flex flex-col items-center justify-center py-20 sm:py-40 gap-6 opacity-30 animate-pulse">
                  <Hourglass className="h-12 w-12 text-primary animate-spin-slow" />
-                 <p className="font-heading italic text-2xl tracking-widest">Consultando os anais...</p>
+                 <p className="font-heading italic text-xl sm:text-2xl tracking-widest">Consultando os anais...</p>
               </div>
             ) : timelineEntries.length > 0 ? (
               timelineEntries.map((entry) =>
@@ -881,19 +881,19 @@ export default function MesaViva() {
                 )
               )
             ) : (
-              <div className="text-center py-40 space-y-8 opacity-40">
-                <Sparkles className="h-16 w-16 text-primary/50 mx-auto" />
-                <p className="text-3xl font-heading italic max-w-md mx-auto leading-relaxed">"O tempo parou. As páginas estão em branco. O que você faz?"</p>
+              <div className="text-center py-20 sm:py-40 space-y-8 opacity-40 px-4">
+                <Sparkles className="h-12 w-12 sm:h-16 sm:w-16 text-primary/50 mx-auto" />
+                <p className="text-xl sm:text-3xl font-heading italic max-w-md mx-auto leading-relaxed">"O tempo parou. As páginas estão em branco. O que você faz?"</p>
               </div>
             )}
             {isAiThinking && (
-              <div className="flex gap-10 animate-pulse max-w-4xl">
-                <div className="h-16 w-16 rounded-[1.5rem] bg-secondary/10 border border-secondary/30 flex items-center justify-center oracle-glow">
-                  <Sparkles className="h-7 w-7 text-secondary animate-spin-slow" />
+              <div className="flex gap-4 sm:gap-10 animate-pulse max-w-4xl">
+                <div className="h-10 w-10 sm:h-16 sm:w-16 rounded-[1.5rem] bg-secondary/10 border border-secondary/30 flex items-center justify-center oracle-glow shrink-0">
+                  <Sparkles className="h-5 w-5 sm:h-7 sm:w-7 text-secondary animate-spin-slow" />
                 </div>
-                <div className="space-y-4 py-2">
+                <div className="space-y-4 py-2 min-w-0">
                   <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.3em]">Tecendo o destino...</p>
-                  <div className="h-5 w-[30rem] bg-secondary/10 rounded-full" />
+                  <div className="h-5 w-full max-w-[30rem] bg-secondary/10 rounded-full" />
                 </div>
               </div>
             )}
@@ -901,15 +901,15 @@ export default function MesaViva() {
               <PlayerSuggestionNotice content={aiSuggestion} onDismiss={() => setAiSuggestion(null)} />
             )}
             {aiError && (
-              <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
-                <div className="h-16 w-16 rounded-[1.5rem] bg-destructive/10 p-4 shrink-0 border border-destructive/40 flex items-center justify-center">
-                  <Sparkles className="h-7 w-7 text-destructive" />
+              <div className="flex gap-4 sm:gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
+                <div className="h-10 w-10 sm:h-16 sm:w-16 rounded-[1.5rem] bg-destructive/10 p-2 sm:p-4 shrink-0 border border-destructive/40 flex items-center justify-center">
+                  <Sparkles className="h-5 w-5 sm:h-7 sm:w-7 text-destructive" />
                 </div>
-                <div className="space-y-4 pt-1">
+                <div className="space-y-4 pt-1 min-w-0">
                   <p className="text-[10px] font-display uppercase font-bold text-destructive tracking-[0.4em]">
                     O Oráculo está em silêncio
                   </p>
-                  <div className="text-xl leading-relaxed text-foreground/80 font-heading italic">
+                  <div className="text-base sm:text-xl leading-relaxed text-foreground/80 font-heading italic">
                     {aiError}
                   </div>
                   <button
@@ -925,7 +925,7 @@ export default function MesaViva() {
         </ScrollArea>
 
         {/* Rodapé de Ação: jogador e mestre, sempre acessível */}
-        <div className="p-10 px-16 border-t border-primary/10 bg-background/95 backdrop-blur-2xl shrink-0">
+        <div className="p-4 sm:p-6 lg:p-10 px-4 sm:px-8 lg:px-16 border-t border-primary/10 bg-background/95 backdrop-blur-2xl shrink-0">
           <div className="max-w-5xl mx-auto space-y-5">
             <PlayerActionPanel
               actionMode={actionMode}
@@ -981,7 +981,7 @@ export default function MesaViva() {
             <div className="relative">
               <Textarea
                 placeholder={getActionPlaceholder(actionMode)}
-                className="pr-28 py-8 min-h-[7rem] max-h-64 rounded-[2rem] bg-black/40 border-primary/20 font-heading italic focus-visible:ring-primary text-2xl literary-shadow placeholder:text-muted-foreground/30 px-10 resize-none"
+                className="pr-16 sm:pr-20 lg:pr-28 py-4 sm:py-6 lg:py-8 min-h-[5rem] sm:min-h-[7rem] max-h-64 rounded-[1.5rem] sm:rounded-[2rem] bg-black/40 border-primary/20 font-heading italic focus-visible:ring-primary text-base sm:text-xl lg:text-2xl literary-shadow placeholder:text-muted-foreground/30 px-4 sm:px-6 lg:px-10 resize-none"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -991,13 +991,13 @@ export default function MesaViva() {
                   }
                 }}
               />
-              <div className="absolute right-6 bottom-6">
+              <div className="absolute right-3 bottom-3 sm:right-6 sm:bottom-6">
                 <Button
                   onClick={handleSubmitAction}
                   disabled={isAiThinking}
-                  className="h-16 w-16 rounded-[1.5rem] btn-ritual shadow-arcane hover:scale-110 active:scale-95 transition-all disabled:opacity-40"
+                  className="h-11 w-11 sm:h-16 sm:w-16 rounded-2xl sm:rounded-[1.5rem] btn-ritual shadow-arcane hover:scale-110 active:scale-95 transition-all disabled:opacity-40"
                 >
-                  <Send className="h-7 w-7" />
+                  <Send className="h-5 w-5 sm:h-7 sm:w-7" />
                 </Button>
               </div>
             </div>
@@ -1007,7 +1007,7 @@ export default function MesaViva() {
 
       {/* Finalizar Sessão: confirmação leve, fluxo completo de encerramento vive no Painel do Mestre */}
       <Dialog open={isFinalizeDialogOpen} onOpenChange={setIsFinalizeDialogOpen}>
-        <DialogContent className="bg-card border-primary/30 literary-shadow max-w-md p-10 rounded-[2rem]">
+        <DialogContent className="bg-card border-primary/30 literary-shadow max-w-md p-6 sm:p-10 rounded-[2rem] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl text-primary">Finalizar e Gerar Rascunho de Crônica</DialogTitle>
             <DialogDescription className="font-heading italic text-muted-foreground pt-2">
@@ -1086,11 +1086,11 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
 
   if (isNarrator) {
     return (
-      <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-1000 max-w-6xl">
-        <div className="h-16 w-16 rounded-[1.5rem] bg-secondary/20 p-4 shrink-0 border border-secondary/40 shadow-arcane flex items-center justify-center group relative overflow-hidden">
+      <div className="flex gap-4 sm:gap-10 animate-in fade-in slide-in-from-left-6 duration-1000 max-w-6xl">
+        <div className="h-10 w-10 sm:h-16 sm:w-16 rounded-[1.5rem] bg-secondary/20 p-2 sm:p-4 shrink-0 border border-secondary/40 shadow-arcane flex items-center justify-center group relative overflow-hidden">
           <Sparkles className="h-full w-full text-primary relative z-10" />
         </div>
-        <div className="space-y-4 pt-1">
+        <div className="space-y-4 pt-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <p className="text-[10px] font-display uppercase font-bold text-primary tracking-[0.4em]">
               {msg.senderName}
@@ -1100,7 +1100,7 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
           <ExpandableText
             text={msg.text}
             threshold={600}
-            className="text-3xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-6xl first-letter:font-display first-letter:mr-3 first-letter:float-left first-letter:text-primary"
+            className="text-lg sm:text-2xl lg:text-3xl leading-relaxed text-foreground/90 font-heading italic first-letter:text-4xl sm:first-letter:text-6xl first-letter:font-display first-letter:mr-3 first-letter:float-left first-letter:text-primary"
           />
         </div>
       </div>
@@ -1124,16 +1124,16 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
     return (
       <div className={`flex flex-col gap-3 ${isMine ? 'items-end' : 'items-start'}`}>
         <MessageBadges meta={msg.meta} status="Cânone" />
-        <div className={`flex gap-8 animate-in duration-700 zoom-in-95 ${isMine ? 'justify-end' : ''}`}>
-          <div className={`p-8 rounded-[2.5rem] border-2 flex items-center gap-10 literary-shadow transition-all hover:scale-105 ${
+        <div className={`flex gap-8 animate-in duration-700 zoom-in-95 max-w-full ${isMine ? 'justify-end' : ''}`}>
+          <div className={`p-4 sm:p-8 rounded-[1.5rem] sm:rounded-[2.5rem] border-2 flex items-center gap-4 sm:gap-10 literary-shadow transition-all hover:scale-105 max-w-full ${
             msg.rollData?.isPhysical ? 'bg-primary/5 border-primary/40 shadow-gold' : 'bg-secondary/5 border-secondary/40 shadow-arcane'
           }`}>
-            <div className={`p-5 rounded-[1.5rem] ${msg.rollData?.isPhysical ? 'bg-primary/20 text-primary' : 'bg-secondary/20 text-secondary'}`}>
-              {msg.rollData?.isPhysical ? <Hash className="h-10 w-10" /> : <Dices className="h-10 w-10" />}
+            <div className={`p-3 sm:p-5 rounded-2xl sm:rounded-[1.5rem] shrink-0 ${msg.rollData?.isPhysical ? 'bg-primary/20 text-primary' : 'bg-secondary/20 text-secondary'}`}>
+              {msg.rollData?.isPhysical ? <Hash className="h-6 w-6 sm:h-10 sm:w-10" /> : <Dices className="h-6 w-6 sm:h-10 sm:w-10" />}
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-display uppercase font-bold tracking-[0.2em] opacity-40 mb-2">{msg.senderName} conjurou {msg.rollData?.formula}</p>
-              <p className="text-6xl font-display font-black tracking-tighter text-foreground">{msg.rollData?.result}</p>
+              <p className="text-3xl sm:text-5xl lg:text-6xl font-display font-black tracking-tighter text-foreground">{msg.rollData?.result}</p>
               {msg.rollData?.reason && <p className="text-sm font-heading italic text-muted-foreground mt-3 border-l-2 border-primary/20 pl-4">"{msg.rollData?.reason}"</p>}
             </div>
           </div>
@@ -1145,11 +1145,11 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
   const senderPhoto = msg.senderPhotoURL || `https://picsum.photos/seed/${msg.senderId}/200/200`;
 
   return (
-    <div className={`flex gap-8 animate-in duration-500 ${isMine ? 'justify-end slide-in-from-right-8' : 'slide-in-from-left-8'}`}>
+    <div className={`flex gap-3 sm:gap-8 animate-in duration-500 ${isMine ? 'justify-end slide-in-from-right-8' : 'slide-in-from-left-8'}`}>
       {!isMine && (
         <Dialog>
           <DialogTrigger asChild>
-            <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-white/5 bg-black/40 shadow-lg cursor-zoom-in hover:scale-105 transition-transform">
+            <Avatar className="h-10 w-10 sm:h-16 sm:w-16 rounded-xl sm:rounded-[1.5rem] shrink-0 border-2 border-white/5 bg-black/40 shadow-lg cursor-zoom-in hover:scale-105 transition-transform">
               <AvatarImage src={senderPhoto} className="object-cover" />
               <AvatarFallback className="text-xl font-display font-bold">{msg.senderName[0]}</AvatarFallback>
             </Avatar>
@@ -1159,14 +1159,14 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
           </DialogContent>
         </Dialog>
       )}
-      <div className={`space-y-4 ${isMine ? 'text-right' : 'text-left'}`}>
+      <div className={`space-y-4 min-w-0 ${isMine ? 'text-right' : 'text-left'}`}>
         <div className={`flex items-center gap-3 flex-wrap ${isMine ? 'justify-end' : ''}`}>
           <p className={`text-[10px] font-display uppercase font-bold tracking-[0.3em] ${isMine ? 'text-primary' : 'text-muted-foreground opacity-60'}`}>
             {msg.senderName}
           </p>
           <MessageBadges meta={msg.meta} status="Cânone" />
         </div>
-        <div className={`p-8 rounded-[2rem] border-2 text-2xl inline-block max-w-2xl literary-shadow transition-all relative overflow-hidden ${
+        <div className={`p-4 sm:p-8 rounded-2xl sm:rounded-[2rem] border-2 text-base sm:text-xl lg:text-2xl inline-block max-w-full sm:max-w-2xl literary-shadow transition-all relative overflow-hidden ${
           isMine
             ? 'bg-primary/5 border-primary/30 text-foreground'
             : 'bg-black/40 border-white/5 text-foreground'
@@ -1187,7 +1187,7 @@ function OracleMessage({ msg, currentUserId }: { msg: any, currentUserId?: strin
       {isMine && (
         <Dialog>
           <DialogTrigger asChild>
-            <Avatar className="h-16 w-16 rounded-[1.5rem] shrink-0 border-2 border-primary/40 bg-primary/10 shadow-gold cursor-zoom-in hover:scale-105 transition-transform">
+            <Avatar className="h-10 w-10 sm:h-16 sm:w-16 rounded-xl sm:rounded-[1.5rem] shrink-0 border-2 border-primary/40 bg-primary/10 shadow-gold cursor-zoom-in hover:scale-105 transition-transform">
               <AvatarImage src={senderPhoto} className="object-cover" />
               <AvatarFallback className="text-primary font-display font-black text-xl">{msg.senderName[0]}</AvatarFallback>
             </Avatar>

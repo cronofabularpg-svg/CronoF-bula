@@ -126,21 +126,21 @@ export default function LocalManager() {
   }
 
   return (
-    <div className="p-10 max-w-7xl mx-auto space-y-12">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-10 border-white/5 gap-6">
+    <div className="p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto space-y-6 sm:space-y-8 lg:space-y-12">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-6 sm:pb-10 border-white/5 gap-6">
         <div>
-          <h1 className="text-5xl font-display font-black tracking-tighter text-primary flex items-center gap-4">
-            <Compass className="h-12 w-12" /> Atlas da Crônica
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-black tracking-tighter text-primary flex items-center gap-3 sm:gap-4">
+            <Compass className="h-8 w-8 sm:h-10 sm:w-10 lg:h-12 lg:w-12" /> Atlas da Crônica
           </h1>
-          <p className="text-muted-foreground mt-3 font-heading text-xl italic">Geografia, política e perigos dos reinos explorados.</p>
+          <p className="text-muted-foreground mt-3 font-heading text-base sm:text-lg lg:text-xl italic">Geografia, política e perigos dos reinos explorados.</p>
         </div>
         {isMaster && <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 literary-shadow rounded-full px-8">
+            <Button className="bg-primary hover:bg-primary/90 literary-shadow rounded-full px-8 w-full sm:w-auto">
               <Plus className="mr-2 h-4 w-4" /> Novo Local
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-card border-accent/30 max-w-2xl">
+          <DialogContent className="bg-card border-accent/30 max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="text-2xl font-display text-accent">Expandir o Mundo</DialogTitle></DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-6">
                <div className="space-y-4">
@@ -199,9 +199,9 @@ export default function LocalManager() {
         </Dialog>}
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
         {loadingLocs && (
-          <div className="col-span-full p-20 text-center italic opacity-50">Consultando as cartas do atlas...</div>
+          <div className="col-span-full p-8 sm:p-12 lg:p-20 text-center italic opacity-50">Consultando as cartas do atlas...</div>
         )}
         {!loadingLocs && locations.map((loc: any) => (
           <Card key={loc.id} className="bg-card/30 border-white/5 hover:border-primary/30 transition-all group overflow-hidden">
@@ -226,21 +226,21 @@ export default function LocalManager() {
                 </CardTitle>
                 <CardDescription className="font-heading italic line-clamp-2">{loc.description}</CardDescription>
              </CardHeader>
-             <CardFooter className="pt-0 p-6 flex gap-3">
+             <CardFooter className="pt-0 p-4 sm:p-6 flex flex-col sm:flex-row gap-3">
                 {isMaster && (
-                  <Button variant="ghost" size="sm" className="flex-1 bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black" onClick={() => toggleSecret(loc.id, loc.visibility)}>
+                  <Button variant="ghost" size="sm" className="flex-1 w-full sm:w-auto bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black" onClick={() => toggleSecret(loc.id, loc.visibility)}>
                      {['secret', 'master_only', 'hidden'].includes(loc.visibility) ? <><Eye className="mr-2 h-3 w-3" /> Revelar</> : <><EyeOff className="mr-2 h-3 w-3" /> Ocultar</>}
                   </Button>
                 )}
-                <Button variant="ghost" size="sm" className="bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black" onClick={() => router.push(`/campaign/${campaignId}/mapa-vivo`)}>
+                <Button variant="ghost" size="sm" className="flex-1 w-full sm:w-auto bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black" onClick={() => router.push(`/campaign/${campaignId}/mapa-vivo`)}>
                    <Navigation className="mr-2 h-3 w-3" /> Ver no Mapa
                 </Button>
              </CardFooter>
           </Card>
         ))}
         {!loadingLocs && locations.length === 0 && (
-          <div className="col-span-full p-20 border-2 border-dashed border-white/5 rounded-3xl text-center space-y-6">
-            <p className="text-muted-foreground font-heading italic text-lg">Nenhum local foi traçado no atlas desta crônica.</p>
+          <div className="col-span-full p-8 sm:p-12 lg:p-20 border-2 border-dashed border-white/5 rounded-3xl text-center space-y-6">
+            <p className="text-muted-foreground font-heading italic text-base sm:text-lg">Nenhum local foi traçado no atlas desta crônica.</p>
           </div>
         )}
       </div>

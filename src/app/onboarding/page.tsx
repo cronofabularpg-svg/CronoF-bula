@@ -448,7 +448,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-10 bg-background relative overflow-hidden">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 lg:p-10 bg-background relative overflow-x-hidden">
       <div className="absolute top-0 left-0 w-full h-1 bg-white/5">
         <div
           className="h-full bg-primary transition-all duration-500 ease-in-out"
@@ -456,16 +456,16 @@ export default function OnboardingPage() {
         />
       </div>
 
-      <div className="relative z-10 w-full max-w-4xl space-y-12">
+      <div className="relative z-10 w-full max-w-4xl space-y-8 sm:space-y-12 py-6">
         {step === 'role' && (
-          <div className="space-y-12 animate-in fade-in slide-in-from-right-4 duration-500">
+          <div className="space-y-8 sm:space-y-12 animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="text-center space-y-4">
               <div className="inline-flex items-center rounded-full border border-primary/30 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Passo {stepIndex} de {totalSteps}</div>
-              <h1 className="text-5xl font-display font-black tracking-tighter">Bem-vindo ao Cronofábula</h1>
-              <p className="text-xl font-heading italic text-muted-foreground">Qual será seu papel inicial nesta jornada?</p>
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-black tracking-tighter">Bem-vindo ao Cronofábula</h1>
+              <p className="text-base sm:text-xl font-heading italic text-muted-foreground">Qual será seu papel inicial nesta jornada?</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
               <RoleCard
                 icon={<ShieldCheck className="h-10 w-10" />}
                 title="Sou Mestre"
@@ -488,12 +488,12 @@ export default function OnboardingPage() {
           <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="text-center space-y-4">
               <div className="inline-flex items-center rounded-full border border-primary/30 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Passo {stepIndex} de {totalSteps}</div>
-              <h1 className="text-4xl font-display font-black tracking-tighter">Inicie sua Crônica</h1>
-              <p className="text-xl font-heading italic text-muted-foreground">Defina os pilares do seu novo mundo.</p>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-black tracking-tighter">Inicie sua Crônica</h1>
+              <p className="text-base sm:text-xl font-heading italic text-muted-foreground">Defina os pilares do seu novo mundo.</p>
             </div>
 
             <Card className="bg-card/30 border-white/5 backdrop-blur-md">
-              <CardContent className="p-10 space-y-8">
+              <CardContent className="p-4 sm:p-6 lg:p-10 space-y-6 sm:space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
                     <div className="space-y-2">
@@ -559,12 +559,12 @@ export default function OnboardingPage() {
           <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="text-center space-y-4">
               <div className="inline-flex items-center rounded-full border border-primary/30 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Passo {stepIndex} de {totalSteps}</div>
-              <h1 className="text-4xl font-display font-black tracking-tighter">Construa o Mundo</h1>
-              <p className="text-xl font-heading italic text-muted-foreground">Tudo aqui é opcional, mas dá vida à sua crônica desde o primeiro instante.</p>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-black tracking-tighter">Construa o Mundo</h1>
+              <p className="text-base sm:text-xl font-heading italic text-muted-foreground">Tudo aqui é opcional, mas dá vida à sua crônica desde o primeiro instante.</p>
             </div>
 
             <Card className="bg-card/30 border-white/5 backdrop-blur-md">
-              <CardContent className="p-10 space-y-8">
+              <CardContent className="p-4 sm:p-6 lg:p-10 space-y-6 sm:space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-2">
                     <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">Premissa Central</Label>
@@ -760,7 +760,7 @@ export default function OnboardingPage() {
                             onChange={e => updateInitialLocation(i, 'name', e.target.value)}
                             className="pr-8"
                           />
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <Select value={loc.type} onValueChange={v => updateInitialLocation(i, 'type', v)}>
                               <SelectTrigger>
                                 <SelectValue />
@@ -859,7 +859,7 @@ export default function OnboardingPage() {
                           onChange={e => updateInitialItem(i, 'name', e.target.value)}
                           className="pr-8"
                         />
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <Select value={item.item_type} onValueChange={v => updateInitialItem(i, 'item_type', v)}>
                             <SelectTrigger>
                               <SelectValue />
@@ -893,7 +893,7 @@ export default function OnboardingPage() {
                           value={item.description}
                           onChange={e => updateInitialItem(i, 'description', e.target.value)}
                         />
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <Select value={item.visibility} onValueChange={v => updateInitialItem(i, 'visibility', v)}>
                             <SelectTrigger>
                               <SelectValue />
@@ -973,12 +973,12 @@ export default function OnboardingPage() {
           <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="text-center space-y-4">
               <div className="inline-flex items-center rounded-full border border-primary/30 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.3em] text-primary">Passo {stepIndex} de {totalSteps}</div>
-              <h1 className="text-4xl font-display font-black tracking-tighter">Sua Identidade</h1>
-              <p className="text-xl font-heading italic text-muted-foreground">Escolha sua raça, classe e imagem oficial.</p>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-black tracking-tighter">Sua Identidade</h1>
+              <p className="text-base sm:text-xl font-heading italic text-muted-foreground">Escolha sua raça, classe e imagem oficial.</p>
             </div>
 
             <Card className="bg-card/30 border-white/5 backdrop-blur-md">
-              <CardContent className="p-10 space-y-8">
+              <CardContent className="p-4 sm:p-6 lg:p-10 space-y-6 sm:space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
                     <div className="space-y-2">
@@ -989,7 +989,7 @@ export default function OnboardingPage() {
                         onChange={e => setCharacterData({...characterData, name: e.target.value})}
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="font-ui uppercase text-[10px] tracking-widest font-bold">Raça</Label>
                         <Select value={characterData.race} onValueChange={v => setCharacterData({...characterData, race: v})}>
@@ -1057,14 +1057,14 @@ export default function OnboardingPage() {
         )}
 
         {step === 'done' && (
-          <div className="space-y-12 text-center animate-in fade-in zoom-in-95 duration-700">
+          <div className="space-y-8 sm:space-y-12 text-center animate-in fade-in zoom-in-95 duration-700">
             <div className="space-y-4">
-              <h1 className="text-6xl font-display font-black tracking-tighter">Sua Fábula Começou</h1>
-              <p className="text-2xl font-heading italic text-muted-foreground max-w-2xl mx-auto">
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-display font-black tracking-tighter">Sua Fábula Começou</h1>
+              <p className="text-base sm:text-xl lg:text-2xl font-heading italic text-muted-foreground max-w-2xl mx-auto">
                 As leis de D&D 5e foram gravadas no pergaminho. O tempo agora corre a seu favor.
               </p>
             </div>
-            <Button asChild size="lg" className="px-16 py-10 text-2xl font-display rounded-full btn-arcane border-2 border-accent">
+            <Button asChild size="lg" className="w-full sm:w-auto px-8 sm:px-16 py-6 sm:py-10 text-lg sm:text-2xl font-display rounded-full btn-arcane border-2 border-accent">
               <Link href="/dashboard">Entrar na Mesa Viva</Link>
             </Button>
           </div>
@@ -1078,13 +1078,13 @@ function RoleCard({ icon, title, desc, active, onClick }: { icon: React.ReactNod
   return (
     <div
       onClick={onClick}
-      className={`p-10 rounded-3xl border-2 cursor-pointer transition-all duration-300 group ${active ? 'bg-primary/10 border-primary shadow-arcane' : 'bg-card/30 border-white/5 hover:border-primary/40'}`}
+      className={`p-6 sm:p-10 rounded-3xl border-2 cursor-pointer transition-all duration-300 group ${active ? 'bg-primary/10 border-primary shadow-arcane' : 'bg-card/30 border-white/5 hover:border-primary/40'}`}
     >
-      <div className={`p-4 rounded-2xl w-fit mb-6 transition-colors ${active ? 'bg-primary text-white' : 'bg-primary/10 text-primary group-hover:bg-primary/20'}`}>
+      <div className={`p-4 rounded-2xl w-fit mb-4 sm:mb-6 transition-colors ${active ? 'bg-primary text-white' : 'bg-primary/10 text-primary group-hover:bg-primary/20'}`}>
         {icon}
       </div>
-      <h3 className="text-2xl font-display font-bold mb-3">{title}</h3>
-      <p className="text-muted-foreground font-heading italic leading-relaxed">{desc}</p>
+      <h3 className="text-xl sm:text-2xl font-display font-bold mb-3">{title}</h3>
+      <p className="text-sm sm:text-base text-muted-foreground font-heading italic leading-relaxed">{desc}</p>
     </div>
   )
 }

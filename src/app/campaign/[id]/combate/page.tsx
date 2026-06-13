@@ -2814,14 +2814,14 @@ export default function Combate() {
   )
 
   return (
-    <div className="min-h-screen bg-[#050711] p-6 md:p-10 space-y-8">
+    <div className="min-h-screen bg-[#050711] p-4 sm:p-6 md:p-10 space-y-6 sm:space-y-8">
       {/* Cabeçalho */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="space-y-2">
           <Badge className="bg-primary/20 text-primary border-primary/30 uppercase tracking-widest text-[10px]">
             {combat ? `Rodada ${combat.round_number}` : "Sem combate"}
           </Badge>
-          <h1 className="text-4xl md:text-5xl font-display font-black tracking-tighter text-foreground literary-shadow">
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-display font-black tracking-tighter text-foreground literary-shadow">
             {combat ? combat.title : "Nenhum combate ativo"}
           </h1>
           {combat && currentTurnParticipant && (
@@ -3102,9 +3102,9 @@ export default function Combate() {
       )}
 
       {!combat && (
-        <Card className="bg-card/40 border-primary/10 rounded-[2.5rem] p-12 text-center">
-          <Swords className="h-12 w-12 text-primary/40 mx-auto mb-4" />
-          <p className="text-muted-foreground font-heading italic text-lg">
+        <Card className="bg-card/40 border-primary/10 rounded-[2.5rem] p-6 sm:p-12 text-center">
+          <Swords className="h-10 w-10 sm:h-12 sm:w-12 text-primary/40 mx-auto mb-4" />
+          <p className="text-muted-foreground font-heading italic text-base sm:text-lg">
             {isMaster
               ? "Nenhum combate em andamento. Use \"Iniciar Combate\" para começar."
               : "Aguardando o mestre iniciar um combate."}
@@ -3158,9 +3158,9 @@ export default function Combate() {
             <div className="space-y-2">
               <Label className="flex items-center gap-2 text-destructive"><Skull className="h-4 w-4" /> Aplicar dano</Label>
               <div className="flex gap-2">
-                <Input type="number" value={damageAmount} onChange={(e) => setDamageAmount(e.target.value)} placeholder="Quantidade" className="bg-black/30 border-primary/20" />
-                <Input value={damageType} onChange={(e) => setDamageType(e.target.value)} placeholder="Tipo (opcional)" className="bg-black/30 border-primary/20" />
-                <Button onClick={handleApplyDamage} disabled={actionSubmitting} variant="outline" className="border-destructive/40 text-destructive whitespace-nowrap">
+                <Input type="number" value={damageAmount} onChange={(e) => setDamageAmount(e.target.value)} placeholder="Quantidade" className="bg-black/30 border-primary/20 min-w-0" />
+                <Input value={damageType} onChange={(e) => setDamageType(e.target.value)} placeholder="Tipo (opcional)" className="bg-black/30 border-primary/20 min-w-0" />
+                <Button onClick={handleApplyDamage} disabled={actionSubmitting} variant="outline" className="border-destructive/40 text-destructive whitespace-nowrap shrink-0">
                   Aplicar
                 </Button>
               </div>
@@ -3169,8 +3169,8 @@ export default function Combate() {
             <div className="space-y-2">
               <Label className="flex items-center gap-2 text-primary"><Heart className="h-4 w-4" /> Aplicar cura</Label>
               <div className="flex gap-2">
-                <Input type="number" value={healAmount} onChange={(e) => setHealAmount(e.target.value)} placeholder="Quantidade" className="bg-black/30 border-primary/20" />
-                <Button onClick={handleApplyHealing} disabled={actionSubmitting} variant="outline" className="border-primary/40 text-primary whitespace-nowrap">
+                <Input type="number" value={healAmount} onChange={(e) => setHealAmount(e.target.value)} placeholder="Quantidade" className="bg-black/30 border-primary/20 min-w-0" />
+                <Button onClick={handleApplyHealing} disabled={actionSubmitting} variant="outline" className="border-primary/40 text-primary whitespace-nowrap shrink-0">
                   Aplicar
                 </Button>
               </div>
@@ -3330,11 +3330,11 @@ export default function Combate() {
           </DialogHeader>
 
           <Tabs defaultValue="personagens">
-            <TabsList className="grid grid-cols-4 gap-1 bg-black/30">
-              <TabsTrigger value="personagens">Personagens</TabsTrigger>
-              <TabsTrigger value="npcs">NPCs Principais</TabsTrigger>
-              <TabsTrigger value="mobs">Mobs/Bestiário</TabsTrigger>
-              <TabsTrigger value="surpresa">Inimigo Surpresa</TabsTrigger>
+            <TabsList className="flex h-auto w-full overflow-x-auto gap-1 bg-black/30 sm:grid sm:grid-cols-4">
+              <TabsTrigger value="personagens" className="shrink-0 whitespace-nowrap text-xs sm:text-sm">Personagens</TabsTrigger>
+              <TabsTrigger value="npcs" className="shrink-0 whitespace-nowrap text-xs sm:text-sm">NPCs Principais</TabsTrigger>
+              <TabsTrigger value="mobs" className="shrink-0 whitespace-nowrap text-xs sm:text-sm">Mobs/Bestiário</TabsTrigger>
+              <TabsTrigger value="surpresa" className="shrink-0 whitespace-nowrap text-xs sm:text-sm">Inimigo Surpresa</TabsTrigger>
             </TabsList>
 
             <TabsContent value="personagens" className="pt-3 space-y-2">
@@ -3345,8 +3345,8 @@ export default function Combate() {
                   return <p className="text-sm text-muted-foreground font-heading italic">Todos os personagens da campanha já estão no combate.</p>
                 }
                 return available.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-primary/10 p-3 flex items-center gap-3">
-                    <span className="flex-1 font-heading">{c.name}</span>
+                  <div key={c.id} className="rounded-xl border border-primary/10 p-3 flex flex-wrap items-center gap-3">
+                    <span className="flex-1 min-w-[100px] font-heading">{c.name}</span>
                     <Input
                       type="number"
                       placeholder="Iniciativa (auto)"
@@ -3497,7 +3497,7 @@ export default function Combate() {
 
       {/* Modal de criação rápida do campo de batalha */}
       <Dialog open={battlefieldOpen} onOpenChange={setBattlefieldOpen}>
-        <DialogContent className="max-w-md bg-[#0b0e1c] border-primary/20">
+        <DialogContent className="max-w-md bg-[#0b0e1c] border-primary/20 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl text-primary flex items-center gap-2">
               <MapIcon className="h-5 w-5" /> Criar Campo de Batalha
@@ -3539,7 +3539,7 @@ export default function Combate() {
 
       {/* Modal de configuração do Grid Tático D&D */}
       <Dialog open={gridSetupOpen} onOpenChange={setGridSetupOpen}>
-        <DialogContent className="max-w-md bg-[#0b0e1c] border-primary/20">
+        <DialogContent className="max-w-md bg-[#0b0e1c] border-primary/20 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl text-primary flex items-center gap-2">
               <Grid3x3 className="h-5 w-5" /> Grid Tático D&D

@@ -1841,25 +1841,25 @@ export default function MasterPanel() {
   const isOwner = campaign?.owner_id === user?.uid
 
   return (
-    <div className="p-10 max-w-7xl mx-auto space-y-12 animate-in fade-in duration-700">
-      <header className="flex justify-between items-center border-b pb-10 border-white/5">
-        <div className="flex items-center gap-6">
-          <div className="p-4 rounded-2xl bg-primary/20 text-primary border border-primary/30">
-            <ShieldCheck className="h-10 w-10" />
+    <div className="p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto space-y-6 sm:space-y-8 lg:space-y-12 animate-in fade-in duration-700">
+      <header className="flex justify-between items-center border-b pb-6 sm:pb-10 border-white/5">
+        <div className="flex items-center gap-3 sm:gap-6">
+          <div className="p-3 sm:p-4 rounded-2xl bg-primary/20 text-primary border border-primary/30 shrink-0">
+            <ShieldCheck className="h-7 w-7 sm:h-10 sm:w-10" />
           </div>
           <div>
-            <h1 className="text-5xl font-display font-black tracking-tighter">Portal do Mestre</h1>
-            <p className="text-muted-foreground mt-2 font-heading text-lg italic">Validação canônica, gestão de sessões e oráculo arcano.</p>
+            <h1 className="text-2xl sm:text-4xl lg:text-5xl font-display font-black tracking-tighter">Portal do Mestre</h1>
+            <p className="text-muted-foreground mt-1 sm:mt-2 font-heading text-sm sm:text-base lg:text-lg italic">Validação canônica, gestão de sessões e oráculo arcano.</p>
           </div>
         </div>
       </header>
 
-      <Tabs defaultValue="approvals" className="space-y-10">
-        <TabsList className="bg-card/50 border border-white/5 p-1.5 rounded-2xl h-14">
-          <TabsTrigger value="approvals" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Pendências</TabsTrigger>
-          <TabsTrigger value="sessions" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Sessões</TabsTrigger>
-          <TabsTrigger value="world-prep" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Preparação</TabsTrigger>
-          <TabsTrigger value="ai-config" className="rounded-xl px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold">Configurações</TabsTrigger>
+      <Tabs defaultValue="approvals" className="space-y-6 sm:space-y-10">
+        <TabsList className="bg-card/50 border border-white/5 p-1.5 rounded-2xl h-14 flex w-full overflow-x-auto sm:inline-flex sm:w-auto">
+          <TabsTrigger value="approvals" className="rounded-xl px-4 sm:px-6 lg:px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold shrink-0 whitespace-nowrap">Pendências</TabsTrigger>
+          <TabsTrigger value="sessions" className="rounded-xl px-4 sm:px-6 lg:px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold shrink-0 whitespace-nowrap">Sessões</TabsTrigger>
+          <TabsTrigger value="world-prep" className="rounded-xl px-4 sm:px-6 lg:px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold shrink-0 whitespace-nowrap">Preparação</TabsTrigger>
+          <TabsTrigger value="ai-config" className="rounded-xl px-4 sm:px-6 lg:px-10 h-full font-ui uppercase tracking-widest text-[11px] font-bold shrink-0 whitespace-nowrap">Configurações</TabsTrigger>
         </TabsList>
 
         <TabsContent value="approvals" className="space-y-10">
@@ -1890,7 +1890,7 @@ export default function MasterPanel() {
             </div>
           </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
             <section className="space-y-6">
               <h3 className="text-[11px] uppercase font-bold tracking-[0.3em] text-muted-foreground opacity-50 font-ui flex items-center">
                 <Database className="mr-2 h-4 w-4" /> Solicitações de Jogadores
@@ -2003,8 +2003,8 @@ export default function MasterPanel() {
         </TabsContent>
 
         <TabsContent value="sessions" className="space-y-8">
-           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-            <Card className="bg-primary/5 border-primary/20 border-dashed col-span-1 p-8 space-y-8">
+           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 xl:gap-8">
+            <Card className="bg-primary/5 border-primary/20 border-dashed col-span-1 p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
               <div className="p-4 rounded-full bg-primary/20 text-primary w-fit mx-auto mb-2">
                 <Play className="h-8 w-8" />
               </div>
@@ -2049,7 +2049,7 @@ export default function MasterPanel() {
               </div>
             </Card>
 
-            <Card className="col-span-1 xl:col-span-2 bg-card/30 border-white/5 p-8">
+            <Card className="col-span-1 xl:col-span-2 bg-card/30 border-white/5 p-4 sm:p-6 lg:p-8">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-display font-bold text-2xl">Histórico de Sessões</h3>
               </div>
@@ -2060,14 +2060,14 @@ export default function MasterPanel() {
                   </div>
                 )}
                 {sessions.map((session) => (
-                  <div key={session.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center">
+                  <div key={session.id} className="p-4 rounded-xl bg-white/5 border border-white/5 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                     <div>
                       <h5 className="font-bold">{session.title}</h5>
                       <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">
                         Status: {session.status}
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {session.status === 'active' && (
                         <>
                           <Button
@@ -2107,8 +2107,8 @@ export default function MasterPanel() {
         </TabsContent>
 
         <TabsContent value="world-prep" className="space-y-8">
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-            <Card className="xl:col-span-1 bg-card/30 border-white/5 p-8 space-y-6">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 xl:gap-8">
+            <Card className="xl:col-span-1 bg-card/30 border-white/5 p-4 sm:p-6 lg:p-8 space-y-6">
               <div className="space-y-2">
                 <h3 className="font-display font-bold text-2xl flex items-center gap-3">
                   <BookMarked className="h-6 w-6 text-primary" /> Criar Manualmente
@@ -2173,8 +2173,8 @@ export default function MasterPanel() {
               </div>
             </Card>
 
-            <Card className="xl:col-span-2 bg-card/30 border-white/5 p-8 space-y-6">
-              <div className="flex items-start justify-between gap-6">
+            <Card className="xl:col-span-2 bg-card/30 border-white/5 p-4 sm:p-6 lg:p-8 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 sm:gap-6">
                 <div>
                   <h3 className="font-display font-bold text-2xl flex items-center gap-3">
                     <Wand2 className="h-6 w-6 text-primary" /> Importar Mundo com IA
@@ -2230,7 +2230,7 @@ export default function MasterPanel() {
           />
 
           {worldProposal && (
-            <Card className="bg-card/30 border-primary/20 p-8 space-y-8">
+            <Card className="bg-card/30 border-primary/20 p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h3 className="font-display font-bold text-2xl text-primary">
@@ -2279,8 +2279,8 @@ export default function MasterPanel() {
         </TabsContent>
 
         <TabsContent value="ai-config" className="space-y-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <Card className="bg-card/30 border-white/5 p-8 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+            <Card className="bg-card/30 border-white/5 p-4 sm:p-6 lg:p-8 space-y-6">
               <h3 className="font-display font-bold text-2xl flex items-center gap-3">
                 <Sparkles className="h-6 w-6 text-primary" /> Estado da IA
               </h3>
@@ -2335,7 +2335,7 @@ export default function MasterPanel() {
               </div>
             </Card>
 
-            <Card className="bg-card/30 border-white/5 p-8 space-y-6">
+            <Card className="bg-card/30 border-white/5 p-4 sm:p-6 lg:p-8 space-y-6">
               <h3 className="font-display font-bold text-2xl flex items-center gap-3">
                 <Wand2 className="h-6 w-6 text-primary" /> Testar IA da Campanha
               </h3>
@@ -2361,7 +2361,7 @@ export default function MasterPanel() {
           </div>
 
           {isOwner && (
-            <Card className="bg-destructive/5 border-destructive/30 p-8 space-y-6">
+            <Card className="bg-destructive/5 border-destructive/30 p-4 sm:p-6 lg:p-8 space-y-6">
               <h3 className="font-display font-bold text-2xl flex items-center gap-3 text-destructive">
                 <AlertTriangle className="h-6 w-6" /> Zona de Perigo
               </h3>
@@ -2369,7 +2369,7 @@ export default function MasterPanel() {
                 Estas ações afetam a visibilidade da campanha para todo o grupo. Nenhum dado de jogadores, NPCs, itens ou imagens é apagado.
               </p>
 
-              <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 gap-4">
                 <div>
                   <p className="font-bold text-sm">{campaign?.archived_at ? "Campanha arquivada" : "Arquivar campanha"}</p>
                   <p className="text-xs text-muted-foreground font-heading italic mt-1">
@@ -2380,7 +2380,7 @@ export default function MasterPanel() {
                 </div>
                 <Button
                   variant="outline"
-                  className="border-destructive/30 text-destructive hover:bg-destructive/10 shrink-0"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/10 w-full sm:w-auto shrink-0"
                   disabled={isArchivingCampaign}
                   onClick={() => handleArchiveCampaign(campaign?.archived_at ? 'restore' : 'archive')}
                 >
@@ -2389,7 +2389,7 @@ export default function MasterPanel() {
                 </Button>
               </div>
 
-              <div className="flex items-center justify-between p-4 rounded-xl bg-destructive/10 border border-destructive/20 gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-destructive/10 border border-destructive/20 gap-4">
                 <div>
                   <p className="font-bold text-sm">Excluir campanha</p>
                   <p className="text-xs text-muted-foreground font-heading italic mt-1">
@@ -2398,7 +2398,7 @@ export default function MasterPanel() {
                 </div>
                 <Button
                   variant="destructive"
-                  className="shrink-0"
+                  className="w-full sm:w-auto shrink-0"
                   onClick={() => { setDeleteCampaignConfirmName(""); setIsDeleteCampaignOpen(true) }}
                 >
                   <Trash2 className="mr-2 h-4 w-4" /> Excluir Campanha
@@ -2411,7 +2411,7 @@ export default function MasterPanel() {
 
       {/* Modal: Excluir Campanha */}
       <Dialog open={isDeleteCampaignOpen} onOpenChange={setIsDeleteCampaignOpen}>
-        <DialogContent className="bg-card border-destructive/30 max-w-lg">
+        <DialogContent className="bg-card border-destructive/30 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-display text-destructive flex items-center gap-3">
               <AlertTriangle className="h-6 w-6" /> Excluir campanha?
@@ -2447,7 +2447,7 @@ export default function MasterPanel() {
 
       {/* Modal: Entregar Item a Personagem */}
       <Dialog open={Boolean(deliverItem)} onOpenChange={(open) => !open && setDeliverItem(null)}>
-        <DialogContent className="bg-card border-accent/30 max-w-lg">
+        <DialogContent className="bg-card border-accent/30 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-display text-accent flex items-center gap-3">
               <Gift className="h-6 w-6" /> Entregar Item
@@ -2510,7 +2510,7 @@ export default function MasterPanel() {
 
       {/* Modal: Aprovar Level Up */}
       <Dialog open={Boolean(levelUpToApprove)} onOpenChange={(open) => !open && setLevelUpToApprove(null)}>
-        <DialogContent className="bg-card border-accent/30 max-w-lg">
+        <DialogContent className="bg-card border-accent/30 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-display text-accent flex items-center gap-3">
               <TrendingUp className="h-6 w-6" /> Aprovar Level Up
@@ -2599,7 +2599,7 @@ export default function MasterPanel() {
 
       {/* Modal: Criar Item Especial */}
       <Dialog open={Boolean(quickCreateKey)} onOpenChange={(open) => !open && setQuickCreateKey(null)}>
-        <DialogContent className="bg-card border-accent/30 max-w-lg">
+        <DialogContent className="bg-card border-accent/30 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-display text-accent flex items-center gap-3">
               {quickCreateKey ? SPECIAL_ITEM_PRESETS[quickCreateKey].icon : null}
@@ -2681,7 +2681,7 @@ export default function MasterPanel() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                  <div className="space-y-2">
                     <Label className="uppercase text-[10px] font-black tracking-widest text-primary">Figuras & NPCs</Label>
                     <div className="flex flex-wrap gap-2">

@@ -15,6 +15,12 @@ const PROTECTED_PREFIXES = [
  * redireciona usuários não autenticados que tentem acessar rotas protegidas.
  */
 export async function updateSession(request: NextRequest) {
+  // O fluxo OAuth ainda não tem sessão até o /auth/callback trocar o code.
+  // Nunca redirecionar essa rota para /login antes da troca de sessão.
+  if (request.nextUrl.pathname.startsWith('/auth/callback')) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

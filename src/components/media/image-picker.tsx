@@ -96,7 +96,7 @@ export function ImagePicker({
                 Escolher imagem
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-card border-primary/20 max-w-3xl">
+            <DialogContent className="bg-card border-primary/20 max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="font-display text-2xl text-primary">{label}</DialogTitle>
                 <DialogDescription className="font-heading italic">

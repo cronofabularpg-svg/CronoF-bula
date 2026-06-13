@@ -231,38 +231,38 @@ export default function Cronicas() {
 
   return (
     <div className="h-screen flex flex-col bg-[#050711] text-[#FFF6E5]">
-      <header className="p-10 border-b border-primary/10 bg-background/60 backdrop-blur-xl flex justify-between items-center shrink-0 z-10">
-        <div className="flex items-center gap-6">
-          <div className="p-4 rounded-[1.5rem] bg-primary shadow-arcane">
-            <ScrollText className="h-8 w-8 text-black" />
+      <header className="p-4 sm:p-6 lg:p-10 border-b border-primary/10 bg-background/60 backdrop-blur-xl flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6 shrink-0 z-10">
+        <div className="flex items-center gap-4 sm:gap-6">
+          <div className="p-3 sm:p-4 rounded-[1.5rem] bg-primary shadow-arcane shrink-0">
+            <ScrollText className="h-6 w-6 sm:h-8 sm:w-8 text-black" />
           </div>
-          <div>
-            <h1 className="text-4xl font-display font-black tracking-tighter text-primary">Crônicas</h1>
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-black tracking-tighter text-primary">Crônicas</h1>
             <p className="text-[10px] font-display uppercase font-black tracking-[0.3em] opacity-40 mt-2">O registro oficial da campanha.</p>
             <p className="text-sm text-muted-foreground font-heading italic mt-3 max-w-3xl">
               As Crônicas guardam os acontecimentos aprovados pelo mestre, vindos de mesas presenciais, online, Mesa Viva, combates ou registros manuais.
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative w-80">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 w-full lg:w-auto">
+          <div className="relative w-full sm:w-80">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 opacity-30 text-primary" />
             <input
               placeholder="Buscar verdades canônicas..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-6 py-4 bg-black/40 border-primary/20 rounded-2xl text-sm font-heading italic focus:ring-primary focus:border-primary/40 outline-none transition-all"
+              className="w-full pl-12 pr-6 py-3 sm:py-4 bg-black/40 border-primary/20 rounded-2xl text-sm font-heading italic focus:ring-primary focus:border-primary/40 outline-none transition-all"
             />
           </div>
           {isMaster && (
-            <Button onClick={() => setManualDialogOpen(true)} className="bg-primary text-black hover:bg-primary/90 rounded-2xl h-14 px-6 font-display gap-2 shrink-0">
+            <Button onClick={() => setManualDialogOpen(true)} className="bg-primary text-black hover:bg-primary/90 rounded-2xl h-12 sm:h-14 px-6 font-display gap-2 shrink-0 w-full sm:w-auto">
               <PenLine className="h-4 w-4" /> Registrar Sessão Manual
             </Button>
           )}
         </div>
       </header>
 
-      <div className="px-10 py-4 border-b border-primary/10 bg-black/20 flex flex-wrap gap-x-10 gap-y-2 text-[10px] font-heading italic opacity-50 shrink-0">
+      <div className="px-4 sm:px-6 lg:px-10 py-3 sm:py-4 border-b border-primary/10 bg-black/20 flex flex-wrap gap-x-4 sm:gap-x-10 gap-y-2 text-[10px] font-heading italic opacity-50 shrink-0">
         <span><strong className="text-primary not-italic">Crônica:</strong> registro oficial, aprovado pelo mestre.</span>
         <span><strong className="text-primary not-italic">Mesa Viva:</strong> sessão interativa com IA.</span>
         <span><strong className="text-primary not-italic">Diário:</strong> memória pessoal do personagem.</span>
@@ -270,22 +270,22 @@ export default function Cronicas() {
 
       <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
         {/* Índice de Sessões - Estilo Sumário de Livro */}
-        <aside className="w-full md:w-96 border-r border-primary/10 bg-black/20 backdrop-blur-2xl flex flex-col">
-          <div className="p-8 border-b border-primary/10 flex items-center justify-between">
+        <aside className="w-full h-[40vh] md:h-auto md:w-96 shrink-0 border-r border-primary/10 bg-black/20 backdrop-blur-2xl flex flex-col">
+          <div className="p-4 sm:p-6 md:p-8 border-b border-primary/10 flex items-center justify-between">
              <span className="text-[10px] font-display uppercase font-black tracking-[0.2em] text-primary opacity-60">Crônicas Oficiais</span>
              <History className="h-4 w-4 text-primary opacity-20" />
           </div>
           <ScrollArea className="flex-1 scrollbar-hide">
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               {loading ? (
-                <div className="p-20 text-center italic font-heading text-xl opacity-30 animate-pulse">Lendo os anais...</div>
+                <div className="p-8 sm:p-12 lg:p-20 text-center italic font-heading text-base sm:text-xl opacity-30 animate-pulse">Lendo os anais...</div>
               ) : (
                 <>
                   {filteredApprovedChronicles.map((chron) => (
                     <button
                       key={chron.id}
                       onClick={() => setSelectedChronicle(chron)}
-                      className={`w-full p-6 rounded-2xl text-left transition-all duration-500 group border-2 ${
+                      className={`w-full p-4 sm:p-6 rounded-2xl text-left transition-all duration-500 group border-2 ${
                         selectedChronicle?.id === chron.id
                         ? 'bg-primary/10 border-primary shadow-arcane'
                         : 'bg-black/20 border-white/5 hover:border-primary/30 hover:bg-primary/5'
@@ -303,7 +303,7 @@ export default function Cronicas() {
                   ))}
 
                   {approvedChronicles.length === 0 && (
-                    <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40 space-y-6">
+                    <div className="p-6 sm:p-12 text-center text-muted-foreground italic font-heading text-base sm:text-xl opacity-40 space-y-6">
                       <p>"Nenhuma crônica oficial foi aprovada ainda."</p>
                       {isMaster && (
                         <Button asChild className="bg-primary text-black hover:bg-primary/90 rounded-2xl gap-2">
@@ -316,7 +316,7 @@ export default function Cronicas() {
                   )}
 
                   {approvedChronicles.length > 0 && filteredApprovedChronicles.length === 0 && (
-                    <div className="p-12 text-center text-muted-foreground italic font-heading text-xl opacity-40">
+                    <div className="p-6 sm:p-12 text-center text-muted-foreground italic font-heading text-base sm:text-xl opacity-40">
                       Nenhuma crônica corresponde à busca.
                     </div>
                   )}
@@ -331,7 +331,7 @@ export default function Cronicas() {
                         <button
                           key={chron.id}
                           onClick={() => setSelectedChronicle(chron)}
-                          className={`w-full p-6 rounded-2xl text-left transition-all duration-500 group border-2 ${
+                          className={`w-full p-4 sm:p-6 rounded-2xl text-left transition-all duration-500 group border-2 ${
                             selectedChronicle?.id === chron.id
                             ? 'bg-amber-500/10 border-amber-500/40'
                             : 'bg-black/20 border-amber-500/10 hover:border-amber-500/30 hover:bg-amber-500/5'
@@ -368,13 +368,13 @@ export default function Cronicas() {
         </aside>
 
         {/* Conteúdo da Crônica - Estilo Arquivo Histórico */}
-        <main className="flex-1 relative overflow-hidden bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, rgba(200, 162, 74, 0.03) 1px, transparent 1px)', backgroundSize: '100px 100px' }}>
+        <main className="flex-1 min-h-0 relative overflow-hidden bg-fixed" style={{ backgroundImage: 'radial-gradient(circle, rgba(200, 162, 74, 0.03) 1px, transparent 1px)', backgroundSize: '100px 100px' }}>
           <ScrollArea className="h-full scrollbar-hide">
              {selectedChronicle ? (
-               <div className="max-w-5xl mx-auto p-12 md:p-32 space-y-24 animate-in fade-in slide-in-from-bottom-12 duration-1000">
-                  <header className="space-y-10 text-center">
+               <div className="max-w-5xl mx-auto p-4 sm:p-8 md:p-16 lg:p-32 space-y-8 sm:space-y-12 lg:space-y-24 animate-in fade-in slide-in-from-bottom-12 duration-1000">
+                  <header className="space-y-6 sm:space-y-10 text-center">
                     <div className="canon-seal w-fit mx-auto">{selectedChronicle.status === 'approved' ? 'Verdade Canônica' : `${STATUS_LABELS[selectedChronicle.status] || selectedChronicle.status} — aguardando aprovação`}</div>
-                    <h2 className="text-7xl md:text-9xl font-display font-black tracking-tighter text-primary drop-shadow-[0_0_20px_rgba(200,162,74,0.2)]">
+                    <h2 className="text-3xl sm:text-5xl md:text-7xl lg:text-9xl font-display font-black tracking-tighter text-primary drop-shadow-[0_0_20px_rgba(200,162,74,0.2)]">
                       {selectedChronicle.title}
                     </h2>
                     <div className="flex justify-center gap-3 flex-wrap">
@@ -393,7 +393,7 @@ export default function Cronicas() {
                         </Link>
                       </p>
                     )}
-                    <div className="flex justify-center items-center gap-10 opacity-40">
+                    <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-10 opacity-40">
                       <div className="flex items-center gap-3">
                         <Calendar className="h-5 w-5 text-primary" />
                         <span className="text-[10px] font-display font-bold uppercase tracking-widest">{new Date(selectedChronicle.created_at).toLocaleDateString('pt-BR')}</span>
@@ -406,14 +406,14 @@ export default function Cronicas() {
                     </div>
                   </header>
 
-                  <section className="parchment p-16 md:p-24 rounded-[3rem] literary-shadow relative overflow-hidden">
+                  <section className="parchment p-6 sm:p-10 md:p-16 lg:p-24 rounded-[3rem] literary-shadow relative overflow-hidden">
                      <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
-                     <div className="text-3xl md:text-4xl leading-[1.8] font-heading italic opacity-90 first-letter:text-9xl first-letter:font-display first-letter:mr-5 first-letter:float-left first-letter:text-primary first-letter:drop-shadow-lg">
+                     <div className="text-lg sm:text-2xl md:text-3xl lg:text-4xl leading-[1.8] font-heading italic opacity-90 first-letter:text-5xl sm:first-letter:text-7xl lg:first-letter:text-9xl first-letter:font-display first-letter:mr-5 first-letter:float-left first-letter:text-primary first-letter:drop-shadow-lg">
                         {selectedChronicle.public_content || selectedChronicle.summary}
                      </div>
                   </section>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-20 pt-10 border-t border-primary/10">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10 sm:gap-12 lg:gap-20 pt-6 sm:pt-10 border-t border-primary/10">
                     <div className="space-y-10">
                        <h3 className="text-[10px] font-display uppercase font-black tracking-[0.4em] text-primary flex items-center gap-4">
                          <Sword className="h-5 w-5" /> Decisões Críticas
@@ -452,17 +452,17 @@ export default function Cronicas() {
                   </div>
 
                   {canonEvents.length > 0 && (
-                    <div className="space-y-10 pt-10 border-t border-primary/10">
+                    <div className="space-y-6 sm:space-y-10 pt-6 sm:pt-10 border-t border-primary/10">
                        <h3 className="text-[10px] font-display uppercase font-black tracking-[0.4em] text-primary flex items-center gap-4">
                          <Landmark className="h-5 w-5" /> Eventos Canônicos Relacionados
                        </h3>
-                       <ul className="space-y-8">
+                       <ul className="space-y-6 sm:space-y-8">
                          {canonEvents.map((event) => (
-                           <li key={event.id} className="flex gap-6 items-start group">
+                           <li key={event.id} className="flex gap-4 sm:gap-6 items-start group">
                              <div className="mt-2 h-2 w-2 rounded-full bg-primary shadow-gold group-hover:scale-150 transition-transform shrink-0" />
                              <div>
-                               <p className="text-xl font-heading italic opacity-70 group-hover:opacity-100 transition-opacity leading-relaxed">{event.title}</p>
-                               {event.content && <p className="text-base font-heading opacity-50 mt-2 leading-relaxed">{event.content}</p>}
+                               <p className="text-base sm:text-lg lg:text-xl font-heading italic opacity-70 group-hover:opacity-100 transition-opacity leading-relaxed">{event.title}</p>
+                               {event.content && <p className="text-sm sm:text-base font-heading opacity-50 mt-2 leading-relaxed">{event.content}</p>}
                              </div>
                            </li>
                          ))}
@@ -471,25 +471,25 @@ export default function Cronicas() {
                   )}
 
                   {selectedChronicle.master_notes && (
-                    <div className="p-12 rounded-[2.5rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/30 space-y-6 relative overflow-hidden oracle-glow">
+                    <div className="p-6 sm:p-8 lg:p-12 rounded-[2.5rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/30 space-y-4 sm:space-y-6 relative overflow-hidden oracle-glow">
                        <div className="absolute top-0 right-0 p-8 opacity-5">
                           <ShieldCheck className="h-24 w-24" />
                        </div>
                        <h4 className="text-[10px] font-display uppercase font-black tracking-[0.3em] text-primary flex items-center gap-3">
                          <Sparkles className="h-5 w-5" /> Oráculo do Mestre (Segredos)
                        </h4>
-                       <p className="text-xl font-heading italic opacity-60 leading-relaxed max-w-3xl">
+                       <p className="text-base sm:text-lg lg:text-xl font-heading italic opacity-60 leading-relaxed max-w-3xl">
                          {selectedChronicle.master_notes}
                        </p>
                     </div>
                   )}
                </div>
              ) : (
-               <div className="h-full flex flex-col items-center justify-center p-20 text-center gap-12 opacity-10">
-                  <BookOpen className="h-48 w-48 text-primary animate-pulse" />
+               <div className="h-full flex flex-col items-center justify-center p-8 sm:p-12 lg:p-20 text-center gap-6 sm:gap-12 opacity-10">
+                  <BookOpen className="h-20 w-20 sm:h-32 sm:w-32 lg:h-48 lg:w-48 text-primary animate-pulse" />
                   <div className="space-y-4">
-                    <h2 className="text-6xl font-display font-black tracking-tighter">O Grande Arquivo</h2>
-                    <p className="text-3xl font-heading italic max-w-lg">Selecione uma crônica à esquerda para ler os registros oficiais da sua jornada.</p>
+                    <h2 className="text-3xl sm:text-5xl lg:text-6xl font-display font-black tracking-tighter">O Grande Arquivo</h2>
+                    <p className="text-base sm:text-xl lg:text-3xl font-heading italic max-w-lg">Selecione uma crônica à esquerda para ler os registros oficiais da sua jornada.</p>
                   </div>
                </div>
              )}
@@ -498,7 +498,7 @@ export default function Cronicas() {
       </div>
 
       <Dialog open={manualDialogOpen} onOpenChange={setManualDialogOpen}>
-        <DialogContent className="bg-card border-primary/20 literary-shadow max-w-2xl">
+        <DialogContent className="bg-card border-primary/20 literary-shadow max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display text-3xl text-primary flex items-center gap-3">
               <PenLine className="h-6 w-6" /> Registrar Sessão Manual

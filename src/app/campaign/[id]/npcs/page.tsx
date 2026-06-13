@@ -474,15 +474,15 @@ export default function NPCManager() {
   const isCombatType = COMBAT_TYPES.has(npcData.npc_type)
 
   return (
-    <div className="p-10 max-w-7xl mx-auto space-y-12">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-10 border-white/5 gap-6">
+    <div className="p-4 sm:p-6 lg:p-10 max-w-7xl mx-auto space-y-6 sm:space-y-8 lg:space-y-12">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-6 sm:pb-10 border-white/5 gap-6">
         <div>
-          <h1 className="text-5xl font-display font-black tracking-tighter text-accent flex items-center gap-4">
-            <Users className="h-12 w-12" /> População da Crônica
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-black tracking-tighter text-accent flex items-center gap-3 sm:gap-4">
+            <Users className="h-8 w-8 sm:h-10 sm:w-10 lg:h-12 lg:w-12" /> População da Crônica
           </h1>
-          <p className="text-muted-foreground mt-3 font-heading text-xl italic">Aliados, inimigos e almas perdidas que cruzam o caminho dos heróis.</p>
+          <p className="text-muted-foreground mt-3 font-heading text-base sm:text-lg lg:text-xl italic">Aliados, inimigos e almas perdidas que cruzam o caminho dos heróis.</p>
         </div>
-        <div className="flex gap-4 w-full md:w-auto">
+        <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
           <div className="relative flex-1 md:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -495,7 +495,7 @@ export default function NPCManager() {
           {isMaster && (
             <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (open) setNpcData({ ...EMPTY_NPC_FORM }) }}>
               <DialogTrigger asChild>
-                <Button className="bg-primary hover:bg-primary/90 literary-shadow rounded-full px-8">
+                <Button className="bg-primary hover:bg-primary/90 literary-shadow rounded-full px-8 w-full sm:w-auto shrink-0">
                   <UserPlus className="mr-2 h-4 w-4" /> Novo NPC
                 </Button>
               </DialogTrigger>
@@ -517,22 +517,22 @@ export default function NPCManager() {
       </header>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex flex-wrap h-auto gap-1 bg-black/30 p-1">
-          <TabsTrigger value="all">Todos</TabsTrigger>
-          <TabsTrigger value="main">Principais</TabsTrigger>
-          <TabsTrigger value="mob">Mobs</TabsTrigger>
-          <TabsTrigger value="boss">Bosses</TabsTrigger>
-          <TabsTrigger value="ally">Aliados</TabsTrigger>
-          <TabsTrigger value="merchant">Comerciantes</TabsTrigger>
-          {isMaster && <TabsTrigger value="srd">Biblioteca SRD</TabsTrigger>}
-          <TabsTrigger value="bestiary">Bestiário</TabsTrigger>
+        <TabsList className="flex h-auto w-full overflow-x-auto gap-1 bg-black/30 p-1 sm:flex-wrap">
+          <TabsTrigger value="all" className="shrink-0 whitespace-nowrap">Todos</TabsTrigger>
+          <TabsTrigger value="main" className="shrink-0 whitespace-nowrap">Principais</TabsTrigger>
+          <TabsTrigger value="mob" className="shrink-0 whitespace-nowrap">Mobs</TabsTrigger>
+          <TabsTrigger value="boss" className="shrink-0 whitespace-nowrap">Bosses</TabsTrigger>
+          <TabsTrigger value="ally" className="shrink-0 whitespace-nowrap">Aliados</TabsTrigger>
+          <TabsTrigger value="merchant" className="shrink-0 whitespace-nowrap">Comerciantes</TabsTrigger>
+          {isMaster && <TabsTrigger value="srd" className="shrink-0 whitespace-nowrap">Biblioteca SRD</TabsTrigger>}
+          <TabsTrigger value="bestiary" className="shrink-0 whitespace-nowrap">Bestiário</TabsTrigger>
         </TabsList>
 
         {["all", "main", "mob", "boss", "ally", "merchant", "bestiary"].map((tabValue) => (
-          <TabsContent key={tabValue} value={tabValue} className="pt-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <TabsContent key={tabValue} value={tabValue} className="pt-6 sm:pt-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
               {loadingNpcs ? (
-                <div className="col-span-full p-20 text-center italic opacity-50">Consultando o oráculo populacional...</div>
+                <div className="col-span-full p-8 sm:p-12 lg:p-20 text-center italic opacity-50">Consultando o oráculo populacional...</div>
               ) : filteredNpcs.length > 0 ? (
                 filteredNpcs.map((npc: any) => (
                   <NpcCard
@@ -546,8 +546,8 @@ export default function NPCManager() {
                   />
                 ))
               ) : (
-                <div className="col-span-full p-20 border-2 border-dashed border-white/5 rounded-3xl text-center space-y-6">
-                  <p className="text-muted-foreground font-heading italic text-lg">
+                <div className="col-span-full p-8 sm:p-12 lg:p-20 border-2 border-dashed border-white/5 rounded-3xl text-center space-y-6">
+                  <p className="text-muted-foreground font-heading italic text-base sm:text-lg">
                     {tabValue === "bestiary"
                       ? "Nenhuma criatura no Bestiário ainda. Importe da Biblioteca SRD ou crie um Mob/Boss."
                       : "O silêncio ecoa nas ruas de Arvand. Nenhum NPC encontrado."}
@@ -559,7 +559,7 @@ export default function NPCManager() {
         ))}
 
         {isMaster && (
-          <TabsContent value="srd" className="pt-8 space-y-8">
+          <TabsContent value="srd" className="pt-6 sm:pt-8 space-y-6 sm:space-y-8">
             <div className="rounded-2xl border border-white/5 bg-card/30 p-4 space-y-4">
               <p className="text-sm text-muted-foreground font-heading italic">
                 Modelos de monstros do SRD 5.1 (CC-BY-4.0). Importar cria uma cópia editável no Bestiário desta campanha —
@@ -587,7 +587,7 @@ export default function NPCManager() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
               {filteredSrdMonsters.map((monster) => (
                 <Card key={monster.id} className="bg-card/30 border-white/5 hover:border-accent/30 transition-all">
                   <CardHeader>
@@ -653,7 +653,7 @@ export default function NPCManager() {
 
       {/* Modal de importação SRD -> Bestiário (TAREFA 6) */}
       <Dialog open={!!importingMonster} onOpenChange={(open) => { if (!open) setImportingMonster(null) }}>
-        <DialogContent className="bg-card border-accent/30 max-w-lg">
+        <DialogContent className="bg-card border-accent/30 max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-display text-accent">
               Importar {importingMonster?.portugueseName}
@@ -777,7 +777,7 @@ function NpcCard({ npc, isMaster, campaignId, onUpdateImage, onKill, onEdit }: {
                 <ImagePlus className="h-4 w-4" />
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-card border-accent/30">
+            <DialogContent className="bg-card border-accent/30 max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="text-xl font-display">Token/Imagem de {npc.name}</DialogTitle>
               </DialogHeader>
@@ -858,7 +858,7 @@ function NpcCard({ npc, isMaster, campaignId, onUpdateImage, onKill, onEdit }: {
           </Badge>
         )}
       </CardContent>
-      <CardFooter className="grid grid-cols-2 gap-4 border-t border-white/5 pt-6 p-6">
+      <CardFooter className="grid grid-cols-2 gap-3 sm:gap-4 border-t border-white/5 pt-4 sm:pt-6 p-4 sm:p-6">
         {isMaster ? (
           <Button variant="ghost" size="sm" className="w-full hover:bg-white/5" onClick={onEdit}>
             <Edit2 className="mr-2 h-4 w-4" /> Editar

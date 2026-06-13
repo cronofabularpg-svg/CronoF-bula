@@ -198,20 +198,20 @@ export default function Inventario() {
 
   if (!characterId) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center p-10 bg-[#050711] text-[#FFF6E5] text-center space-y-12 animate-in fade-in duration-700">
+      <div className="h-screen flex flex-col items-center justify-center p-6 sm:p-10 bg-[#050711] text-[#FFF6E5] text-center space-y-8 sm:space-y-12 animate-in fade-in duration-700">
         <div className="relative">
-          <div className="p-12 rounded-full bg-accent/10 border-2 border-accent/30 shadow-[0_0_50px_rgba(200,162,74,0.15)]">
-            <Package className="h-24 w-24 text-accent" />
+          <div className="p-8 sm:p-12 rounded-full bg-accent/10 border-2 border-accent/30 shadow-[0_0_50px_rgba(200,162,74,0.15)]">
+            <Package className="h-16 w-16 sm:h-24 sm:w-24 text-accent" />
           </div>
-          <Hourglass className="absolute -bottom-4 -right-4 h-12 w-12 text-primary animate-spin-slow" />
+          <Hourglass className="absolute -bottom-4 -right-4 h-8 w-8 sm:h-12 sm:w-12 text-primary animate-spin-slow" />
         </div>
-        <div className="max-w-2xl space-y-6">
-          <h1 className="text-6xl font-display font-black tracking-tighter text-accent">Bolsa de Aventureiro</h1>
-          <p className="text-3xl font-heading italic text-muted-foreground leading-relaxed">
+        <div className="max-w-2xl space-y-4 sm:space-y-6">
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-display font-black tracking-tighter text-accent">Bolsa de Aventureiro</h1>
+          <p className="text-base sm:text-2xl lg:text-3xl font-heading italic text-muted-foreground leading-relaxed">
             Você ainda não possui um personagem nesta crônica.
           </p>
         </div>
-        <Button asChild className="btn-ritual rounded-full px-16 h-16 literary-shadow">
+        <Button asChild className="btn-ritual rounded-full px-10 sm:px-16 h-12 sm:h-16 literary-shadow">
           <Link href={`/campaign/${campaignId}/mesa-viva`}>Voltar à Mesa</Link>
         </Button>
       </div>
@@ -228,20 +228,20 @@ export default function Inventario() {
   const hasAnyItem = characterItems.some((ci) => ci.item)
 
   return (
-    <div className="min-h-screen bg-[#050711] text-[#FFF6E5] p-6 md:p-10 space-y-10 animate-in fade-in duration-700">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-8">
-        <div className="flex items-center gap-6">
-          <div className="p-4 rounded-2xl bg-accent/10 border border-accent/30">
-            <Package className="h-10 w-10 text-accent" />
+    <div className="min-h-screen bg-[#050711] text-[#FFF6E5] p-4 sm:p-6 lg:p-10 space-y-6 sm:space-y-10 animate-in fade-in duration-700">
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-6 sm:pb-8">
+        <div className="flex items-center gap-4 sm:gap-6">
+          <div className="p-3 sm:p-4 rounded-2xl bg-accent/10 border border-accent/30 shrink-0">
+            <Package className="h-8 w-8 sm:h-10 sm:w-10 text-accent" />
           </div>
-          <div>
-            <h1 className="text-4xl font-display font-black tracking-tighter text-accent">Inventário</h1>
-            <p className="text-muted-foreground font-heading italic">
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-display font-black tracking-tighter text-accent">Inventário</h1>
+            <p className="text-muted-foreground font-heading italic text-sm sm:text-base">
               Itens carregados por {characterName}.
             </p>
           </div>
         </div>
-        <Button asChild variant="outline" className="rounded-full border-primary/20 hover:bg-primary/5 px-10 h-12 font-display text-[10px] tracking-widest">
+        <Button asChild variant="outline" className="w-full sm:w-auto rounded-full border-primary/20 hover:bg-primary/5 px-10 h-12 font-display text-[10px] tracking-widest shrink-0">
           <Link href={`/campaign/${campaignId}/mesa-viva`}>Voltar à Mesa</Link>
         </Button>
       </header>
@@ -251,9 +251,9 @@ export default function Inventario() {
       </div>
 
       {!hasAnyItem && (
-        <div className="rounded-2xl border border-dashed border-white/10 p-12 text-center space-y-4">
-          <Backpack className="h-12 w-12 text-muted-foreground mx-auto" />
-          <p className="text-2xl font-heading italic text-muted-foreground">
+        <div className="rounded-2xl border border-dashed border-white/10 p-6 sm:p-12 text-center space-y-4">
+          <Backpack className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mx-auto" />
+          <p className="text-lg sm:text-2xl font-heading italic text-muted-foreground">
             {characterName} ainda não carrega nenhum item.
           </p>
           <p className="text-sm text-muted-foreground/70">
@@ -263,7 +263,7 @@ export default function Inventario() {
       )}
 
       {hasAnyItem && (
-        <div className="space-y-10">
+        <div className="space-y-6 sm:space-y-10">
           <InventorySection
             title="Equipados"
             icon={<Shirt className="h-5 w-5 text-primary" />}
@@ -311,7 +311,7 @@ export default function Inventario() {
       )}
 
       <Dialog open={!!inspectItem} onOpenChange={(open) => !open && setInspectItem(null)}>
-        <DialogContent className="bg-card/95 border-white/10 text-[#FFF6E5]">
+        <DialogContent className="bg-card/95 border-white/10 text-[#FFF6E5] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">{inspectItem?.name}</DialogTitle>
             <DialogDescription className="font-heading italic">

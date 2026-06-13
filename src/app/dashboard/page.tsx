@@ -419,21 +419,21 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-12 max-w-7xl mx-auto space-y-20 animate-in fade-in duration-700">
-      <header className="flex justify-between items-end border-b border-primary/20 pb-12">
-        <div className="space-y-6">
+    <div className="p-4 sm:p-6 lg:p-12 max-w-7xl mx-auto space-y-10 sm:space-y-14 lg:space-y-20 animate-in fade-in duration-700">
+      <header className="flex flex-col gap-6 sm:flex-row sm:justify-between sm:items-end border-b border-primary/20 pb-6 lg:pb-12">
+        <div className="space-y-4 sm:space-y-6">
           <div className="flex items-center gap-4">
-            <h1 className="text-6xl font-display font-black tracking-tighter text-primary">Minhas Crônicas</h1>
+            <h1 className="text-3xl sm:text-4xl lg:text-6xl font-display font-black tracking-tighter text-primary">Minhas Crônicas</h1>
           </div>
-          <p className="text-2xl font-heading italic text-muted-foreground max-w-xl">
+          <p className="text-base sm:text-lg lg:text-2xl font-heading italic text-muted-foreground max-w-xl">
             "Bem-vindo, {user?.displayName}. Os anais do tempo aguardam seu comando."
           </p>
         </div>
-        <div className="flex gap-6">
-          <Button variant="outline" className="rounded-full px-8 border-primary/20 hover:bg-primary/5 text-xs font-display tracking-widest" onClick={handleSignOut}>
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-6">
+          <Button variant="outline" className="w-full sm:w-auto rounded-full px-8 border-primary/20 hover:bg-primary/5 text-xs font-display tracking-widest" onClick={handleSignOut}>
             <LogOut className="mr-2 h-4 w-4" /> Sair
           </Button>
-          <Button asChild className="btn-ritual rounded-full px-10 h-14 literary-shadow">
+          <Button asChild className="w-full sm:w-auto btn-ritual rounded-full px-10 h-14 literary-shadow">
             <Link href="/onboarding">
               <PlusCircle className="mr-2 h-5 w-5" /> Nova Crônica
             </Link>
@@ -469,11 +469,11 @@ export default function Dashboard() {
         </section>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
-        <div className="xl:col-span-2 space-y-10">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 lg:gap-16">
+        <div className="xl:col-span-2 space-y-6 sm:space-y-10">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="text-3xl font-display font-bold flex items-center gap-4 text-primary">
-              <BookOpen className="h-8 w-8" /> Grimórios que Eu Mestro
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-display font-bold flex items-center gap-3 sm:gap-4 text-primary">
+              <BookOpen className="h-6 w-6 sm:h-8 sm:w-8" /> Grimórios que Eu Mestro
             </h2>
             {archivedOwnedCount > 0 && (
               <Button
@@ -487,13 +487,13 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 lg:gap-10">
             {campaignsLoading ? (
-              <div className="col-span-2 p-20 text-center text-muted-foreground italic font-heading text-2xl opacity-40">Consultando pergaminhos...</div>
+              <div className="col-span-1 sm:col-span-2 p-20 text-center text-muted-foreground italic font-heading text-2xl opacity-40">Consultando pergaminhos...</div>
             ) : displayCampaigns.length > 0 ? (
               displayCampaigns.map((campaign) => (
                 <Card key={campaign.id} className="grimoire-card group">
-                  <div className="relative h-64 w-full bg-muted overflow-hidden">
+                  <div className="relative h-40 sm:h-52 lg:h-64 w-full bg-muted overflow-hidden">
                     {campaign.cover_image_url ? (
                       <img
                         src={campaign.cover_image_url}
@@ -506,7 +506,7 @@ export default function Dashboard() {
                       </div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-[#050711] via-transparent to-transparent" />
-                    <div className="absolute top-6 left-6 flex gap-3">
+                    <div className="absolute top-4 left-4 sm:top-6 sm:left-6 flex flex-wrap gap-2 sm:gap-3">
                       <Badge className="bg-primary text-black font-display text-[9px] px-3 py-1 uppercase tracking-widest shadow-lg">
                         {campaign.status}
                       </Badge>
@@ -522,23 +522,23 @@ export default function Dashboard() {
                       )}
                     </div>
                   </div>
-                  <CardHeader className="p-8 pb-4">
-                    <CardTitle className="text-4xl font-display tracking-tight group-hover:text-primary transition-colors">{campaign.name}</CardTitle>
-                    <CardDescription className="font-heading italic text-xl mt-2 opacity-60">
+                  <CardHeader className="p-5 sm:p-8 pb-4">
+                    <CardTitle className="text-2xl sm:text-3xl lg:text-4xl font-display tracking-tight group-hover:text-primary transition-colors break-words">{campaign.name}</CardTitle>
+                    <CardDescription className="font-heading italic text-base sm:text-xl mt-2 opacity-60">
                       Mestre: {campaign.owner_id === user?.uid ? 'Você' : 'Outro Arcano'}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="px-8 pb-10 space-y-6">
+                  <CardContent className="px-5 sm:px-8 pb-6 sm:pb-10 space-y-6">
                     <div className="flex justify-between items-center text-sm font-display uppercase tracking-widest border-b border-white/5 pb-3">
                       <span className="text-muted-foreground opacity-40">Sistema Arcano</span>
                       <span className="text-primary font-bold">{campaign.system_key || 'D&D 5e'}</span>
                     </div>
                   </CardContent>
-                  <CardFooter className="grid grid-cols-2 gap-6 p-8 pt-0">
+                  <CardFooter className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 p-5 sm:p-8 pt-0">
                     {campaign.archived_at && campaign.owner_id === user?.uid ? (
                       <Button
                         variant="outline"
-                        className="col-span-2 w-full h-14 border-primary/30 text-primary hover:bg-primary/10 text-xs font-display tracking-widest"
+                        className="sm:col-span-2 w-full h-14 border-primary/30 text-primary hover:bg-primary/10 text-xs font-display tracking-widest"
                         onClick={() => handleRestoreCampaign(campaign.id)}
                       >
                         Restaurar Campanha
@@ -569,15 +569,15 @@ export default function Dashboard() {
                 </Card>
               ))
             ) : (
-              <div className="col-span-2 p-32 border-2 border-dashed border-primary/20 rounded-[2rem] text-center space-y-10 bg-primary/5">
+              <div className="col-span-1 sm:col-span-2 p-8 sm:p-16 lg:p-32 border-2 border-dashed border-primary/20 rounded-[2rem] text-center space-y-6 sm:space-y-10 bg-primary/5">
                 <div className="p-8 rounded-full bg-primary/10 w-fit mx-auto">
                    <Hourglass className="h-16 v-16 text-primary opacity-30" />
                 </div>
                 <div className="space-y-4">
-                  <p className="text-muted-foreground font-heading italic text-3xl">O silêncio ecoa nestas páginas. Nenhuma crônica foi iniciada.</p>
-                  <p className="text-lg text-muted-foreground/60 font-body">Todo herói precisa de um mestre. Toda lenda precisa de um começo.</p>
+                  <p className="text-muted-foreground font-heading italic text-xl sm:text-2xl lg:text-3xl">O silêncio ecoa nestas páginas. Nenhuma crônica foi iniciada.</p>
+                  <p className="text-base sm:text-lg text-muted-foreground/60 font-body">Todo herói precisa de um mestre. Toda lenda precisa de um começo.</p>
                 </div>
-                <Button asChild className="btn-ritual rounded-full px-16 h-16 text-xl literary-shadow">
+                <Button asChild className="btn-ritual rounded-full px-10 sm:px-16 h-14 sm:h-16 text-lg sm:text-xl literary-shadow">
                   <Link href="/onboarding">Fundar Minha Primeira Lenda</Link>
                 </Button>
               </div>
@@ -586,12 +586,12 @@ export default function Dashboard() {
         </div>
 
         {/* Barra Lateral Arcana */}
-        <div className="space-y-16">
-          <section className="p-10 rounded-[2rem] bg-primary/5 border border-primary/20 space-y-8 relative overflow-hidden group">
+        <div className="space-y-6 sm:space-y-10 lg:space-y-16">
+          <section className="p-6 sm:p-10 rounded-[2rem] bg-primary/5 border border-primary/20 space-y-6 sm:space-y-8 relative overflow-hidden group">
             <ScrollText className="absolute -top-6 -right-6 h-32 w-32 text-primary opacity-5 group-hover:scale-125 group-hover:rotate-12 transition-all duration-1000" />
-            <div className="space-y-4">
-              <h3 className="text-3xl font-display font-bold text-primary">Jogar Campanha Existente</h3>
-              <p className="text-lg text-muted-foreground font-heading italic leading-relaxed opacity-70">
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-xl sm:text-2xl lg:text-3xl font-display font-bold text-primary">Jogar Campanha Existente</h3>
+              <p className="text-base sm:text-lg text-muted-foreground font-heading italic leading-relaxed opacity-70">
                 "Continue uma crônica onde você já participa."
               </p>
             </div>
@@ -605,11 +605,11 @@ export default function Dashboard() {
             </Button>
           </section>
 
-          <section className="p-10 rounded-[2rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/20 space-y-8 relative overflow-hidden group">
+          <section className="p-6 sm:p-10 rounded-[2rem] bg-[#3A1F5D]/10 border border-[#7B4FB3]/20 space-y-6 sm:space-y-8 relative overflow-hidden group">
             <Sparkles className="absolute -top-6 -right-6 h-32 w-32 text-[#7B4FB3] opacity-5 group-hover:scale-125 group-hover:rotate-12 transition-all duration-1000" />
-            <div className="space-y-4">
-              <h3 className="text-3xl font-display font-bold text-primary">Jornada Solo</h3>
-              <p className="text-lg text-muted-foreground font-heading italic leading-relaxed opacity-70">
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-xl sm:text-2xl lg:text-3xl font-display font-bold text-primary">Jornada Solo</h3>
+              <p className="text-base sm:text-lg text-muted-foreground font-heading italic leading-relaxed opacity-70">
                 "Jogue sozinho com o Oráculo."
               </p>
             </div>
@@ -627,7 +627,7 @@ export default function Dashboard() {
       </div>
 
       <Dialog open={isSoloDialogOpen} onOpenChange={setIsSoloDialogOpen}>
-        <DialogContent className="bg-card border-primary/20 literary-shadow max-w-2xl">
+        <DialogContent className="bg-card border-primary/20 literary-shadow max-w-2xl max-h-[90vh] overflow-y-auto">
           {soloStep === 'select' && (
             <>
               <DialogHeader>
@@ -755,7 +755,7 @@ export default function Dashboard() {
                     onChange={(e) => setNewAdventure((p) => ({ ...p, name: e.target.value }))}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Gênero / Tom</Label>
                     <Select value={newAdventure.genre} onValueChange={(v) => setNewAdventure((p) => ({ ...p, genre: v }))}>
@@ -792,7 +792,7 @@ export default function Dashboard() {
                     onChange={(e) => setNewAdventure((p) => ({ ...p, theme: e.target.value }))}
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-4 pt-2 border-t border-white/5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-white/5">
                   <div className="space-y-2 col-span-1">
                     <Label>Nome do Herói</Label>
                     <Input

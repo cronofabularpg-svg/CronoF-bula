@@ -1276,7 +1276,7 @@ export default function MapaVivo() {
                   <Plus className="mr-2 h-4 w-4" /> Novo Ponto
                 </Button>
               </DialogTrigger>
-              <DialogContent className="bg-card border-primary/20 literary-shadow max-w-lg">
+              <DialogContent className="bg-card border-primary/20 literary-shadow max-w-lg max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-display text-accent">Marcar Novo Ponto no Mapa</DialogTitle>
                   <DialogDescription className="font-heading italic">
@@ -1523,8 +1523,8 @@ export default function MapaVivo() {
           </TabsList>
         </Tabs>
 
-        <div className={`h-[calc(100vh-184px)] min-h-[560px] grid gap-4 ${isPanelOpen ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'}`}>
-          <div className={`${mobileMapTab === "mapa" ? "block" : "hidden"} lg:block relative overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0F]`}>
+        <div className={`min-h-[60vh] lg:h-[calc(100vh-184px)] lg:min-h-[560px] grid gap-4 ${isPanelOpen ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'}`}>
+          <div className={`${mobileMapTab === "mapa" ? "block" : "hidden"} lg:block relative overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0F] h-[60vh] lg:h-full`}>
         {backgroundImageUrl ? (
           <div
             className="absolute inset-0 bg-[#05050A]"
@@ -1610,7 +1610,7 @@ export default function MapaVivo() {
         {!loading && renderEmptyLayerState()}
 
         {activeNode && !isTraveling && (
-          <div className="absolute top-8 right-8 w-80 rounded-3xl bg-card/90 backdrop-blur-2xl border border-accent/20 literary-shadow animate-in slide-in-from-right-8 duration-500 overflow-hidden">
+          <div className="absolute top-4 left-4 right-4 sm:left-auto sm:top-8 sm:right-8 w-auto sm:w-80 max-h-[calc(100%-2rem)] overflow-y-auto rounded-3xl bg-card/90 backdrop-blur-2xl border border-accent/20 literary-shadow animate-in slide-in-from-right-8 duration-500">
              <div className="relative h-40">
                {activeNode.image_url ? (
                  <img src={activeNode.image_url} alt={activeNode.name} className="object-cover w-full h-full opacity-70" />
@@ -1745,7 +1745,7 @@ export default function MapaVivo() {
         )}
 
         <Dialog open={!!travelEvent} onOpenChange={() => finalizeTravel(false)}>
-          <DialogContent className="bg-card border-accent/30 literary-shadow max-w-lg">
+          <DialogContent className="bg-card border-accent/30 literary-shadow max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <div className="flex justify-center mb-6">
                 <div className={`p-5 rounded-2xl border-2 ${
@@ -1806,7 +1806,7 @@ export default function MapaVivo() {
         </Dialog>
 
         <Dialog open={adjustImageOpen} onOpenChange={setAdjustImageOpen}>
-          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-md">
+          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl font-display text-accent">Ajustar Imagem do Mapa</DialogTitle>
               <DialogDescription className="font-heading italic">
@@ -1859,7 +1859,7 @@ export default function MapaVivo() {
         </Dialog>
 
         <Dialog open={Boolean(layerEditLocation)} onOpenChange={(open) => !open && setLayerEditLocation(null)}>
-          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-2xl">
+          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl font-display text-accent flex items-center gap-2">
                 <Layers className="h-5 w-5" /> Editar Camada
@@ -1975,7 +1975,7 @@ export default function MapaVivo() {
         </Dialog>
 
         <Dialog open={organizeLayersOpen} onOpenChange={setOrganizeLayersOpen}>
-          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-3xl">
+          <DialogContent className="bg-card border-primary/20 literary-shadow max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl font-display text-accent flex items-center gap-2">
                 <Wand2 className="h-5 w-5" /> Organizar Camadas

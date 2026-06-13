@@ -297,23 +297,23 @@ export default function FichaPersonagem() {
     }
   }
 
-  if (loading) return <div className="p-20 text-center italic font-heading text-2xl opacity-40">Consultando os anais...</div>
+  if (loading) return <div className="p-6 sm:p-20 text-center italic font-heading text-xl sm:text-2xl opacity-40">Consultando os anais...</div>
 
   if (!character) {
     return (
-      <div className="p-20 flex flex-col items-center justify-center gap-8 text-center min-h-[60vh]">
+      <div className="p-6 sm:p-20 flex flex-col items-center justify-center gap-8 text-center min-h-[60vh]">
         <div className="space-y-3">
-          <h2 className="text-3xl font-display font-black text-primary">Nenhum personagem selecionado</h2>
-          <p className="text-muted-foreground italic font-heading text-xl max-w-md mx-auto">
+          <h2 className="text-2xl sm:text-3xl font-display font-black text-primary">Nenhum personagem selecionado</h2>
+          <p className="text-muted-foreground italic font-heading text-base sm:text-xl max-w-md mx-auto">
             Você ainda não tem um personagem nesta campanha. Crie um para começar a jogar ou volte ao painel.
           </p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
         <Dialog open={isCreateCharacterOpen} onOpenChange={setIsCreateCharacterOpen}>
           <DialogTrigger asChild>
             <Button className="bg-primary px-10 h-12 rounded-full">Criar Personagem</Button>
           </DialogTrigger>
-          <DialogContent className="bg-card border-accent/30">
+          <DialogContent className="bg-card border-accent/30 max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl font-display">Criar Personagem</DialogTitle>
             </DialogHeader>
@@ -326,7 +326,7 @@ export default function FichaPersonagem() {
                   onChange={e => setNewCharacter({ ...newCharacter, name: e.target.value })}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-[10px] uppercase font-bold tracking-widest">Raça</Label>
                   <Input
@@ -597,13 +597,13 @@ export default function FichaPersonagem() {
   }
 
   return (
-    <div className="p-10 max-w-6xl mx-auto space-y-12 animate-in fade-in duration-700 pb-32">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-10 border-white/5 gap-6">
-        <div className="flex items-center gap-8">
+    <div className="p-4 sm:p-6 lg:p-10 max-w-6xl mx-auto space-y-6 sm:space-y-8 lg:space-y-12 animate-in fade-in duration-700 pb-32">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-6 sm:pb-10 border-white/5 gap-6">
+        <div className="flex items-center gap-4 sm:gap-8">
           <div className="relative group">
             <Dialog>
               <DialogTrigger asChild>
-                <div className={`relative h-44 w-44 rounded-2xl overflow-hidden border-2 shadow-arcane cursor-zoom-in group transition-all ${sheetState.hasInspiration ? 'border-primary ring-4 ring-primary/20' : 'border-white/10'}`}>
+                <div className={`relative h-28 w-28 sm:h-36 sm:w-36 lg:h-44 lg:w-44 rounded-2xl overflow-hidden border-2 shadow-arcane cursor-zoom-in group transition-all ${sheetState.hasInspiration ? 'border-primary ring-4 ring-primary/20' : 'border-white/10'}`}>
                   {charPhoto ? (
                     <img
                       src={charPhoto}
@@ -612,7 +612,7 @@ export default function FichaPersonagem() {
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-primary/10 text-primary/50">
-                      <User className="h-16 w-16" />
+                      <User className="h-10 w-10 sm:h-16 sm:w-16" />
                     </div>
                   )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -646,7 +646,7 @@ export default function FichaPersonagem() {
                   <Camera className="h-4 w-4 text-primary" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="bg-card border-accent/30">
+              <DialogContent className="bg-card border-accent/30 max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-display">Consagrar Novo Retrato</DialogTitle>
                 </DialogHeader>
@@ -682,9 +682,9 @@ export default function FichaPersonagem() {
             </Dialog>
           </div>
 
-          <div>
-            <div className="flex items-center gap-4">
-              <h1 className="text-6xl font-display font-black tracking-tighter text-primary">{character.name}</h1>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-display font-black tracking-tighter text-primary">{character.name}</h1>
               <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-primary/30 text-primary bg-primary/5 px-4 h-6">
                 Nvl {characterLevel}
               </Badge>
@@ -706,20 +706,20 @@ export default function FichaPersonagem() {
                 </Badge>
               )}
             </div>
-            <p className="text-2xl font-heading italic text-muted-foreground mt-2 capitalize opacity-70">
+            <p className="text-base sm:text-xl lg:text-2xl font-heading italic text-muted-foreground mt-2 capitalize opacity-70">
               {character.race || "Raça desconhecida"} {character.class || "Classe desconhecida"} • Status: {character.status === 'pending_approval' ? 'Aguardando Aprovação' : 'Ativo'}
             </p>
           </div>
         </div>
-        <div className="flex gap-10">
+        <div className="flex gap-6 sm:gap-10 flex-wrap">
           <div className="text-right">
              <span className="text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground block mb-1">Riqueza</span>
-             <span className="text-3xl font-code font-bold text-primary">{sheetState.gold || 0} <span className="text-xs opacity-50 uppercase">po</span></span>
+             <span className="text-2xl sm:text-3xl font-code font-bold text-primary">{sheetState.gold || 0} <span className="text-xs opacity-50 uppercase">po</span></span>
           </div>
           <div className="text-right">
             <span className="text-[10px] uppercase font-black tracking-[0.2em] text-muted-foreground block mb-1">Experiência (XP)</span>
             <div className="flex items-center gap-4">
-              <Progress value={((sheetState.xp || 0) % 1000) / 10} className="w-40 h-2" />
+              <Progress value={((sheetState.xp || 0) % 1000) / 10} className="w-24 sm:w-40 h-2" />
               <span className="text-xs font-code font-bold text-primary">{sheetState.xp || 0}</span>
             </div>
           </div>
@@ -850,14 +850,14 @@ export default function FichaPersonagem() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10">
         {/* Bloco: Atributos */}
         <div className="lg:col-span-3 space-y-10">
           <section className="space-y-4">
             <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
               <Star className="mr-2 h-4 w-4 text-primary" /> Atributos Principais
             </h3>
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 sm:gap-4">
               {Object.entries(stats).map(([key, val]) => (
                 <StatCard key={key} label={key.toUpperCase()} value={val} mod={calculateModifier(val)} />
               ))}
@@ -893,16 +893,16 @@ export default function FichaPersonagem() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card className="bg-[#2B1218]/20 border-destructive/20 literary-shadow overflow-hidden group">
               <div className="h-1 bg-destructive/30" />
-              <CardContent className="p-8 space-y-6">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-xl bg-destructive/20 text-destructive shadow-arcane group-hover:scale-110 transition-transform">
+              <CardContent className="p-4 sm:p-6 lg:p-8 space-y-6">
+                <div className="flex justify-between items-center gap-3">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="p-3 rounded-xl bg-destructive/20 text-destructive shadow-arcane group-hover:scale-110 transition-transform shrink-0">
                       <Heart className="h-7 w-7" />
                     </div>
                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-destructive">Vitalidade</h4>
                   </div>
-                  <div className="text-right">
-                    <span className="text-4xl font-display font-bold text-destructive">{character.current_hp ?? 0} / {character.max_hp ?? 0}</span>
+                  <div className="text-right shrink-0">
+                    <span className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-destructive">{character.current_hp ?? 0} / {character.max_hp ?? 0}</span>
                   </div>
                 </div>
                 <Progress value={((character.current_hp ?? 0) / (character.max_hp || 1)) * 100} className="h-2 bg-destructive/10" />
@@ -922,16 +922,16 @@ export default function FichaPersonagem() {
 
             <Card className="bg-[#12182B]/20 border-accent/20 literary-shadow overflow-hidden group">
               <div className="h-1 bg-accent/30" />
-              <CardContent className="p-8 space-y-6">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-xl bg-accent/20 text-accent shadow-arcane group-hover:scale-110 transition-transform">
+              <CardContent className="p-4 sm:p-6 lg:p-8 space-y-6">
+                <div className="flex justify-between items-center gap-3">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    <div className="p-3 rounded-xl bg-accent/20 text-accent shadow-arcane group-hover:scale-110 transition-transform shrink-0">
                       <Sparkles className="h-7 w-7" />
                     </div>
                     <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-accent">Energia Arcana</h4>
                   </div>
-                  <div className="text-right">
-                    <span className="text-4xl font-display font-bold text-accent">{sheetState.mana ?? 0} / {sheetState.maxMana ?? 0}</span>
+                  <div className="text-right shrink-0">
+                    <span className="text-2xl sm:text-3xl lg:text-4xl font-display font-bold text-accent">{sheetState.mana ?? 0} / {sheetState.maxMana ?? 0}</span>
                   </div>
                 </div>
                 <Progress value={((sheetState.mana || 0) / (sheetState.maxMana || 1)) * 100} className="h-2 bg-accent/10" />
@@ -939,11 +939,11 @@ export default function FichaPersonagem() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center gap-1">
-                <Shield className="h-8 w-8 text-primary mb-3" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
+             <div className="p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center gap-1">
+                <Shield className="h-6 w-6 sm:h-8 sm:w-8 text-primary mb-2 sm:mb-3" />
                 <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Defesa (CA)</span>
-                <span className="text-4xl font-display font-black text-primary">{character.armor_class ?? 10}</span>
+                <span className="text-2xl sm:text-3xl lg:text-4xl font-display font-black text-primary">{character.armor_class ?? 10}</span>
                 {armorClassDiffersFromSuggestion && (
                   <Button
                     type="button"
@@ -956,25 +956,25 @@ export default function FichaPersonagem() {
                   </Button>
                 )}
              </div>
-             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                <Zap className="h-8 w-8 text-accent mb-3" />
+             <div className="p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                <Zap className="h-6 w-6 sm:h-8 sm:w-8 text-accent mb-2 sm:mb-3" />
                 <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Iniciativa</span>
-                <span className="text-4xl font-display font-black text-accent">{Number(calculateModifier(stats.dex)) >= 0 ? `+${calculateModifier(stats.dex)}` : calculateModifier(stats.dex)}</span>
+                <span className="text-2xl sm:text-3xl lg:text-4xl font-display font-black text-accent">{Number(calculateModifier(stats.dex)) >= 0 ? `+${calculateModifier(stats.dex)}` : calculateModifier(stats.dex)}</span>
              </div>
-             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center gap-1">
-                <Footprints className="h-8 w-8 text-secondary mb-3" />
+             <div className="p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center gap-1">
+                <Footprints className="h-6 w-6 sm:h-8 sm:w-8 text-secondary mb-2 sm:mb-3" />
                 <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Deslocamento</span>
-                <span className="text-2xl font-display font-black text-secondary">{formatSpeed(character.speed)}</span>
+                <span className="text-xl sm:text-2xl font-display font-black text-secondary">{formatSpeed(character.speed)}</span>
                 <span className="text-[8px] uppercase tracking-widest opacity-30">1 célula = {GRID_CELL_FT} ft / {GRID_CELL_M} m</span>
              </div>
-             <div className="p-6 rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                <Star className="h-8 w-8 text-primary mb-3" />
+             <div className="p-4 sm:p-6 rounded-2xl sm:rounded-[2rem] bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                <Star className="h-6 w-6 sm:h-8 sm:w-8 text-primary mb-2 sm:mb-3" />
                 <span className="text-[9px] uppercase font-black tracking-widest opacity-40">Proficiência</span>
-                <span className="text-4xl font-display font-black text-primary">+{proficiency}</span>
+                <span className="text-2xl sm:text-3xl lg:text-4xl font-display font-black text-primary">+{proficiency}</span>
              </div>
           </div>
 
-          <section className="space-y-6 bg-white/5 p-10 rounded-[2.5rem] border border-white/5">
+          <section className="space-y-6 bg-white/5 p-4 sm:p-6 lg:p-10 rounded-2xl sm:rounded-[2.5rem] border border-white/5">
              <div className="flex justify-between items-center">
                 <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
                   <Wind className="mr-2 h-4 w-4 text-primary" /> Nível de Exaustão
@@ -1058,7 +1058,7 @@ export default function FichaPersonagem() {
           </section>
 
           <Card className="bg-primary/5 border-primary/20 oracle-glow">
-            <CardContent className="p-8 space-y-4">
+            <CardContent className="p-4 sm:p-6 lg:p-8 space-y-4">
                <div className="flex items-center gap-3">
                  <Info className="h-5 w-5 text-primary" />
                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">Oráculo do SRD</span>
@@ -1144,7 +1144,7 @@ export default function FichaPersonagem() {
         <h3 className="text-[10px] uppercase font-black tracking-[0.3em] text-muted-foreground opacity-50 flex items-center">
           <TrendingUp className="mr-2 h-4 w-4 text-primary" /> Progressão / Level Up
         </h3>
-        <Card className="bg-white/5 border-white/5 p-8 space-y-4">
+        <Card className="bg-white/5 border-white/5 p-4 sm:p-6 lg:p-8 space-y-4">
           <p className="text-sm text-muted-foreground font-heading italic">
             {character.name} está atualmente no nível <span className="text-primary font-bold not-italic">{characterLevel}</span>.
           </p>
@@ -1166,7 +1166,7 @@ export default function FichaPersonagem() {
                     <TrendingUp className="h-4 w-4" /> Solicitar Level Up
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="bg-card/95 border-white/10 text-[#FFF6E5]">
+                <DialogContent className="bg-card/95 border-white/10 text-[#FFF6E5] max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="font-display">Solicitar Level Up</DialogTitle>
                     <DialogDescription className="font-heading italic">
@@ -1202,15 +1202,15 @@ export default function FichaPersonagem() {
 
 function StatCard({ label, value, mod }: { label: string, value: number, mod: string }) {
   return (
-    <div className="p-6 rounded-[1.5rem] bg-white/5 border border-white/5 flex justify-between items-center group hover:border-primary/40 transition-all cursor-default overflow-hidden relative">
+    <div className="p-3 sm:p-4 lg:p-6 rounded-xl sm:rounded-[1.5rem] bg-white/5 border border-white/5 flex justify-between items-center group hover:border-primary/40 transition-all cursor-default overflow-hidden relative">
       <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-20 transition-opacity">
-         <span className="text-6xl font-black">{label[0]}</span>
+         <span className="text-4xl sm:text-5xl lg:text-6xl font-black">{label[0]}</span>
       </div>
-      <div className="flex flex-col">
+      <div className="flex flex-col min-w-0">
         <span className="text-[10px] uppercase font-black text-muted-foreground tracking-[0.2em] mb-1">{label}</span>
-        <span className="text-3xl font-display font-black group-hover:text-primary transition-colors">{value}</span>
+        <span className="text-xl sm:text-2xl lg:text-3xl font-display font-black group-hover:text-primary transition-colors">{value}</span>
       </div>
-      <div className={`p-4 rounded-xl font-code font-black text-xl transition-all ${Number(mod) >= 0 ? 'bg-primary/20 text-primary' : 'bg-destructive/20 text-destructive'}`}>
+      <div className={`p-2 sm:p-3 lg:p-4 rounded-xl font-code font-black text-base sm:text-lg lg:text-xl transition-all shrink-0 ${Number(mod) >= 0 ? 'bg-primary/20 text-primary' : 'bg-destructive/20 text-destructive'}`}>
         {mod}
       </div>
     </div>

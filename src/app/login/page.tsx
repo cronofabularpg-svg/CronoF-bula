@@ -12,10 +12,24 @@ export default function LoginPage() {
 
   const [loading, setLoading] = React.useState(false)
   const [nextUrl, setNextUrl] = React.useState("/dashboard")
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   React.useEffect(() => {
-    const next = new URLSearchParams(window.location.search).get("next")
+    const params = new URLSearchParams(window.location.search)
+
+    const next = params.get("next")
     if (next?.startsWith("/")) setNextUrl(next)
+
+    const error = params.get("error")
+    if (error) {
+      const messages: Record<string, string> = {
+        missing_code: "Não foi possível concluir o login com o Google. Tente novamente.",
+        callback_failed: "Falha ao validar o login com o Google. Tente novamente.",
+        no_user: "Não conseguimos identificar sua conta. Tente novamente.",
+        profile_failed: "Não foi possível preparar seu perfil. Tente novamente em alguns instantes.",
+      }
+      setErrorMessage(messages[error] ?? "Ocorreu um erro ao entrar. Tente novamente.")
+    }
   }, [])
 
   async function handleGoogleSignIn() {
@@ -25,7 +39,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}${nextUrl}`,
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextUrl)}`,
         },
       })
       if (error) throw error
@@ -60,6 +74,11 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 pb-8">
+            {errorMessage && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {errorMessage}
+              </div>
+            )}
             <Button
               type="button"
               onClick={handleGoogleSignIn}

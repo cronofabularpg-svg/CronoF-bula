@@ -186,11 +186,11 @@ export function SuggestionCard({
       : { authorBadge: "Oráculo", typeLabel: "narração", source: "groq" }
 
   return (
-    <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
-      <div className="h-16 w-16 rounded-[1.5rem] bg-secondary/10 p-4 shrink-0 border border-secondary/40 flex items-center justify-center oracle-glow">
-        <Sparkles className="h-7 w-7 text-secondary" />
+    <div className="flex gap-3 sm:gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
+      <div className="h-10 w-10 sm:h-16 sm:w-16 rounded-xl sm:rounded-[1.5rem] bg-secondary/10 p-2 sm:p-4 shrink-0 border border-secondary/40 flex items-center justify-center oracle-glow">
+        <Sparkles className="h-5 w-5 sm:h-7 sm:w-7 text-secondary" />
       </div>
-      <div className="space-y-4 pt-1 flex-1">
+      <div className="space-y-4 pt-1 flex-1 min-w-0">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.4em]">
             Sugestão do Oráculo {npcName ? `• ${npcName}` : ""}
@@ -203,7 +203,7 @@ export function SuggestionCard({
             <Textarea
               value={editedContent}
               onChange={(e) => setEditedContent(e.target.value)}
-              className="bg-black/30 border-secondary/30 font-heading italic text-lg min-h-32"
+              className="bg-black/30 border-secondary/30 font-heading italic text-base sm:text-lg min-h-32"
             />
             <div className="flex items-center gap-6">
               <button
@@ -225,7 +225,7 @@ export function SuggestionCard({
           </div>
         ) : (
           <>
-            <ExpandableText text={suggestion.content || ""} className="text-xl leading-relaxed text-foreground/80 font-heading italic" />
+            <ExpandableText text={suggestion.content || ""} className="text-base sm:text-xl leading-relaxed text-foreground/80 font-heading italic" />
             <div className="flex items-center gap-6 flex-wrap">
               <button
                 onClick={onPublish}
@@ -262,17 +262,17 @@ export function SuggestionCard({
 
 export function PlayerSuggestionNotice({ content, onDismiss }: { content: string; onDismiss: () => void }) {
   return (
-    <div className="flex gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
-      <div className="h-16 w-16 rounded-[1.5rem] bg-secondary/10 p-4 shrink-0 border border-secondary/40 flex items-center justify-center oracle-glow">
-        <Sparkles className="h-7 w-7 text-secondary" />
+    <div className="flex gap-3 sm:gap-10 animate-in fade-in slide-in-from-left-6 duration-700 max-w-4xl">
+      <div className="h-10 w-10 sm:h-16 sm:w-16 rounded-xl sm:rounded-[1.5rem] bg-secondary/10 p-2 sm:p-4 shrink-0 border border-secondary/40 flex items-center justify-center oracle-glow">
+        <Sparkles className="h-5 w-5 sm:h-7 sm:w-7 text-secondary" />
       </div>
-      <div className="space-y-4 pt-1">
+      <div className="space-y-4 pt-1 min-w-0">
         <div className="flex items-center gap-3 flex-wrap">
           <p className="text-[10px] font-display uppercase font-bold text-secondary tracking-[0.4em]">O Oráculo Arcano</p>
           <Badge variant="outline" className="border-secondary/40 text-secondary text-[8px] px-2 h-4 uppercase font-black">Sugestão</Badge>
           <Badge variant="outline" className="border-yellow-500/30 text-yellow-400 text-[8px] px-2 h-4 uppercase font-black">Pendente</Badge>
         </div>
-        <ExpandableText text={content} className="text-xl leading-relaxed text-foreground/80 font-heading italic" />
+        <ExpandableText text={content} className="text-base sm:text-xl leading-relaxed text-foreground/80 font-heading italic" />
         <div className="flex items-center gap-6 flex-wrap">
           <p className="text-[10px] font-display uppercase tracking-widest text-muted-foreground">
             Sugestão enviada ao mestre. O mestre decide o que vira cânone.
