@@ -75,6 +75,8 @@ import {
   Footprints,
   BookOpen,
   Dices,
+  Bot,
+  Hand,
 } from "lucide-react"
 
 // ----------------------------------------------------------------------------
@@ -97,6 +99,12 @@ type ParticipantMetadata = {
   death_saves?: DeathSaves
   concentration?: Concentration
   surprise?: boolean
+  ai_control_enabled?: boolean
+  npc_type?: string
+  combat_behavior?: string
+  attacks?: unknown
+  challenge_level?: string
+  source_npc_id?: string
 }
 
 type CombatMetadata = {
@@ -188,6 +196,13 @@ type CampaignCharacter = {
 type CampaignNpc = {
   id: string
   name: string
+  npc_type: string | null
+  combat_role: string | null
+  ai_control_enabled: boolean | null
+  challenge_level: string | null
+  armor_class: number | null
+  max_hp: number | null
+  current_hp: number | null
 }
 
 type ManualEnemy = {
@@ -314,6 +329,10 @@ const PARTICIPANT_TYPE_BADGE: Record<string, { label: string; className: string 
   ally: { label: "Aliado", className: "border-emerald-400/30 text-emerald-300" },
   enemy: { label: "Inimigo", className: "border-destructive/30 text-destructive" },
 }
+
+// TAREFA 7: NPCs classificados como mob/boss/criatura pertencem ao Bestiário
+// e aparecem na aba "Mobs/Bestiário" do modal "Adicionar ao Combate".
+const BESTIARY_NPC_TYPES = new Set(["mob", "boss", "creature"])
 
 // Condições oficiais de D&D 5e (5.1 SRD) usadas no select do modal de gerenciamento.
 const DND_CONDITIONS: { key: string; label: string }[] = [
@@ -785,6 +804,8 @@ export default function Combate() {
   const [addNpcTypeById, setAddNpcTypeById] = React.useState<Record<string, string>>({})
   const [addInitiativeByNpc, setAddInitiativeByNpc] = React.useState<Record<string, string>>({})
   const [addingNpcId, setAddingNpcId] = React.useState<string | null>(null)
+  const [addInitiativeByMob, setAddInitiativeByMob] = React.useState<Record<string, string>>({})
+  const [addingMobId, setAddingMobId] = React.useState<string | null>(null)
   const [surpriseName, setSurpriseName] = React.useState("")
   const [surpriseCurrentHp, setSurpriseCurrentHp] = React.useState("")
   const [surpriseMaxHp, setSurpriseMaxHp] = React.useState("")
@@ -1039,7 +1060,7 @@ export default function Combate() {
 
       const { data: npcsData } = await supabase
         .from('npcs')
-        .select('id, name')
+        .select('id, name, npc_type, combat_role, ai_control_enabled, challenge_level, armor_class, max_hp, current_hp')
         .eq('campaign_id', campaignId)
         .order('name', { ascending: true })
 
@@ -1952,6 +1973,35 @@ export default function Combate() {
 
     toast({ title: "NPC adicionado ao combate" })
     setAddInitiativeByNpc(prev => ({ ...prev, [npcId]: "" }))
+    await loadCombat()
+  }
+
+  // TAREFA 7: mestre adiciona um mob/boss/criatura do Bestiário ao combate,
+  // copiando PV/CA/IA-control para combat_participants.metadata.
+  async function handleAddMobParticipant(npcId: string) {
+    if (!combat) return
+
+    setAddingMobId(npcId)
+    const supabase = createClient()
+
+    const rawInitiative = addInitiativeByMob[npcId]?.trim()
+    const initiative = rawInitiative ? parseInt(rawInitiative, 10) : null
+
+    const { error } = await supabase.rpc('add_combat_mob_participant', {
+      p_combat_id: combat.id,
+      p_npc_id: npcId,
+      p_initiative: initiative !== null && !isNaN(initiative) ? initiative : null,
+    })
+
+    setAddingMobId(null)
+
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao adicionar criatura", description: error.message })
+      return
+    }
+
+    toast({ title: "Criatura adicionada ao combate" })
+    setAddInitiativeByMob(prev => ({ ...prev, [npcId]: "" }))
     await loadCombat()
   }
 
@@ -3275,14 +3325,15 @@ export default function Combate() {
               <UserPlus className="h-5 w-5" /> Adicionar ao Combate
             </DialogTitle>
             <DialogDescription>
-              Adicione personagens, NPCs ou um inimigo surpresa ao combate em andamento.
+              Adicione personagens, NPCs principais, mobs do Bestiário ou um inimigo surpresa ao combate em andamento.
             </DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="personagens">
-            <TabsList className="grid grid-cols-3 gap-1 bg-black/30">
+            <TabsList className="grid grid-cols-4 gap-1 bg-black/30">
               <TabsTrigger value="personagens">Personagens</TabsTrigger>
-              <TabsTrigger value="npcs">NPCs</TabsTrigger>
+              <TabsTrigger value="npcs">NPCs Principais</TabsTrigger>
+              <TabsTrigger value="mobs">Mobs/Bestiário</TabsTrigger>
               <TabsTrigger value="surpresa">Inimigo Surpresa</TabsTrigger>
             </TabsList>
 
@@ -3319,9 +3370,9 @@ export default function Combate() {
             <TabsContent value="npcs" className="pt-3 space-y-2">
               {(() => {
                 const inCombatIds = new Set(participants.map(p => p.npc_id).filter((id): id is string => !!id))
-                const available = campaignNpcs.filter(n => !inCombatIds.has(n.id))
+                const available = campaignNpcs.filter(n => !inCombatIds.has(n.id) && !BESTIARY_NPC_TYPES.has(n.npc_type || ''))
                 if (available.length === 0) {
-                  return <p className="text-sm text-muted-foreground font-heading italic">Todos os NPCs da campanha já estão no combate.</p>
+                  return <p className="text-sm text-muted-foreground font-heading italic">Todos os NPCs principais da campanha já estão no combate.</p>
                 }
                 return available.map((n) => (
                   <div key={n.id} className="rounded-xl border border-primary/10 p-3 flex flex-wrap items-center gap-2">
@@ -3360,6 +3411,53 @@ export default function Combate() {
               <p className="text-[10px] text-muted-foreground italic">
                 PV e CA podem ser definidos depois em &quot;Gerenciar&quot;, no card do participante.
               </p>
+            </TabsContent>
+
+            <TabsContent value="mobs" className="pt-3 space-y-2">
+              {(() => {
+                const inCombatIds = new Set(participants.map(p => p.npc_id).filter((id): id is string => !!id))
+                const available = campaignNpcs.filter(n => !inCombatIds.has(n.id) && BESTIARY_NPC_TYPES.has(n.npc_type || ''))
+                if (available.length === 0) {
+                  return <p className="text-sm text-muted-foreground font-heading italic">Nenhum mob/boss/criatura do Bestiário disponível. Importe da Biblioteca SRD em NPCs.</p>
+                }
+                return available.map((n) => (
+                  <div key={n.id} className="rounded-xl border border-primary/10 p-3 flex flex-wrap items-center gap-2">
+                    <div className="flex-1 min-w-[120px]">
+                      <span className="font-heading">{n.name}</span>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-primary/20">
+                          {n.npc_type === 'boss' ? 'Boss' : n.npc_type === 'creature' ? 'Criatura' : 'Mob'}
+                        </Badge>
+                        {n.challenge_level && (
+                          <Badge variant="outline" className="text-[9px] uppercase tracking-widest border-primary/20">ND {n.challenge_level}</Badge>
+                        )}
+                        <Badge className={`text-[9px] uppercase tracking-widest flex items-center gap-1 ${n.ai_control_enabled ? 'bg-accent/20 text-accent border-accent/30' : 'bg-muted text-muted-foreground border-white/10'}`}>
+                          {n.ai_control_enabled ? <Bot className="h-2.5 w-2.5" /> : <Hand className="h-2.5 w-2.5" />}
+                          {n.ai_control_enabled ? 'IA pode controlar' : 'Controle manual'}
+                        </Badge>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground font-heading">
+                        CA {n.armor_class ?? '—'} · PV {n.current_hp ?? n.max_hp ?? '—'}/{n.max_hp ?? '—'}
+                      </span>
+                    </div>
+                    <Input
+                      type="number"
+                      placeholder="Iniciativa"
+                      value={addInitiativeByMob[n.id] || ""}
+                      onChange={(e) => setAddInitiativeByMob(prev => ({ ...prev, [n.id]: e.target.value }))}
+                      className="w-24 bg-black/30 border-primary/20"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => handleAddMobParticipant(n.id)}
+                      disabled={addingMobId === n.id}
+                      className="rounded-full btn-ritual"
+                    >
+                      Adicionar
+                    </Button>
+                  </div>
+                ))
+              })()}
             </TabsContent>
 
             <TabsContent value="surpresa" className="pt-3 space-y-3">
@@ -3546,6 +3644,7 @@ function ParticipantCard({
   const isEnemy = participant.participant_type === 'enemy'
   const isDefeated = participant.status !== 'active'
   const isSurprise = !!participant.metadata?.surprise
+  const aiControlEnabled = !!participant.metadata?.ai_control_enabled
   const conditions = participant.conditions || []
   const deathSaves = participant.metadata?.death_saves
   const concentration = participant.metadata?.concentration
@@ -3576,6 +3675,12 @@ function ParticipantCard({
         {isSurprise && (
           <Badge className="text-[10px] bg-amber-500/20 text-amber-300 border-amber-500/30">
             Surpresa
+          </Badge>
+        )}
+        {participant.npc_id && (
+          <Badge className={`text-[10px] flex items-center gap-1 ${aiControlEnabled ? 'bg-accent/20 text-accent border-accent/30' : 'bg-muted text-muted-foreground border-white/10'}`}>
+            {aiControlEnabled ? <Bot className="h-2.5 w-2.5" /> : <Hand className="h-2.5 w-2.5" />}
+            {aiControlEnabled ? "IA pode controlar" : "Controle manual"}
           </Badge>
         )}
         {npcRole && (
